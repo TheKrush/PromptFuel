@@ -8,3 +8,5 @@ DO_NOT_DELETE/
 node_modules
 out
 Thumbs.db
+vsix-inspect
+vsix-inspect.tmp.zip
