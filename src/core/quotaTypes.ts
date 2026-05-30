@@ -7,9 +7,11 @@ export const QUOTA_WINDOW_LABELS: Record<QuotaWindowId, string> = {
   '7d': '7d',
 };
 
-export type ProviderQuotaStatus = 'no-data' | 'disabled' | 'unknown';
+export type ProviderQuotaStatus = 'no-data' | 'disabled' | 'unknown' | 'loaded';
 
 export interface ProviderQuotaState {
   providerId: string;
   status: ProviderQuotaStatus;
+  totalTokens?: number;
+  totalAssistantMessages?: number;
 }

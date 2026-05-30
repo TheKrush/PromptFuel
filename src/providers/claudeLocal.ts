@@ -2,6 +2,7 @@ import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ProviderReader, ReadResult } from '../core/providerReader';
+import { parseClaudeUsage } from './claudeUsageParser';
 
 export function defaultClaudeProjectsPath(): string {
   return path.join(os.homedir(), '.claude', 'projects');
@@ -22,36 +23,30 @@ export class ClaudeLocalReader implements ProviderReader {
       return { providerId: 'claude', status: 'not-found' };
     }
 
-    const count = await countJsonlFiles(this.projectsRoot, 4);
-    if (count === 0) {
-      return { providerId: 'claude', status: 'no-data', filesFound: 0 };
+    const { aggregate, stats } = await parseClaudeUsage(this.projectsRoot);
+
+    if (stats.recordsMatched === 0) {
+      return {
+        providerId: 'claude',
+        status: 'no-data',
+        filesFound: stats.filesInspected,
+        parseErrors: stats.parseErrors,
+        recordsRead: stats.recordsRead,
+        recordsMatched: 0,
+      };
     }
-    return { providerId: 'claude', status: 'ok', filesFound: count };
+
+    return {
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: stats.filesInspected,
+      parseErrors: stats.parseErrors,
+      recordsRead: stats.recordsRead,
+      recordsMatched: stats.recordsMatched,
+      totalTokens: aggregate.totalTokens,
+      totalInputTokens: aggregate.totalInputTokens,
+      totalOutputTokens: aggregate.totalOutputTokens,
+      totalAssistantMessages: aggregate.totalAssistantMessages,
+    };
   }
-}
-
-async function countJsonlFiles(root: string, maxDepth: number): Promise<number> {
-  let count = 0;
-
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > maxDepth) {
-      return;
-    }
-    let entries;
-    try {
-      entries = await fsp.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), depth + 1);
-      } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        count++;
-      }
-    }
-  }
-
-  await walk(root, 0);
-  return count;
 }

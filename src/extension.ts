@@ -11,8 +11,18 @@ import { runEnabledReaders } from './providers/readProviders';
 let statusBarItem: vscode.StatusBarItem | undefined;
 
 function resultToQuotaState(result: ReadResult): ProviderQuotaState {
-  const status: ProviderQuotaStatus = result.status === 'error' ? 'unknown' : 'no-data';
-  return { providerId: result.providerId, status };
+  let status: ProviderQuotaStatus = 'no-data';
+  if (result.status === 'error') {
+    status = 'unknown';
+  } else if (result.status === 'ok' && (result.totalTokens ?? 0) > 0) {
+    status = 'loaded';
+  }
+  return {
+    providerId: result.providerId,
+    status,
+    totalTokens: result.totalTokens,
+    totalAssistantMessages: result.totalAssistantMessages,
+  };
 }
 
 function initStatusBar(): void {

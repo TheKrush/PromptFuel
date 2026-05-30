@@ -5,6 +5,13 @@ export interface ReadResult {
   status: ReadResultStatus;
   filesFound?: number;
   detail?: string;
+  parseErrors?: number;
+  recordsRead?: number;
+  recordsMatched?: number;
+  totalTokens?: number;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  totalAssistantMessages?: number;
 }
 
 export interface ProviderReader {

@@ -9,6 +9,11 @@ export function formatProviderText(state: ProviderQuotaState): string {
       return '';
     case 'no-data':
       return `${label} —`;
+    case 'loaded':
+      if (state.totalTokens !== undefined && state.totalTokens > 0) {
+        return `${label} ${formatTokenCount(state.totalTokens)}`;
+      }
+      return `${label} loaded`;
     case 'unknown':
     default:
       return `${label} …`;
@@ -32,7 +37,9 @@ export function formatRefreshSummary(results: ReadResult[]): string {
     switch (r.status) {
       case 'ok': {
         const n = r.filesFound ?? 0;
-        return `${label}: ${n} session file${n !== 1 ? 's' : ''}`;
+        const msgs = r.totalAssistantMessages ?? 0;
+        const tokens = r.totalTokens ?? 0;
+        return `${label}: ${n} file${n !== 1 ? 's' : ''}, ${msgs} messages, ${formatTokenCount(tokens)}`;
       }
       case 'no-data':
         return `${label}: no session files`;
@@ -45,4 +52,14 @@ export function formatRefreshSummary(results: ReadResult[]): string {
     }
   });
   return parts.join(' | ');
+}
+
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M tokens`;
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K tokens`;
+  }
+  return `${count} tokens`;
 }
