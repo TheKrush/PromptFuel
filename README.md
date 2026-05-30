@@ -56,4 +56,11 @@ code --extensionDevelopmentPath=.
 
 ## License
 
-MIT
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the software, subject to the conditions outlined in the license.
+
+For the complete license text, see the [LICENSE](LICENSE) file in this repository.
