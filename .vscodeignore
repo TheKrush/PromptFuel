@@ -1,0 +1,14 @@
+.vscode/**
+.git/**
+.gitignore
+.gitattributes
+node_modules
+src/**
+tsconfig.json
+**/*.ts
+**/*.map
+*.md
+!.vscodeignore
+!out/**
+!package.json
+!LICENSE

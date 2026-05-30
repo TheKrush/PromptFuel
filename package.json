@@ -1,0 +1,80 @@
+{
+  "name": "prompt-fuel",
+  "displayName": "PromptFuel",
+  "description": "Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.",
+  "version": "0.1.0",
+  "publisher": "thekrush",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "promptFuel.openDashboard",
+        "title": "PromptFuel: Open Usage Dashboard"
+      },
+      {
+        "command": "promptFuel.refresh",
+        "title": "PromptFuel: Refresh Now"
+      },
+      {
+        "command": "promptFuel.openDataFolder",
+        "title": "PromptFuel: Open Data Folder"
+      }
+    ],
+    "configuration": {
+      "title": "PromptFuel",
+      "properties": {
+        "promptFuel.enabledProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "default": [
+            "claude",
+            "codex"
+          ],
+          "description": "AI coding assistant providers to track and display in PromptFuel."
+        },
+        "promptFuel.displayMode": {
+          "type": "string",
+          "enum": [
+            "compact",
+            "countdown"
+          ],
+          "default": "compact",
+          "description": "Status bar display mode for usage information."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "echo 'lint: not yet configured'",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.94.0",
+    "@vscode/test-electron": "^2.5.2",
+    "glob": "^11.0.0",
+    "mocha": "^10.7.0",
+    "typescript": "^5.5.0"
+  }
+}
