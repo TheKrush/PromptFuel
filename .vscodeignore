@@ -17,5 +17,7 @@ assets/**
 !package.json
 !CHANGELOG.md
 !SUPPORT.md
-!out/extension.js
-!out/extension.js.map
+!out/*.js
+!out/*.js.map
+!out/core/*.js
+!out/core/*.js.map

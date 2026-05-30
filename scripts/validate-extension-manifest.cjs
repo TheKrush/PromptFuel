@@ -15,7 +15,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'))
 
 // Identity checks
 if (pkg.name !== 'prompt-fuel') fail(`name is "${pkg.name}", expected "prompt-fuel"`);
-if (pkg.displayName !== 'PromptFuel') fail(`displayName is "${pkg.displayName}", expected "PromptFuel"`);
+if (pkg.displayName !== 'Prompt Fuel') fail(`displayName is "${pkg.displayName}", expected "Prompt Fuel"`);
 if (pkg.publisher !== 'thekrush') fail(`publisher is "${pkg.publisher}", expected "thekrush"`);
 
 // Command checks

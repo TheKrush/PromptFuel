@@ -89,6 +89,12 @@
           ],
           "default": "compact",
           "description": "Status bar display mode for usage information."
+        },
+        "promptFuel.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 10,
+          "description": "Fallback refresh interval in seconds for status bar updates."
         }
       }
     }
@@ -98,7 +104,10 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "echo 'lint: not yet configured'",
+    "validate": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1 -SkipInstall",
+    "validate:install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1",
     "validate:manifest": "node scripts/validate-extension-manifest.cjs",
+    "smoke:core": "node scripts/smoke-core.cjs",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
     "test": "node ./out/test/runTest.js"
   },
