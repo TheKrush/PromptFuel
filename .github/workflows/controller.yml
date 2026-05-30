@@ -1,0 +1,146 @@
+name: 🎛️ Workflow Controller
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ----------------------------------------
+  # 🔍 Analyze commit / changes
+  # ----------------------------------------
+  analyze:
+    name: 🔍 Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      run_compile: ${{ steps.check.outputs.run_compile }}
+      run_package: ${{ steps.check.outputs.run_package }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - id: check
+        shell: bash
+        run: |
+          # defaults
+          echo "run_compile=false" >> "$GITHUB_OUTPUT"
+          echo "run_package=false" >> "$GITHUB_OUTPUT"
+
+          # pull_request — run compile+manifest, skip package
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "run_compile=true" >> "$GITHUB_OUTPUT"
+            echo "PR event — running compile + manifest."
+            exit 0
+          fi
+
+          # commit message
+          msg="$(git log -1 --pretty=%B)"
+
+          echo "Commit message:"
+          printf '%s\n' "$msg"
+
+          # [skip-ci]
+          if [[ "$msg" == *"[skip-ci]"* ]]; then
+            echo "Detected [skip-ci]; exiting early."
+            exit 0
+          fi
+
+          # [full-ci]
+          if [[ "$msg" == *"[full-ci]"* ]]; then
+            echo "run_compile=true" >> "$GITHUB_OUTPUT"
+            echo "run_package=true"  >> "$GITHUB_OUTPUT"
+            echo "Run reason: [full-ci] tag"
+            exit 0
+          fi
+
+          # changed files
+          git diff --name-only HEAD~1 > changed.txt || true
+          echo "Changed files:"
+          cat changed.txt || echo "(none)"
+
+          SOURCE_R='^(src/|package\.json$|package-lock\.json$|tsconfig\.json$)'
+          MANIFEST_R='^(package\.json$|\.vscodeignore$|README\.md$|LICENSE$|SECURITY\.md$)'
+          WORKFLOW_R='^\.github/'
+          DOCS_R='^(CODE_OF_CONDUCT\.md$|CONTRIBUTING\.md$|.*\.png$|DO_NOT_DELETE/|images\.txt$|\.gitignore$)'
+
+          SRC=false; MFT=false; WKF=false
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            echo "$f" | grep -qE "$SOURCE_R"   && SRC=true
+            echo "$f" | grep -qE "$MANIFEST_R" && MFT=true
+            echo "$f" | grep -qE "$WORKFLOW_R" && WKF=true
+          done < changed.txt
+
+          # docs/assets-only check
+          DOCS_ONLY=true
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            echo "$f" | grep -qE "$DOCS_R" || DOCS_ONLY=false
+          done < changed.txt
+
+          if $DOCS_ONLY && [ -s changed.txt ]; then
+            echo "Docs/assets-only changes — skipping all steps."
+            exit 0
+          fi
+
+          # path-based decisions
+          $SRC || $WKF && echo "run_compile=true" >> "$GITHUB_OUTPUT"
+          $SRC || $MFT || $WKF && echo "run_package=true" >> "$GITHUB_OUTPUT"
+
+          # tag overrides
+          if [[ "$msg" == *"[pack]"* ]]; then
+            echo "run_package=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$msg" == *"[no-pack]"* ]]; then
+            echo "run_package=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🧠 Summary
+        run: |
+          echo "------------------------------------------"
+          echo "🧠 Workflow Controller Summary"
+          echo "------------------------------------------"
+          echo "Repository:    ${{ github.repository }}"
+          echo "Branch:        ${GITHUB_REF##*/}"
+          echo "Compile:       ${{ steps.check.outputs.run_compile }}"
+          echo "Package:       ${{ steps.check.outputs.run_package }}"
+          echo "------------------------------------------"
+
+  # ----------------------------------------
+  # ⚙️ Compile (inline — no separate workflow)
+  # ----------------------------------------
+  compile:
+    if: ${{ needs.analyze.outputs.run_compile == 'true' }}
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run compile
+
+      - run: npm run validate:manifest
+
+  # ----------------------------------------
+  # 📦 Package (reusable pipeline)
+  # ----------------------------------------
+  package:
+    if: ${{ needs.analyze.outputs.run_package == 'true' }}
+    needs: analyze
+    uses: ./.github/workflows/package.yml
