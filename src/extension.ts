@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { getDataFolderUri } from './dataFolder';
 import { RefreshScheduler } from './core/refreshScheduler';
+import { openDashboardPanel, postDashboardRefreshIfOpen } from './panel/dashboardPanel';
 
 let scheduler: RefreshScheduler | undefined;
 
@@ -13,15 +14,15 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.command = 'promptFuel.openDashboard';
   statusBarItem.show();
 
-  scheduler = new RefreshScheduler(statusBarItem, context);
+  scheduler = new RefreshScheduler(statusBarItem, context, onRefreshed);
   scheduler.start();
 
   const openDashboard = vscode.commands.registerCommand(
     'promptFuel.openDashboard',
     () => {
-      vscode.window.showInformationMessage(
-        'PromptFuel: Usage Dashboard — coming soon.',
-      );
+      if (scheduler) {
+        openDashboardPanel(context, scheduler.status, scheduler.refreshNow.bind(scheduler));
+      }
     },
   );
 
@@ -43,6 +44,12 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(statusBarItem, openDashboard, refresh, openDataFolder);
+}
+
+function onRefreshed() {
+  if (scheduler) {
+    postDashboardRefreshIfOpen(scheduler.status);
+  }
 }
 
 export function deactivate() {

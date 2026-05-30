@@ -376,6 +376,96 @@ test('formatTooltip: no file paths in output', () => {
   assert.ok(!tooltip.includes('sessions'), `should not include path segments in tooltip`);
 });
 
+// === Dashboard model ===
+
+const { buildDashboardModel } = require(path.join(OUT, 'panel/dashboardModel'));
+
+test('dashboard: provider labels match expected', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3000, totalAssistantMessages: 1, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const labels = model.providers.map(p => p.label);
+  assert.ok(labels.includes('Claude'), `expected "Claude" label`);
+  assert.ok(labels.includes('Codex'), `expected "Codex" label`);
+});
+
+test('dashboard: aggregate tokens sum loaded providers', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3000, totalAssistantMessages: 1, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  assert.strictEqual(model.totalTokens, 8000, 'expected 8000 total tokens');
+  assert.strictEqual(model.totalAssistantMessages, 3, 'expected 3 total messages');
+});
+
+test('dashboard: no-data provider excluded from totals', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+      { providerId: 'codex', status: 'no-data' },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  assert.strictEqual(model.totalTokens, 5000, 'expected only claude tokens');
+  assert.strictEqual(model.totalAssistantMessages, 2, 'expected only claude messages');
+});
+
+test('dashboard: uses local history wording, not subscription', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Local usage history'), `expected "Local usage history" subtitle`);
+  assert.ok(!html.includes('subscription'), `should not include "subscription"`);
+});
+
+test('dashboard: no file paths or .jsonl in HTML', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3000, totalAssistantMessages: 1, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(!html.includes('.jsonl'), `should not include .jsonl in HTML`);
+  assert.ok(!html.includes('projects'), `should not include path segments`);
+  assert.ok(!html.includes('sessions'), `should not include path segments`);
+});
+
+test('dashboard: refresh button sends refreshDashboard command', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('refreshDashboard'), `expected refreshDashboard command in HTML`);
+});
+
 // Summary
 console.log('');
 console.log(`smoke-core: ${pass} passed, ${fail} failed`);

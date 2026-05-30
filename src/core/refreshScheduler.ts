@@ -16,6 +16,7 @@ export class RefreshScheduler {
   constructor(
     private readonly statusBarItem: vscode.StatusBarItem,
     private readonly context: vscode.ExtensionContext,
+    private readonly onRefreshed?: () => void,
   ) {
     const cfg = getConfig();
     this.statusState = createInitialStatus(cfg.enabledProviders);
@@ -33,6 +34,7 @@ export class RefreshScheduler {
     const cfg = getConfig();
     this.statusState = createInitialStatus(cfg.enabledProviders);
     this.updateBar();
+    this.onRefreshed?.();
     void this.runRefresh();
     this.scheduleNext(cfg.refreshIntervalMinutes);
     this.watchConfig();
@@ -60,6 +62,7 @@ export class RefreshScheduler {
         const cfg = getConfig();
         this.statusState = createInitialStatus(cfg.enabledProviders);
         this.updateBar();
+        this.onRefreshed?.();
         void this.runRefresh();
         this.scheduleNext(cfg.refreshIntervalMinutes);
       },
@@ -89,6 +92,7 @@ export class RefreshScheduler {
     try {
       this.statusState = applyRefreshResults(this.statusState, results);
       this.updateBar();
+      this.onRefreshed?.();
     } finally {
       this.running = false;
     }
