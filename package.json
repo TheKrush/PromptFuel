@@ -2,7 +2,7 @@
   "name": "prompt-fuel",
   "displayName": "Prompt Fuel",
   "description": "Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "thekrush",
   "author": "TheKrush",
   "license": "MIT",
