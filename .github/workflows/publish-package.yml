@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       bump:
-        description: "Version bump type (major, minor, patch, revision)"
+        description: "Version bump type (major, minor, patch)"
         required: false
         default: "patch"
         type: string
@@ -17,7 +17,6 @@ on:
         type: choice
         options:
           - patch
-          - revision
           - minor
           - major
 

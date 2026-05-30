@@ -3,7 +3,7 @@ description: Determines the next semantic version (major/minor/patch/revision) b
 
 inputs:
   bump:
-    description: "Version bump type (major, minor, patch, revision)"
+    description: "Version bump type (major, minor, patch)"
     default: "patch"
 
 outputs:
@@ -58,7 +58,7 @@ runs:
               MINOR=$((MINOR + 1))
               PATCH=0
               ;;
-            patch|revision|*)
+            patch|*)
               PATCH=$((PATCH + 1))
               ;;
           esac
