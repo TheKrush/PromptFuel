@@ -5,11 +5,11 @@ export type DisplayMode = 'compact' | 'countdown';
 export interface PromptFuelConfig {
   enabledProviders: ProviderId[];
   displayMode: DisplayMode;
-  refreshIntervalSeconds: number;
+  refreshIntervalMinutes: number;
 }
 
 export const CONFIG_DEFAULTS: PromptFuelConfig = {
   enabledProviders: ['claude', 'codex'],
   displayMode: 'compact',
-  refreshIntervalSeconds: 300,
+  refreshIntervalMinutes: 5,
 };

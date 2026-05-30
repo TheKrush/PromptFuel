@@ -84,8 +84,19 @@ test('CONFIG_DEFAULTS.displayMode default', () => {
   assert.strictEqual(CONFIG_DEFAULTS.displayMode, 'compact');
 });
 
-test('CONFIG_DEFAULTS.refreshIntervalSeconds default', () => {
-  assert.strictEqual(CONFIG_DEFAULTS.refreshIntervalSeconds, 300);
+test('CONFIG_DEFAULTS.refreshIntervalMinutes default', () => {
+  assert.strictEqual(CONFIG_DEFAULTS.refreshIntervalMinutes, 5);
+});
+
+test('CONFIG_DEFAULTS.refreshIntervalMinutes is number', () => {
+  assert.strictEqual(typeof CONFIG_DEFAULTS.refreshIntervalMinutes, 'number');
+});
+
+// === Config: interface shape ===
+
+test('CONFIG_DEFAULTS has expected keys', () => {
+  const keys = Object.keys(CONFIG_DEFAULTS).sort();
+  assert.deepStrictEqual(keys, ['displayMode', 'enabledProviders', 'refreshIntervalMinutes']);
 });
 
 // --- formatQuota ---
@@ -288,6 +299,81 @@ test('formatRefreshSummary: single parse error uses singular', () => {
   }]);
   assert.ok(s.includes('1 parse error'), `expected "1 parse error" in "${s}"`);
   assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
+});
+
+// === Compiled artifacts ===
+
+const fs = require('fs');
+
+test('compiled refreshScheduler.js exists', () => {
+  const schedulerPath = path.join(OUT, 'core/refreshScheduler.js');
+  assert.ok(fs.existsSync(schedulerPath), `expected ${schedulerPath} to exist`);
+});
+
+test('compiled extension.js exists', () => {
+  const extPath = path.join(OUT, 'extension.js');
+  assert.ok(fs.existsSync(extPath), `expected ${extPath} to exist`);
+});
+
+// === Scheduler: overlap prevention (pure status model) ===
+
+test('applyRefreshResults: sets lastRefreshedMs on each refresh', () => {
+  const status = createInitialStatus(['claude']);
+  const before = Date.now() - 1000;
+  const updated = applyRefreshResults(status, [
+    { providerId: 'claude', status: 'ok', totalTokens: 100, totalAssistantMessages: 1, filesFound: 1 },
+  ]);
+  assert.ok(updated.lastRefreshedMs >= before, 'lastRefreshedMs should be recent');
+});
+
+test('applyRefreshResults: second refresh updates lastRefreshedMs', () => {
+  let status = createInitialStatus(['claude']);
+  status = applyRefreshResults(status, [
+    { providerId: 'claude', status: 'ok', totalTokens: 100, totalAssistantMessages: 1, filesFound: 1 },
+  ]);
+  const firstRefresh = status.lastRefreshedMs;
+  const updated = applyRefreshResults(status, [
+    { providerId: 'claude', status: 'ok', totalTokens: 200, totalAssistantMessages: 2, filesFound: 1 },
+  ]);
+  assert.ok(updated.lastRefreshedMs >= firstRefresh, 'second refresh should update timestamp');
+});
+
+test('applyRefreshResults: preserves enabledProviderIds', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyRefreshResults(status, [
+    { providerId: 'claude', status: 'ok', totalTokens: 100, totalAssistantMessages: 1, filesFound: 1 },
+    { providerId: 'codex', status: 'not-found' },
+  ]);
+  assert.deepStrictEqual(updated.enabledProviderIds, ['claude', 'codex']);
+});
+
+// === Safety: no paths in formatted output ===
+
+test('formatStatusBarText: no file paths in output', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 3 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3000, totalAssistantMessages: 1, filesFound: 2 },
+    ],
+  );
+  const text = formatStatusBarText(status);
+  assert.ok(!text.includes('.jsonl'), `should not include file extensions in "${text}"`);
+  assert.ok(!text.includes('/'), `should not include forward slashes in "${text}"`);
+  assert.ok(!text.includes('\\'), `should not include backslashes in "${text}"`);
+  assert.ok(!text.includes('projects'), `should not include path segments in "${text}"`);
+  assert.ok(!text.includes('sessions'), `should not include path segments in "${text}"`);
+});
+
+test('formatTooltip: no file paths in output', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 3 }],
+  );
+  const tooltip = formatTooltip(status);
+  assert.ok(!tooltip.includes('.jsonl'), `should not include file extensions in tooltip`);
+  assert.ok(!tooltip.includes('projects'), `should not include path segments in tooltip`);
+  assert.ok(!tooltip.includes('sessions'), `should not include path segments in tooltip`);
 });
 
 // Summary

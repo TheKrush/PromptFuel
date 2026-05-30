@@ -18,13 +18,12 @@ export function getConfig(): PromptFuelConfig {
     rawMode === 'compact' || rawMode === 'countdown' ? rawMode : CONFIG_DEFAULTS.displayMode;
 
   const rawInterval = cfg.get<number>(
-    'refreshIntervalSeconds',
-    CONFIG_DEFAULTS.refreshIntervalSeconds
+    'refreshIntervalMinutes',
+    CONFIG_DEFAULTS.refreshIntervalMinutes
   );
-  const refreshIntervalSeconds = Math.max(
-    10,
-    typeof rawInterval === 'number' ? rawInterval : CONFIG_DEFAULTS.refreshIntervalSeconds
-  );
+  const refreshIntervalMinutes = typeof rawInterval === 'number'
+    ? Math.max(0, Math.min(1440, rawInterval))
+    : CONFIG_DEFAULTS.refreshIntervalMinutes;
 
-  return { enabledProviders, displayMode, refreshIntervalSeconds };
+  return { enabledProviders, displayMode, refreshIntervalMinutes };
 }

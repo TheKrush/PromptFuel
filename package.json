@@ -90,11 +90,12 @@
           "default": "compact",
           "description": "Status bar display mode for usage information."
         },
-        "promptFuel.refreshIntervalSeconds": {
+        "promptFuel.refreshIntervalMinutes": {
           "type": "number",
-          "default": 300,
-          "minimum": 10,
-          "description": "Fallback refresh interval in seconds for status bar updates."
+          "default": 5,
+          "minimum": 0,
+          "maximum": 1440,
+          "description": "Auto-refresh interval in minutes. Set to 0 to disable auto-refresh."
         }
       }
     }
