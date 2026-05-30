@@ -18,20 +18,20 @@ export function formatStatusBarText(status: PromptFuelStatus): string {
     return 'PromptFuel: no local usage';
   }
 
-  const parts: string[] = [];
+  let totalTokens = 0;
+  let anyLoaded = false;
   for (const state of status.providerStates) {
-    const label = PROVIDER_LABELS[state.providerId as ProviderId] ?? state.providerId;
-    const text = formatProviderCompact(label, state);
-    if (text) {
-      parts.push(text);
+    if (state.status === 'loaded' && (state.totalTokens ?? 0) > 0) {
+      totalTokens += state.totalTokens ?? 0;
+      anyLoaded = true;
     }
   }
 
-  if (parts.length === 0) {
+  if (!anyLoaded) {
     return 'PromptFuel: no local usage';
   }
 
-  return `PromptFuel: ${parts.join(' | ')}`;
+  return `PromptFuel: ${formatTokenCountCompact(totalTokens)} local`;
 }
 
 function formatProviderCompact(
@@ -76,14 +76,14 @@ export function formatRefreshSummary(results: ReadResult[]): string {
         const msgs = r.totalAssistantMessages ?? 0;
         const tokens = r.totalTokens ?? 0;
         const parseErr = r.parseErrors ?? 0;
-        let text = `${label}: ${msgs} messages, ${formatTokenCount(tokens)}`;
+        let text = `${label}: ${msgs} messages, ${formatTokenCount(tokens)} (local history)`;
         if (parseErr > 0) {
-          text += ` (${parseErr} parse error${parseErr !== 1 ? 's' : ''})`;
+          text += `, ${parseErr} parse error${parseErr !== 1 ? 's' : ''}`;
         }
         return text;
       }
       case 'no-data':
-        return `${label}: no local usage`;
+        return `${label}: no local usage history`;
       case 'not-found':
         return `${label}: not found`;
       case 'error':

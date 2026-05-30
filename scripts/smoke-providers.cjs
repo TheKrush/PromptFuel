@@ -181,7 +181,7 @@ async function main() {
     assert.strictEqual(hasAnyError(updated), false);
   });
 
-  // ===== formatStatusBarText: compact status bar =====
+  // ===== formatStatusBarText: compact aggregate status bar =====
 
   await test('formatStatusBarText: all providers no-data shows no local usage', async () => {
     const status = createInitialStatus(['claude', 'codex']);
@@ -189,29 +189,28 @@ async function main() {
     assert.strictEqual(text, 'PromptFuel: no local usage');
   });
 
-  await test('formatStatusBarText: one provider loaded shows compact token count', async () => {
+  await test('formatStatusBarText: one provider loaded shows aggregate with local suffix', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
       { providerId: 'codex', status: 'not-found' },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('Claude'), `expected "Claude" in "${text}"`);
     assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
-    assert.ok(text.includes('Codex'), `expected "Codex" in "${text}"`);
+    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
   });
 
-  await test('formatStatusBarText: both providers loaded', async () => {
+  await test('formatStatusBarText: both providers loaded shows single aggregate', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
       { providerId: 'codex', status: 'ok', totalTokens: 3100, totalAssistantMessages: 2, filesFound: 1 },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('Claude'), `expected "Claude" in "${text}"`);
-    assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
-    assert.ok(text.includes('Codex'), `expected "Codex" in "${text}"`);
-    assert.ok(text.includes('3.1K'), `expected "3.1K" in "${text}"`);
+    assert.ok(text.includes('15.5K'), `expected aggregate "15.5K" in "${text}"`);
+    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
     assert.ok(!text.includes('⛽'), `should not include emoji in "${text}"`);
   });
 
@@ -224,23 +223,25 @@ async function main() {
     assert.strictEqual(text, 'PromptFuel: refresh failed');
   });
 
-  await test('formatStatusBarText: no-data shows dash when mixed with loaded', async () => {
+  await test('formatStatusBarText: mixed loaded and no-data shows aggregate only', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'not-found' },
       { providerId: 'codex', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('—'), `expected dash for no-data in "${text}"`);
-    assert.ok(text.includes('Codex'), `expected Codex in "${text}"`);
+    assert.ok(text.includes('5.0K'), `expected "5.0K" in "${text}"`);
+    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
   });
 
   // ===== formatTooltip =====
 
-  await test('formatTooltip: initial state shows no local data', async () => {
+  await test('formatTooltip: initial state shows local history disclaimers', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const tooltip = formatTooltip(status);
     assert.ok(tooltip.includes('PromptFuel'), `expected "PromptFuel" in tooltip`);
+    assert.ok(tooltip.includes('Local history only'), `expected "Local history only" in tooltip`);
     assert.ok(tooltip.includes('no local data'), `expected "no local data" in tooltip`);
     assert.ok(!tooltip.includes('Last refreshed'), 'should not show refresh time before first refresh');
   });
@@ -344,10 +345,10 @@ async function main() {
     assert.ok(!s.includes('files'), `should not include files in "${s}"`);
   });
 
-  await test('formatRefreshSummary: no-data includes label and "no local usage"', async () => {
+  await test('formatRefreshSummary: no-data includes label and "no local usage history"', async () => {
     const s = formatRefreshSummary([{ providerId: 'codex', status: 'no-data', filesFound: 0 }]);
     assert.ok(s.includes('Codex'), `expected "Codex" in "${s}"`);
-    assert.ok(s.includes('no local usage'), `expected "no local usage" in "${s}"`);
+    assert.ok(s.includes('no local usage history'), `expected "no local usage history" in "${s}"`);
   });
 
   await test('formatRefreshSummary: error includes label and "read error"', async () => {

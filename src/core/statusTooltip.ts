@@ -8,6 +8,10 @@ export function formatTooltip(status: PromptFuelStatus): string {
   const lines: string[] = [];
 
   lines.push('PromptFuel');
+  lines.push('Local history only');
+  lines.push('Live quota not enabled yet');
+  lines.push('Snapshots not included');
+  lines.push('');
 
   let totalTokens = 0;
   let totalMessages = 0;
@@ -25,7 +29,7 @@ export function formatTooltip(status: PromptFuelStatus): string {
 
   if (totalTokens > 0) {
     lines.push('');
-    lines.push(`Total: ${formatTokenCount(totalTokens)} (${totalMessages} messages)`);
+    lines.push(`Total local history: ${formatTokenCount(totalTokens)} (${totalMessages} messages)`);
   }
 
   if (totalParseErrors > 0) {

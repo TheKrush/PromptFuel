@@ -129,14 +129,15 @@ test('formatStatusBarText: loaded state includes PromptFuel prefix', () => {
   assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
 });
 
-test('formatStatusBarText: loaded includes Claude label and compact tokens', () => {
+test('formatStatusBarText: loaded shows compact aggregate with local suffix', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('Claude'), `expected "Claude" in "${t}"`);
   assert.ok(t.includes('5.0K'), `expected "5.0K" in "${t}"`);
+  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
 test('formatStatusBarText: error/unknown returns refresh failed', () => {
@@ -148,7 +149,7 @@ test('formatStatusBarText: error/unknown returns refresh failed', () => {
   assert.strictEqual(t, 'PromptFuel: refresh failed');
 });
 
-test('formatStatusBarText: mixed providers joined with pipe', () => {
+test('formatStatusBarText: mixed providers shows single aggregate', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
@@ -158,12 +159,14 @@ test('formatStatusBarText: mixed providers joined with pipe', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
-  assert.ok(t.includes(' | '), `expected " | " separator in "${t}"`);
+  assert.ok(t.includes('5.0K'), `expected aggregate "5.0K" in "${t}"`);
+  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
 // === Status bar text: both loaded ===
 
-test('formatStatusBarText: both loaded shows compact summary', () => {
+test('formatStatusBarText: both loaded shows single aggregate total', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
@@ -172,10 +175,9 @@ test('formatStatusBarText: both loaded shows compact summary', () => {
     ],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('Claude'), `expected "Claude" in "${t}"`);
-  assert.ok(t.includes('12.4K'), `expected "12.4K" in "${t}"`);
-  assert.ok(t.includes('Codex'), `expected "Codex" in "${t}"`);
-  assert.ok(t.includes('3.1K'), `expected "3.1K" in "${t}"`);
+  assert.ok(t.includes('15.5K'), `expected aggregate "15.5K" in "${t}"`);
+  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
 // === Status bar text: large token formatting ===
@@ -187,6 +189,7 @@ test('formatStatusBarText: large token counts use M suffix', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('2.5M'), `expected "2.5M" in "${t}"`);
+  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
 });
 
 test('formatStatusBarText: small token counts show raw number', () => {
@@ -196,6 +199,7 @@ test('formatStatusBarText: small token counts show raw number', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('500'), `expected "500" in "${t}"`);
+  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
 });
 
 // === Disabled provider omitted ===
@@ -236,9 +240,46 @@ test('formatTooltip: total tokens and messages shown for loaded providers', () =
     ],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Total:'), `expected "Total:" in tooltip`);
+  assert.ok(tooltip.includes('Total local history:'), `expected "Total local history:" in tooltip`);
   assert.ok(tooltip.includes('15.0K'), `expected "15.0K" total in tooltip`);
   assert.ok(tooltip.includes('5 messages'), `expected "5 messages" total in tooltip`);
+});
+
+// === Tooltip: local history disclaimers ===
+
+test('formatTooltip: includes Local history only disclaimer', () => {
+  const status = createInitialStatus(['claude']);
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Local history only'), `expected "Local history only" in tooltip`);
+});
+
+test('formatTooltip: includes Live quota not enabled disclaimer', () => {
+  const status = createInitialStatus(['claude']);
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Live quota not enabled yet'), `expected "Live quota not enabled yet" in tooltip`);
+});
+
+test('formatTooltip: includes Snapshots not included disclaimer', () => {
+  const status = createInitialStatus(['claude']);
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Snapshots not included'), `expected "Snapshots not included" in tooltip`);
+});
+
+// === Tooltip: provider splits still exist ===
+
+test('formatTooltip: provider token splits still present', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 10000, totalAssistantMessages: 3, filesFound: 2 },
+      { providerId: 'codex', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Claude'), `expected "Claude" provider line in tooltip`);
+  assert.ok(tooltip.includes('Codex'), `expected "Codex" provider line in tooltip`);
+  assert.ok(tooltip.includes('10.0K'), `expected "10.0K" for Claude in tooltip`);
+  assert.ok(tooltip.includes('5.0K'), `expected "5.0K" for Codex in tooltip`);
 });
 
 // === formatTokenCount ===
@@ -273,9 +314,9 @@ test('formatRefreshSummary: ok includes messages and tokens, no file paths', () 
   assert.ok(!s.includes('/'), `should not include slashes in "${s}"`);
 });
 
-test('formatRefreshSummary: no-data shows no local usage', () => {
+test('formatRefreshSummary: no-data shows no local usage history', () => {
   const s = formatRefreshSummary([{ providerId: 'codex', status: 'no-data' }]);
-  assert.ok(s.includes('no local usage'), `expected "no local usage" in "${s}"`);
+  assert.ok(s.includes('no local usage history'), `expected "no local usage history" in "${s}"`);
 });
 
 test('formatRefreshSummary: parse errors shown in summary', () => {
@@ -432,7 +473,25 @@ test('dashboard: uses local history wording, not subscription', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Local usage history'), `expected "Local usage history" subtitle`);
+  assert.ok(html.includes('Local history tokens'), `expected "Local history tokens" overview label`);
+  assert.ok(html.includes('Local history messages'), `expected "Local history messages" overview label`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
+});
+
+test('dashboard: includes local history disclaimer banner', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Local history only'), `expected "Local history only" disclaimer in HTML`);
+  assert.ok(html.includes('live quota'), `expected "live quota" disclaimer in HTML`);
+  assert.ok(html.includes('snapshots'), `expected "snapshots" disclaimer in HTML`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {

@@ -95,7 +95,17 @@ export function buildDashboardHtml(
   .subtitle {
     font-size: 12px;
     color: var(--vscode-descriptionForeground, #999999);
+    margin-bottom: 8px;
+  }
+  .disclaimer {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999999);
+    background: rgba(136,136,136,0.1);
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 4px;
+    padding: 8px 12px;
     margin-bottom: 20px;
+    line-height: 1.5;
   }
   .overview {
     background: var(--vscode-editor-background, #1e1e1e);
@@ -208,14 +218,15 @@ export function buildDashboardHtml(
 <div class="dashboard">
   <div class="title">PromptFuel</div>
   <div class="subtitle">Local usage history</div>
+  <div class="disclaimer">Local history only — live quota and snapshots are not included yet.</div>
 
   <div class="overview">
     <div class="overview-row">
-      <span class="overview-label">Total tokens</span>
+      <span class="overview-label">Local history tokens</span>
       <span class="overview-value">${esc(formatTokenCount(model.totalTokens))}</span>
     </div>
     <div class="overview-row">
-      <span class="overview-label">Total messages</span>
+      <span class="overview-label">Local history messages</span>
       <span class="overview-value">${esc(String(model.totalAssistantMessages))}</span>
     </div>
   </div>
