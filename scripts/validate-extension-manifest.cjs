@@ -38,10 +38,20 @@ for (const key of Object.keys(properties)) {
 }
 
 // File existence checks
-for (const file of ['README.md', 'LICENSE', 'src/extension.ts']) {
+for (const file of ['README.md', 'LICENSE', 'src/extension.ts', 'CHANGELOG.md', 'SUPPORT.md']) {
   if (!fs.existsSync(path.join(REPO, file))) {
     fail(`required file "${file}" not found`);
   }
+}
+
+// Icon existence check
+if (pkg.icon) {
+  const iconPath = path.join(REPO, pkg.icon);
+  if (!fs.existsSync(iconPath)) {
+    fail(`icon "${pkg.icon}" declared in package.json but file not found`);
+  }
+} else {
+  fail('package.json is missing "icon" field');
 }
 
 if (exitCode === 0) {
@@ -49,6 +59,7 @@ if (exitCode === 0) {
   console.log(`  name:        ${pkg.name}`);
   console.log(`  displayName: ${pkg.displayName}`);
   console.log(`  publisher:   ${pkg.publisher}`);
+  console.log(`  icon:        ${pkg.icon}`);
   console.log(`  commands:    ${commands.length} registered`);
   console.log(`  settings:    ${Object.keys(properties).length} configured`);
 }

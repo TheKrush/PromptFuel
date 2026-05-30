@@ -5,9 +5,26 @@
   "version": "0.1.0",
   "publisher": "thekrush",
   "license": "MIT",
+  "icon": "assets/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/TheKrush/PromptFuel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TheKrush/PromptFuel/issues"
+  },
+  "homepage": "https://github.com/TheKrush/PromptFuel#readme",
+  "keywords": [
+    "claude",
+    "codex",
+    "ai",
+    "usage",
+    "quota",
+    "prompt"
+  ],
+  "galleryBanner": {
+    "color": "#1a1a1a",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.94.0"

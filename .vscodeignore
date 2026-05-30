@@ -11,7 +11,11 @@ scripts/**
 src/**
 tsconfig.json
 out/**
+assets/**
+!assets/icon.png
 !LICENSE
 !package.json
+!CHANGELOG.md
+!SUPPORT.md
 !out/extension.js
 !out/extension.js.map
