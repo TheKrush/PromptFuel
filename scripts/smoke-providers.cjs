@@ -11,7 +11,19 @@ const OUT = path.resolve(__dirname, '../out');
 const { ClaudeLocalReader } = require(path.join(OUT, 'providers/claudeLocal'));
 const { CodexLocalReader } = require(path.join(OUT, 'providers/codexLocal'));
 const { runEnabledReaders } = require(path.join(OUT, 'providers/readProviders'));
-const { formatRefreshSummary, formatStatusBarText } = require(path.join(OUT, 'core/formatQuota'));
+const {
+  formatRefreshSummary,
+  formatStatusBarText,
+  formatTooltip,
+  formatTokenCount,
+} = require(path.join(OUT, 'core/formatQuota'));
+const {
+  createInitialStatus,
+  applyRefreshResults,
+  getProviderState,
+  hasAnyLoaded,
+  hasAnyError,
+} = require(path.join(OUT, 'core/statusModel'));
 
 let pass = 0;
 let fail = 0;
@@ -47,9 +59,360 @@ async function createCodexFixture(dir, records) {
 async function main() {
   await fsp.mkdir(FIXTURE_DIR, { recursive: true });
 
-  // --- ClaudeLocalReader basics ---
-
   const ABSENT = path.join(FIXTURE_DIR, 'absent-' + Date.now());
+
+  // ===== statusModel: createInitialStatus =====
+
+  await test('createInitialStatus: creates no-data states for all enabled providers', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    assert.strictEqual(status.providerStates.length, 2);
+    assert.strictEqual(status.providerStates[0].status, 'no-data');
+    assert.strictEqual(status.providerStates[1].status, 'no-data');
+    assert.strictEqual(status.lastRefreshedMs, undefined);
+    assert.deepStrictEqual(status.enabledProviderIds, ['claude', 'codex']);
+  });
+
+  await test('createInitialStatus: empty enabledProviders yields empty states', async () => {
+    const status = createInitialStatus([]);
+    assert.strictEqual(status.providerStates.length, 0);
+  });
+
+  // ===== statusModel: applyRefreshResults =====
+
+  await test('applyRefreshResults: updates lastRefreshedMs', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const results = [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 3, filesFound: 2 },
+      { providerId: 'codex', status: 'not-found' },
+    ];
+    const updated = applyRefreshResults(status, results);
+    assert.ok(typeof updated.lastRefreshedMs === 'number', 'expected lastRefreshedMs to be a number');
+    assert.ok(updated.lastRefreshedMs > 0, 'expected lastRefreshedMs > 0');
+  });
+
+  await test('applyRefreshResults: ok with tokens -> loaded status', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const results = [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 3, filesFound: 2 },
+    ];
+    const updated = applyRefreshResults(status, results);
+    const claudeState = getProviderState(updated, 'claude');
+    assert.strictEqual(claudeState.status, 'loaded');
+    assert.strictEqual(claudeState.totalTokens, 1000);
+    assert.strictEqual(claudeState.totalAssistantMessages, 3);
+  });
+
+  await test('applyRefreshResults: not-found -> no-data status', async () => {
+    const status = createInitialStatus(['claude']);
+    const results = [
+      { providerId: 'claude', status: 'not-found' },
+    ];
+    const updated = applyRefreshResults(status, results);
+    const claudeState = getProviderState(updated, 'claude');
+    assert.strictEqual(claudeState.status, 'no-data');
+  });
+
+  await test('applyRefreshResults: error -> unknown status', async () => {
+    const status = createInitialStatus(['claude']);
+    const results = [
+      { providerId: 'claude', status: 'error' },
+    ];
+    const updated = applyRefreshResults(status, results);
+    const claudeState = getProviderState(updated, 'claude');
+    assert.strictEqual(claudeState.status, 'unknown');
+  });
+
+  await test('applyRefreshResults: ok with 0 tokens -> no-data status', async () => {
+    const status = createInitialStatus(['claude']);
+    const results = [
+      { providerId: 'claude', status: 'ok', totalTokens: 0, totalAssistantMessages: 0, filesFound: 1 },
+    ];
+    const updated = applyRefreshResults(status, results);
+    const claudeState = getProviderState(updated, 'claude');
+    assert.strictEqual(claudeState.status, 'no-data');
+  });
+
+  await test('applyRefreshResults: ignores unknown providerId', async () => {
+    const status = createInitialStatus(['claude']);
+    const results = [
+      { providerId: 'openai', status: 'ok', totalTokens: 999 },
+      { providerId: 'claude', status: 'not-found' },
+    ];
+    const updated = applyRefreshResults(status, results);
+    assert.strictEqual(updated.providerStates.length, 1);
+    assert.strictEqual(updated.providerStates[0].providerId, 'claude');
+  });
+
+  // ===== statusModel: hasAnyLoaded / hasAnyError =====
+
+  await test('hasAnyLoaded: true when at least one provider loaded', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'ok', totalTokens: 500, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    assert.strictEqual(hasAnyLoaded(updated), true);
+  });
+
+  await test('hasAnyLoaded: false when no provider loaded', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'not-found' },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    assert.strictEqual(hasAnyLoaded(updated), false);
+  });
+
+  await test('hasAnyError: true when at least one provider errored', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'error' },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    assert.strictEqual(hasAnyError(updated), true);
+  });
+
+  await test('hasAnyError: false when no provider errored', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'not-found' },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    assert.strictEqual(hasAnyError(updated), false);
+  });
+
+  // ===== formatStatusBarText: compact status bar =====
+
+  await test('formatStatusBarText: all providers no-data shows no local usage', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const text = formatStatusBarText(status);
+    assert.strictEqual(text, 'PromptFuel: no local usage');
+  });
+
+  await test('formatStatusBarText: one provider loaded shows compact token count', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    const text = formatStatusBarText(updated);
+    assert.ok(text.includes('Claude'), `expected "Claude" in "${text}"`);
+    assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
+    assert.ok(text.includes('Codex'), `expected "Codex" in "${text}"`);
+  });
+
+  await test('formatStatusBarText: both providers loaded', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3100, totalAssistantMessages: 2, filesFound: 1 },
+    ]);
+    const text = formatStatusBarText(updated);
+    assert.ok(text.includes('Claude'), `expected "Claude" in "${text}"`);
+    assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
+    assert.ok(text.includes('Codex'), `expected "Codex" in "${text}"`);
+    assert.ok(text.includes('3.1K'), `expected "3.1K" in "${text}"`);
+    assert.ok(!text.includes('⛽'), `should not include emoji in "${text}"`);
+  });
+
+  await test('formatStatusBarText: error state returns refresh failed', async () => {
+    const status = createInitialStatus(['claude']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'error' },
+    ]);
+    const text = formatStatusBarText(updated);
+    assert.strictEqual(text, 'PromptFuel: refresh failed');
+  });
+
+  await test('formatStatusBarText: no-data shows dash when mixed with loaded', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'not-found' },
+      { providerId: 'codex', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ]);
+    const text = formatStatusBarText(updated);
+    assert.ok(text.includes('—'), `expected dash for no-data in "${text}"`);
+    assert.ok(text.includes('Codex'), `expected Codex in "${text}"`);
+  });
+
+  // ===== formatTooltip =====
+
+  await test('formatTooltip: initial state shows no local data', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const tooltip = formatTooltip(status);
+    assert.ok(tooltip.includes('PromptFuel'), `expected "PromptFuel" in tooltip`);
+    assert.ok(tooltip.includes('no local data'), `expected "no local data" in tooltip`);
+    assert.ok(!tooltip.includes('Last refreshed'), 'should not show refresh time before first refresh');
+  });
+
+  await test('formatTooltip: loaded state shows tokens and messages', async () => {
+    const status = createInitialStatus(['claude']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'ok', totalTokens: 25000, totalAssistantMessages: 7, filesFound: 4 },
+    ]);
+    const tooltip = formatTooltip(updated);
+    assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
+    assert.ok(tooltip.includes('loaded'), `expected "loaded" in tooltip`);
+    assert.ok(tooltip.includes('25.0K'), `expected "25.0K" in tooltip`);
+    assert.ok(tooltip.includes('7 messages'), `expected "7 messages" in tooltip`);
+    assert.ok(tooltip.includes('Last refreshed'), `expected "Last refreshed" in tooltip`);
+  });
+
+  await test('formatTooltip: error state shows read error', async () => {
+    const status = createInitialStatus(['claude']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'error' },
+    ]);
+    const tooltip = formatTooltip(updated);
+    assert.ok(tooltip.includes('read error'), `expected "read error" in tooltip`);
+  });
+
+  await test('formatTooltip: last refreshed shows time', async () => {
+    const status = createInitialStatus(['claude']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'not-found' },
+    ]);
+    const tooltip = formatTooltip(updated);
+    assert.ok(tooltip.includes('Last refreshed:'), `expected "Last refreshed:" in tooltip`);
+    const timeMatch = tooltip.match(/Last refreshed: (\d{2}:\d{2}:\d{2})/);
+    assert.ok(timeMatch, `expected HH:MM:SS format in tooltip`);
+  });
+
+  await test('formatTooltip: multiple providers shown on separate lines', async () => {
+    const status = createInitialStatus(['claude', 'codex']);
+    const updated = applyRefreshResults(status, [
+      { providerId: 'claude', status: 'ok', totalTokens: 10000, totalAssistantMessages: 3, filesFound: 2 },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    const tooltip = formatTooltip(updated);
+    const lines = tooltip.split('\n');
+    assert.ok(lines.length >= 3, `expected at least 3 lines in tooltip, got ${lines.length}`);
+    assert.ok(lines.some(l => l.includes('Claude')), 'expected Claude line');
+    assert.ok(lines.some(l => l.includes('Codex')), 'expected Codex line');
+  });
+
+  // ===== formatTokenCount =====
+
+  await test('formatTokenCount: M suffix for >= 1M', async () => {
+    assert.strictEqual(formatTokenCount(2_500_000), '2.5M tokens');
+  });
+
+  await test('formatTokenCount: K suffix for >= 1K', async () => {
+    assert.strictEqual(formatTokenCount(12_400), '12.4K tokens');
+  });
+
+  await test('formatTokenCount: raw number for < 1K', async () => {
+    assert.strictEqual(formatTokenCount(500), '500 tokens');
+  });
+
+  await test('formatTokenCount: zero', async () => {
+    assert.strictEqual(formatTokenCount(0), '0 tokens');
+  });
+
+  // ===== formatRefreshSummary =====
+
+  await test('formatRefreshSummary: empty results returns no-providers message', async () => {
+    const s = formatRefreshSummary([]);
+    assert.ok(s.includes('no providers'), `expected "no providers" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: not-found includes label and "not found"', async () => {
+    const s = formatRefreshSummary([{ providerId: 'claude', status: 'not-found' }]);
+    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
+    assert.ok(s.includes('not found'), `expected "not found" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: ok includes aggregate data', async () => {
+    const s = formatRefreshSummary([{
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: 3,
+      totalAssistantMessages: 5,
+      totalTokens: 15000,
+    }]);
+    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
+    assert.ok(s.includes('5'), `expected message count "5" in "${s}"`);
+    assert.ok(s.includes('K tokens'), `expected "K tokens" in "${s}"`);
+    assert.ok(!s.includes('.jsonl'), `should not include file extensions in "${s}"`);
+    assert.ok(!s.includes('\\'), `should not include backslashes in "${s}"`);
+    assert.ok(!s.includes('/'), `should not include slashes in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: ok with 1 file omits file count', async () => {
+    const s = formatRefreshSummary([{ providerId: 'claude', status: 'ok', filesFound: 1, totalAssistantMessages: 1, totalTokens: 200 }]);
+    assert.ok(!s.includes('file'), `should not include file count in "${s}"`);
+    assert.ok(!s.includes('files'), `should not include files in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: no-data includes label and "no local usage"', async () => {
+    const s = formatRefreshSummary([{ providerId: 'codex', status: 'no-data', filesFound: 0 }]);
+    assert.ok(s.includes('Codex'), `expected "Codex" in "${s}"`);
+    assert.ok(s.includes('no local usage'), `expected "no local usage" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: error includes label and "read error"', async () => {
+    const s = formatRefreshSummary([{ providerId: 'claude', status: 'error' }]);
+    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
+    assert.ok(s.includes('read error'), `expected "read error" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: mixed states joined with " | "', async () => {
+    const s = formatRefreshSummary([
+      { providerId: 'claude', status: 'ok', filesFound: 3 },
+      { providerId: 'codex', status: 'not-found' },
+    ]);
+    assert.ok(s.includes(' | '), `expected " | " separator in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: parse errors shown in summary', async () => {
+    const s = formatRefreshSummary([{
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: 2,
+      totalAssistantMessages: 1,
+      totalTokens: 500,
+      parseErrors: 3,
+    }]);
+    assert.ok(s.includes('3 parse errors'), `expected "3 parse errors" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: single parse error uses singular', async () => {
+    const s = formatRefreshSummary([{
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: 1,
+      totalAssistantMessages: 1,
+      totalTokens: 200,
+      parseErrors: 1,
+    }]);
+    assert.ok(s.includes('1 parse error'), `expected "1 parse error" in "${s}"`);
+    assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: large token counts use M suffix', async () => {
+    const s = formatRefreshSummary([{
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: 2,
+      totalAssistantMessages: 10,
+      totalTokens: 2500000,
+    }]);
+    assert.ok(s.includes('2.5M'), `expected "2.5M" in "${s}"`);
+  });
+
+  await test('formatRefreshSummary: small token counts show raw number', async () => {
+    const s = formatRefreshSummary([{
+      providerId: 'claude',
+      status: 'ok',
+      filesFound: 1,
+      totalAssistantMessages: 1,
+      totalTokens: 500,
+    }]);
+    assert.ok(s.includes('500'), `expected "500" in "${s}"`);
+    assert.ok(s.includes('tokens'), `expected "tokens" in "${s}"`);
+  });
+
+  // ===== ClaudeLocalReader integration =====
 
   await test('ClaudeLocalReader: returns not-found for absent path', async () => {
     const reader = new ClaudeLocalReader(ABSENT);
@@ -63,8 +426,7 @@ async function main() {
     assert.strictEqual(reader.providerId, 'claude');
   });
 
-  // --- Claude parser: valid fixture ---
-
+  // Claude parser: valid fixture
   const claudeValid = path.join(FIXTURE_DIR, 'claude-valid');
   await createClaudeFixture(claudeValid, [
     {
@@ -106,8 +468,7 @@ async function main() {
     assert.strictEqual(result.totalTokens, 3450);
   });
 
-  // --- Claude parser: malformed lines ---
-
+  // Claude parser: malformed lines
   const claudeMalformed = path.join(FIXTURE_DIR, 'claude-malformed');
   await createClaudeFixture(claudeMalformed, [
     {
@@ -136,8 +497,7 @@ async function main() {
     assert.ok(result.parseErrors >= 2, `expected parseErrors >= 2, got ${result.parseErrors}`);
   });
 
-  // --- Claude parser: no assistant records ---
-
+  // Claude parser: no assistant records
   const claudeNoMatch = path.join(FIXTURE_DIR, 'claude-no-match');
   await createClaudeFixture(claudeNoMatch, [
     { type: 'human', timestamp: Date.now(), message: { content: 'hello' } },
@@ -151,7 +511,7 @@ async function main() {
     assert.strictEqual(result.recordsMatched, 0);
   });
 
-  // --- CodexLocalReader basics ---
+  // ===== CodexLocalReader integration =====
 
   await test('CodexLocalReader: returns not-found for absent path', async () => {
     const reader = new CodexLocalReader(ABSENT);
@@ -165,8 +525,7 @@ async function main() {
     assert.strictEqual(reader.providerId, 'codex');
   });
 
-  // --- Codex parser: valid fixture ---
-
+  // Codex parser: valid fixture
   const codexValid = path.join(FIXTURE_DIR, 'codex-valid');
   await createCodexFixture(codexValid, [
     {
@@ -207,8 +566,7 @@ async function main() {
     assert.strictEqual(result.totalOutputTokens, 2100);
   });
 
-  // --- Codex parser: malformed lines ---
-
+  // Codex parser: malformed lines
   const codexMalformed = path.join(FIXTURE_DIR, 'codex-malformed');
   await createCodexFixture(codexMalformed, [
     {
@@ -236,8 +594,7 @@ async function main() {
     assert.ok(result.parseErrors >= 1, `expected parseErrors >= 1, got ${result.parseErrors}`);
   });
 
-  // --- Codex parser: no usage records ---
-
+  // Codex parser: no usage records
   const codexNoMatch = path.join(FIXTURE_DIR, 'codex-no-match');
   await createCodexFixture(codexNoMatch, [
     { type: 'session_meta', timestamp: Date.now(), payload: { id: 'test-session' } },
@@ -251,7 +608,7 @@ async function main() {
     assert.strictEqual(result.recordsMatched, 0);
   });
 
-  // --- runEnabledReaders ---
+  // ===== runEnabledReaders =====
 
   await test('runEnabledReaders: empty enabledProviders returns empty array', async () => {
     const readers = [new ClaudeLocalReader(ABSENT), new CodexLocalReader(ABSENT)];
@@ -278,96 +635,6 @@ async function main() {
     assert.strictEqual(results.length, 2);
     const ids = results.map(r => r.providerId).sort();
     assert.deepStrictEqual(ids, ['claude', 'codex']);
-  });
-
-  // --- formatRefreshSummary with aggregate ---
-
-  await test('formatRefreshSummary: empty results returns no-providers message', async () => {
-    const s = formatRefreshSummary([]);
-    assert.ok(s.includes('no providers'), `expected "no providers" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: not-found includes label and "not found"', async () => {
-    const s = formatRefreshSummary([{ providerId: 'claude', status: 'not-found' }]);
-    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
-    assert.ok(s.includes('not found'), `expected "not found" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: ok includes aggregate data', async () => {
-    const s = formatRefreshSummary([{
-      providerId: 'claude',
-      status: 'ok',
-      filesFound: 3,
-      totalAssistantMessages: 5,
-      totalTokens: 15000,
-    }]);
-    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
-    assert.ok(s.includes('3'), `expected file count "3" in "${s}"`);
-    assert.ok(s.includes('5'), `expected message count "5" in "${s}"`);
-    assert.ok(s.includes('K tokens'), `expected "K tokens" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: ok with 1 file uses singular', async () => {
-    const s = formatRefreshSummary([{ providerId: 'claude', status: 'ok', filesFound: 1 }]);
-    assert.ok(s.includes('1 file'), `expected singular "1 file" in "${s}"`);
-    assert.ok(!s.includes('1 files'), `expected no plural "1 files" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: no-data includes label and "no session files"', async () => {
-    const s = formatRefreshSummary([{ providerId: 'codex', status: 'no-data', filesFound: 0 }]);
-    assert.ok(s.includes('Codex'), `expected "Codex" in "${s}"`);
-    assert.ok(s.includes('no session files'), `expected "no session files" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: error includes label and "read error"', async () => {
-    const s = formatRefreshSummary([{ providerId: 'claude', status: 'error' }]);
-    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
-    assert.ok(s.includes('read error'), `expected "read error" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: mixed states joined with " | "', async () => {
-    const s = formatRefreshSummary([
-      { providerId: 'claude', status: 'ok', filesFound: 3 },
-      { providerId: 'codex', status: 'not-found' },
-    ]);
-    assert.ok(s.includes(' | '), `expected " | " separator in "${s}"`);
-  });
-
-  // --- formatStatusBarText with loaded status ---
-
-  await test('formatStatusBarText: loaded status shows token count', async () => {
-    const s = formatStatusBarText([
-      { providerId: 'claude', status: 'loaded', totalTokens: 25000 },
-      { providerId: 'codex', status: 'no-data' },
-    ]);
-    assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
-    assert.ok(s.includes('25.0K'), `expected "25.0K" in "${s}"`);
-    assert.ok(s.includes('Codex'), `expected "Codex" in "${s}"`);
-  });
-
-  // --- Token count formatting thresholds ---
-
-  await test('formatRefreshSummary: large token counts use M suffix', async () => {
-    const s = formatRefreshSummary([{
-      providerId: 'claude',
-      status: 'ok',
-      filesFound: 2,
-      totalAssistantMessages: 10,
-      totalTokens: 2500000,
-    }]);
-    assert.ok(s.includes('2.5M'), `expected "2.5M" in "${s}"`);
-  });
-
-  await test('formatRefreshSummary: small token counts show raw number', async () => {
-    const s = formatRefreshSummary([{
-      providerId: 'claude',
-      status: 'ok',
-      filesFound: 1,
-      totalAssistantMessages: 1,
-      totalTokens: 500,
-    }]);
-    assert.ok(s.includes('500'), `expected "500" in "${s}"`);
-    assert.ok(s.includes('tokens'), `expected "tokens" in "${s}"`);
   });
 
   console.log('');

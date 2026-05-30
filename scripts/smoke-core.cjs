@@ -89,62 +89,205 @@ test('CONFIG_DEFAULTS.refreshIntervalSeconds default', () => {
 });
 
 // --- formatQuota ---
-const { formatProviderText, formatStatusBarText } = require(path.join(OUT, 'core/formatQuota'));
+const { formatStatusBarText, formatRefreshSummary, formatTokenCount } = require(path.join(OUT, 'core/formatQuota'));
+const { formatTooltip } = require(path.join(OUT, 'core/statusTooltip'));
+const { createInitialStatus, applyRefreshResults } = require(path.join(OUT, 'core/statusModel'));
 
-test('formatProviderText: no-data shows label and dash', () => {
-  const t = formatProviderText({ providerId: 'claude', status: 'no-data' });
+// === Status bar text: all no-data ===
+
+test('formatStatusBarText: all disabled returns no local usage', () => {
+  const status = createInitialStatus([]);
+  const t = formatStatusBarText(status);
+  assert.strictEqual(t, 'PromptFuel: no local usage');
+});
+
+test('formatStatusBarText: all no-data returns no local usage', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const t = formatStatusBarText(status);
+  assert.strictEqual(t, 'PromptFuel: no local usage');
+});
+
+// === Status bar text: loaded states ===
+
+test('formatStatusBarText: loaded state includes PromptFuel prefix', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
+});
+
+test('formatStatusBarText: loaded includes Claude label and compact tokens', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const t = formatStatusBarText(status);
   assert.ok(t.includes('Claude'), `expected "Claude" in "${t}"`);
-  assert.ok(t.includes('—'), `expected "—" in "${t}"`);
+  assert.ok(t.includes('5.0K'), `expected "5.0K" in "${t}"`);
 });
 
-test('formatProviderText: disabled returns empty string', () => {
-  const t = formatProviderText({ providerId: 'claude', status: 'disabled' });
-  assert.strictEqual(t, '');
+test('formatStatusBarText: error/unknown returns refresh failed', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['codex']),
+    [{ providerId: 'codex', status: 'error' }],
+  );
+  const t = formatStatusBarText(status);
+  assert.strictEqual(t, 'PromptFuel: refresh failed');
 });
 
-test('formatProviderText: unknown shows label and ellipsis', () => {
-  const t = formatProviderText({ providerId: 'codex', status: 'unknown' });
-  assert.ok(t.includes('Codex'), `expected "Codex" in "${t}"`);
-  assert.ok(t.includes('…'), `expected "…" in "${t}"`);
-});
-
-test('formatStatusBarText: all disabled returns PromptFuel', () => {
-  const t = formatStatusBarText([
-    { providerId: 'claude', status: 'disabled' },
-    { providerId: 'codex', status: 'disabled' },
-  ]);
-  assert.strictEqual(t, 'PromptFuel');
-});
-
-test('formatStatusBarText: empty array returns PromptFuel', () => {
-  const t = formatStatusBarText([]);
-  assert.strictEqual(t, 'PromptFuel');
-});
-
-test('formatStatusBarText: no-data states include fuel emoji prefix', () => {
-  const t = formatStatusBarText([
-    { providerId: 'claude', status: 'no-data' },
-    { providerId: 'codex', status: 'no-data' },
-  ]);
-  assert.ok(t.startsWith('⛽'), `expected "⛽" prefix in "${t}"`);
-});
-
-test('formatStatusBarText: no-data includes Claude', () => {
-  const t = formatStatusBarText([{ providerId: 'claude', status: 'no-data' }]);
-  assert.ok(t.includes('Claude'), `expected "Claude" in "${t}"`);
-});
-
-test('formatStatusBarText: unknown includes Codex', () => {
-  const t = formatStatusBarText([{ providerId: 'codex', status: 'unknown' }]);
-  assert.ok(t.includes('Codex'), `expected "Codex" in "${t}"`);
-});
-
-test('formatStatusBarText: mixed enabled providers joined with pipe', () => {
-  const t = formatStatusBarText([
-    { providerId: 'claude', status: 'no-data' },
-    { providerId: 'codex', status: 'no-data' },
-  ]);
+test('formatStatusBarText: mixed providers joined with pipe', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+      { providerId: 'codex', status: 'not-found' },
+    ],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
   assert.ok(t.includes(' | '), `expected " | " separator in "${t}"`);
+});
+
+// === Status bar text: both loaded ===
+
+test('formatStatusBarText: both loaded shows compact summary', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
+      { providerId: 'codex', status: 'ok', totalTokens: 3100, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.includes('Claude'), `expected "Claude" in "${t}"`);
+  assert.ok(t.includes('12.4K'), `expected "12.4K" in "${t}"`);
+  assert.ok(t.includes('Codex'), `expected "Codex" in "${t}"`);
+  assert.ok(t.includes('3.1K'), `expected "3.1K" in "${t}"`);
+});
+
+// === Status bar text: large token formatting ===
+
+test('formatStatusBarText: large token counts use M suffix', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 2500000, totalAssistantMessages: 10, filesFound: 5 }],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.includes('2.5M'), `expected "2.5M" in "${t}"`);
+});
+
+test('formatStatusBarText: small token counts show raw number', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 500, totalAssistantMessages: 1, filesFound: 1 }],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.includes('500'), `expected "500" in "${t}"`);
+});
+
+// === Disabled provider omitted ===
+
+test('formatStatusBarText: disabled provider omitted from bar', () => {
+  const status = createInitialStatus(['claude']);
+  status.providerStates[0].status = 'disabled';
+  const t = formatStatusBarText(status);
+  assert.ok(!t.includes('Claude'), `disabled provider should be omitted from "${t}"`);
+});
+
+// === Tooltip: parse errors summarized safely ===
+
+test('formatTooltip: loaded state with parse errors shows count', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1, parseErrors: 3 }],
+  );
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Parse errors: 3'), `expected "Parse errors: 3" in tooltip`);
+});
+
+test('formatTooltip: no parse errors when clean', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const tooltip = formatTooltip(status);
+  assert.ok(!tooltip.includes('Parse errors'), `should not show parse errors when 0`);
+});
+
+test('formatTooltip: total tokens and messages shown for loaded providers', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 10000, totalAssistantMessages: 3, filesFound: 2 },
+      { providerId: 'codex', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Total:'), `expected "Total:" in tooltip`);
+  assert.ok(tooltip.includes('15.0K'), `expected "15.0K" total in tooltip`);
+  assert.ok(tooltip.includes('5 messages'), `expected "5 messages" total in tooltip`);
+});
+
+// === formatTokenCount ===
+
+test('formatTokenCount: M suffix for >= 1M', () => {
+  assert.strictEqual(formatTokenCount(2_500_000), '2.5M tokens');
+});
+
+test('formatTokenCount: K suffix for >= 1K', () => {
+  assert.strictEqual(formatTokenCount(12_400), '12.4K tokens');
+});
+
+test('formatTokenCount: raw number for < 1K', () => {
+  assert.strictEqual(formatTokenCount(500), '500 tokens');
+});
+
+// === formatRefreshSummary ===
+
+test('formatRefreshSummary: ok includes messages and tokens, no file paths', () => {
+  const s = formatRefreshSummary([{
+    providerId: 'claude',
+    status: 'ok',
+    filesFound: 3,
+    totalAssistantMessages: 5,
+    totalTokens: 15000,
+  }]);
+  assert.ok(s.includes('Claude'), `expected "Claude" in "${s}"`);
+  assert.ok(s.includes('5'), `expected message count "5" in "${s}"`);
+  assert.ok(s.includes('K tokens'), `expected "K tokens" in "${s}"`);
+  assert.ok(!s.includes('.jsonl'), `should not include file extensions in "${s}"`);
+  assert.ok(!s.includes('\\'), `should not include backslashes in "${s}"`);
+  assert.ok(!s.includes('/'), `should not include slashes in "${s}"`);
+});
+
+test('formatRefreshSummary: no-data shows no local usage', () => {
+  const s = formatRefreshSummary([{ providerId: 'codex', status: 'no-data' }]);
+  assert.ok(s.includes('no local usage'), `expected "no local usage" in "${s}"`);
+});
+
+test('formatRefreshSummary: parse errors shown in summary', () => {
+  const s = formatRefreshSummary([{
+    providerId: 'claude',
+    status: 'ok',
+    totalAssistantMessages: 1,
+    totalTokens: 500,
+    parseErrors: 3,
+  }]);
+  assert.ok(s.includes('3 parse errors'), `expected "3 parse errors" in "${s}"`);
+});
+
+test('formatRefreshSummary: single parse error uses singular', () => {
+  const s = formatRefreshSummary([{
+    providerId: 'claude',
+    status: 'ok',
+    totalAssistantMessages: 1,
+    totalTokens: 200,
+    parseErrors: 1,
+  }]);
+  assert.ok(s.includes('1 parse error'), `expected "1 parse error" in "${s}"`);
+  assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
 });
 
 // Summary
