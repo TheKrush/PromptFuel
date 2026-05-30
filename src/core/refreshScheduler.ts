@@ -9,6 +9,7 @@ import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
 import { createStubReader } from '../providers/liveQuotaReader';
 import { runLiveQuotaReaders } from '../providers/readLiveQuota';
+import { createAuthenticatedReader } from '../providers/authenticatedQuota';
 
 export class RefreshScheduler {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -82,7 +83,15 @@ export class RefreshScheduler {
 
     const cfg = getConfig();
     const localReaders = [new ClaudeLocalReader(), new CodexLocalReader()];
-    const liveReaders = [createStubReader('claude'), createStubReader('codex')];
+
+    let liveReaders;
+    if (cfg.liveQuotaEnabled) {
+      liveReaders = await Promise.all(
+        cfg.enabledProviders.map(id => createAuthenticatedReader(id)),
+      );
+    } else {
+      liveReaders = cfg.enabledProviders.map(id => createStubReader(id));
+    }
 
     let localResults: ReadResult[];
     let liveResults: LiveQuotaStatus[];

@@ -6,10 +6,12 @@ export interface PromptFuelConfig {
   enabledProviders: ProviderId[];
   displayMode: DisplayMode;
   refreshIntervalMinutes: number;
+  liveQuotaEnabled: boolean;
 }
 
 export const CONFIG_DEFAULTS: PromptFuelConfig = {
   enabledProviders: ['claude', 'codex'],
   displayMode: 'compact',
   refreshIntervalMinutes: 5,
+  liveQuotaEnabled: false,
 };

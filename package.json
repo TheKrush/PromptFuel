@@ -96,6 +96,11 @@
           "minimum": 0,
           "maximum": 1440,
           "description": "Auto-refresh interval in minutes. Set to 0 to disable auto-refresh."
+        },
+        "promptFuel.liveQuotaEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Fetch live 5h/7d quota from provider APIs. Requires existing Claude/Codex OAuth credentials."
         }
       }
     }

@@ -25,5 +25,13 @@ export function getConfig(): PromptFuelConfig {
     ? Math.max(0, Math.min(1440, rawInterval))
     : CONFIG_DEFAULTS.refreshIntervalMinutes;
 
-  return { enabledProviders, displayMode, refreshIntervalMinutes };
+  const rawLiveQuota = cfg.get<boolean>(
+    'liveQuotaEnabled',
+    CONFIG_DEFAULTS.liveQuotaEnabled
+  );
+  const liveQuotaEnabled = typeof rawLiveQuota === 'boolean'
+    ? rawLiveQuota
+    : CONFIG_DEFAULTS.liveQuotaEnabled;
+
+  return { enabledProviders, displayMode, refreshIntervalMinutes, liveQuotaEnabled };
 }

@@ -96,7 +96,7 @@ test('CONFIG_DEFAULTS.refreshIntervalMinutes is number', () => {
 
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
-  assert.deepStrictEqual(keys, ['displayMode', 'enabledProviders', 'refreshIntervalMinutes']);
+  assert.deepStrictEqual(keys, ['displayMode', 'enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes']);
 });
 
 // --- formatQuota ---
