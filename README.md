@@ -2,14 +2,17 @@
 
 Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates — all locally.
 
-## MVP Scope
+## Status
 
-- Status bar display of Claude and Codex usage
-- Usage dashboard webview (today cards, history chart, model distribution)
-- Manual refresh command
-- Open data folder for local inspection
-- API-equivalent cost estimates (static, local-only)
-- Compact and countdown display modes
+**0.1.x is an initial skeleton.** Marketplace identity and extension scaffolding are reserved. Provider usage import is not yet implemented — the commands and settings are registered but show placeholder output until that lands.
+
+## Planned MVP Features
+
+- **Status bar fuel display** — remaining Claude and Codex quota at a glance in the VS Code status bar
+- **Usage dashboard** — full view of today's usage, history, and model distribution
+- **Quota and reset window visibility** — know when your quota resets without leaving your editor
+- **API-equivalent estimates** — local cost estimates for your usage (static, no data sent externally)
+- **Local-first privacy** — all data stays on your machine; no prompts, responses, or tokens are ever transmitted
 
 ## Privacy & Data
 
@@ -23,7 +26,7 @@ Track AI coding assistant usage, remaining quota, reset windows, and API-equival
 ## Commands
 
 | Command | Title |
-|---|---|
+| --- | --- |
 | `promptFuel.openDashboard` | PromptFuel: Open Usage Dashboard |
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
@@ -31,7 +34,7 @@ Track AI coding assistant usage, remaining quota, reset windows, and API-equival
 ## Settings
 
 | Setting | Description | Default |
-|---|---|---|
+| --- | --- | --- |
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
 | `promptFuel.displayMode` | Status bar display mode | `"compact"` |
 

@@ -54,12 +54,30 @@ if (pkg.icon) {
   fail('package.json is missing "icon" field');
 }
 
+// Marketplace metadata checks
+if (!pkg.repository?.url) fail('package.json is missing "repository.url"');
+if (!pkg.bugs?.url) fail('package.json is missing "bugs.url"');
+if (!pkg.homepage) fail('package.json is missing "homepage"');
+if (!pkg.galleryBanner?.color) fail('package.json is missing "galleryBanner.color"');
+if (pkg.qna !== false) fail(`package.json "qna" should be false, got ${JSON.stringify(pkg.qna)}`);
+if (pkg.pricing !== 'Free') fail(`package.json "pricing" should be "Free", got ${JSON.stringify(pkg.pricing)}`);
+
+const requiredCategories = ['Machine Learning', 'Visualization', 'Other'];
+for (const cat of requiredCategories) {
+  if (!(pkg.categories || []).includes(cat)) {
+    fail(`package.json "categories" is missing "${cat}"`);
+  }
+}
+
 if (exitCode === 0) {
   console.log('PASS: Extension manifest is valid.');
   console.log(`  name:        ${pkg.name}`);
   console.log(`  displayName: ${pkg.displayName}`);
   console.log(`  publisher:   ${pkg.publisher}`);
   console.log(`  icon:        ${pkg.icon}`);
+  console.log(`  pricing:     ${pkg.pricing}`);
+  console.log(`  qna:         ${pkg.qna}`);
+  console.log(`  categories:  ${(pkg.categories || []).join(', ')}`);
   console.log(`  commands:    ${commands.length} registered`);
   console.log(`  settings:    ${Object.keys(properties).length} configured`);
 }

@@ -4,8 +4,11 @@
   "description": "Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.",
   "version": "0.1.1",
   "publisher": "thekrush",
+  "author": "TheKrush",
   "license": "MIT",
   "icon": "assets/icon.png",
+  "qna": false,
+  "pricing": "Free",
   "repository": {
     "type": "git",
     "url": "https://github.com/TheKrush/PromptFuel.git"
@@ -15,21 +18,30 @@
   },
   "homepage": "https://github.com/TheKrush/PromptFuel#readme",
   "keywords": [
+    "ai",
+    "assistant",
+    "coding-assistant",
+    "quota",
+    "usage",
+    "prompt",
+    "tokens",
+    "status-bar",
+    "dashboard",
     "claude",
     "codex",
-    "ai",
-    "usage",
-    "quota",
-    "prompt"
+    "reset-windows",
+    "api-estimates"
   ],
   "galleryBanner": {
-    "color": "#1a1a1a",
+    "color": "#0D1117",
     "theme": "dark"
   },
   "engines": {
     "vscode": "^1.94.0"
   },
   "categories": [
+    "Machine Learning",
+    "Visualization",
     "Other"
   ],
   "activationEvents": [
