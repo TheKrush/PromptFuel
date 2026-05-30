@@ -1,9 +1,9 @@
+*.log
+*.tsbuildinfo
+*.vsix
+.DS_Store
+.vscode-test
+dist
 node_modules
 out
-dist
-*.vsix
-.vscode-test
-*.tsbuildinfo
-.DS_Store
 Thumbs.db
-*.log
