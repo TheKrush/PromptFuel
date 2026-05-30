@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
-import { getConfig, PromptFuelConfig } from '../config';
-import { PromptFuelStatus, createInitialStatus, applyRefreshResults } from './statusModel';
+import { getConfig } from '../config';
+import { PromptFuelStatus, createInitialStatus, applyRefreshResults, applyLiveQuotaResults } from './statusModel';
 import { formatStatusBarText, formatTooltip } from './formatQuota';
+import { ReadResult } from './providerReader';
+import { LiveQuotaStatus } from './liveQuotaTypes';
 import { ClaudeLocalReader } from '../providers/claudeLocal';
 import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
+import { createStubReader } from '../providers/liveQuotaReader';
+import { runLiveQuotaReaders } from '../providers/readLiveQuota';
 
 export class RefreshScheduler {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,20 +81,28 @@ export class RefreshScheduler {
     this.running = true;
 
     const cfg = getConfig();
-    const readers = [new ClaudeLocalReader(), new CodexLocalReader()];
+    const localReaders = [new ClaudeLocalReader(), new CodexLocalReader()];
+    const liveReaders = [createStubReader('claude'), createStubReader('codex')];
 
-    let results;
+    let localResults: ReadResult[];
+    let liveResults: LiveQuotaStatus[];
+
     try {
-      results = await runEnabledReaders(readers, cfg.enabledProviders);
+      [localResults, liveResults] = await Promise.all([
+        runEnabledReaders(localReaders, cfg.enabledProviders),
+        runLiveQuotaReaders(liveReaders, cfg.enabledProviders),
+      ]);
     } catch {
-      results = cfg.enabledProviders.map((id) => ({
+      localResults = cfg.enabledProviders.map((id) => ({
         providerId: id,
         status: 'error' as const,
       }));
+      liveResults = [];
     }
 
     try {
-      this.statusState = applyRefreshResults(this.statusState, results);
+      this.statusState = applyRefreshResults(this.statusState, localResults);
+      this.statusState = applyLiveQuotaResults(this.statusState, liveResults);
       this.updateBar();
       this.onRefreshed?.();
     } finally {

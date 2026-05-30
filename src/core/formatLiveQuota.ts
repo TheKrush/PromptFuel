@@ -45,7 +45,7 @@ export function formatCountdownLabel(resetEpochMs: number, nowMs: number = Date.
 // --- Percentage formatting ---
 
 export function formatPercentage(percentage: number | undefined): string | undefined {
-  if (percentage === undefined) {
+  if (percentage === undefined || !Number.isFinite(percentage)) {
     return undefined;
   }
   return `${Math.round(percentage)}%`;
@@ -180,7 +180,7 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
   const lines: string[] = [];
 
   const hasLiveQuota = status.liveQuotaStates.length > 0 &&
-    status.liveQuotaStates.some(s => s.freshness !== 'unavailable');
+    status.liveQuotaStates.some(s => s.freshness !== 'unavailable' && s.freshness !== 'error');
 
   lines.push('PromptFuel');
 
@@ -193,8 +193,8 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
   lines.push('Snapshots not included');
   lines.push('');
 
-  // Live quota sections
-  if (hasLiveQuota) {
+  // Live quota sections (render even error states for sanitized label)
+  if (status.liveQuotaStates.length > 0) {
     for (const liveState of status.liveQuotaStates) {
       lines.push(formatLiveQuotaProviderSection(liveState));
     }
