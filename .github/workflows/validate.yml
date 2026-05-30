@@ -11,6 +11,7 @@ on:
       - 'src/**'
       - 'scripts/**'
       - '.github/workflows/**'
+      - '.github/scripts/**'
       - '.vscodeignore'
   pull_request:
     branches: [master]
@@ -21,6 +22,7 @@ on:
       - 'src/**'
       - 'scripts/**'
       - '.github/workflows/**'
+      - '.github/scripts/**'
       - '.vscodeignore'
 
 permissions:
@@ -33,16 +35,31 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 2
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - run: npm ci
+      - id: paths
+        run: |
+          CHANGED="$(git diff --name-only HEAD~1 2>/dev/null || true)"
+          CHANGED="$(echo "$CHANGED" | tr '\n' ' ')"
+          echo "changed_files=$CHANGED" >> "$GITHUB_OUTPUT"
 
-      - run: npm run compile
+      - id: controller
+        env:
+          CHANGED_FILES: ${{ steps.paths.outputs.changed_files }}
+        run: node .github/scripts/workflow-controller.cjs
 
-      - run: npm run validate:manifest
+      - if: steps.controller.outputs.run_compile == 'true' || steps.controller.outputs.run_package == 'true'
+        run: npm ci
 
-      - run: npm run package
+      - if: steps.controller.outputs.run_compile == 'true'
+        run: npm run compile
+
+      - if: steps.controller.outputs.run_manifest == 'true'
+        run: npm run validate:manifest
+
+      - if: steps.controller.outputs.run_package == 'true'
+        run: npm run package
