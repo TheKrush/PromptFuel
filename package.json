@@ -108,6 +108,7 @@
     "validate:install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1",
     "validate:manifest": "node scripts/validate-extension-manifest.cjs",
     "smoke:core": "node scripts/smoke-core.cjs",
+    "smoke:providers": "node scripts/smoke-providers.cjs",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
     "test": "node ./out/test/runTest.js"
   },
