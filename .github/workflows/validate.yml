@@ -1,4 +1,4 @@
-name: 🧪 PromptFuel Validate
+name: 🧪 Validate
 
 on:
   workflow_dispatch:
