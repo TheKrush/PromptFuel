@@ -342,6 +342,151 @@ test('formatRefreshSummary: single parse error uses singular', () => {
   assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
 });
 
+// === Live quota: quotaWindow ===
+
+const {
+  QUOTA_WINDOW_DURATIONS_MS,
+  getWindowDurationMs,
+  computeWindowResetEpochMs,
+  isWindowNearReset,
+} = require(path.join(OUT, 'core/quotaWindow'));
+
+test('QUOTA_WINDOW_DURATIONS_MS: 5h is 5 hours', () => {
+  assert.strictEqual(QUOTA_WINDOW_DURATIONS_MS['5h'], 5 * 60 * 60 * 1000);
+});
+
+test('QUOTA_WINDOW_DURATIONS_MS: 7d is 7 days', () => {
+  assert.strictEqual(QUOTA_WINDOW_DURATIONS_MS['7d'], 7 * 24 * 60 * 60 * 1000);
+});
+
+test('getWindowDurationMs: returns correct duration for 5h', () => {
+  assert.strictEqual(getWindowDurationMs('5h'), 5 * 60 * 60 * 1000);
+});
+
+test('getWindowDurationMs: returns correct duration for 7d', () => {
+  assert.strictEqual(getWindowDurationMs('7d'), 7 * 24 * 60 * 60 * 1000);
+});
+
+test('computeWindowResetEpochMs: returns future timestamp', () => {
+  const now = Date.now();
+  const reset = computeWindowResetEpochMs('5h', now);
+  assert.ok(reset > now, 'reset should be in the future');
+});
+
+test('computeWindowResetEpochMs: divides evenly by window duration', () => {
+  const now = Date.now();
+  const reset = computeWindowResetEpochMs('5h', now);
+  assert.strictEqual(reset % QUOTA_WINDOW_DURATIONS_MS['5h'], 0, 'reset should divide evenly');
+});
+
+test('isWindowNearReset: true when within threshold', () => {
+  const reset = Date.now() + 100000;
+  assert.strictEqual(isWindowNearReset('5h', reset, Date.now(), 5 * 60 * 1000), true);
+});
+
+test('isWindowNearReset: false when far from reset', () => {
+  const reset = Date.now() + 10 * 60 * 60 * 1000;
+  assert.strictEqual(isWindowNearReset('5h', reset, Date.now(), 5 * 60 * 1000), false);
+});
+
+// === Live quota: liveQuotaReader stub ===
+
+const { createStubReader } = require(path.join(OUT, 'providers/liveQuotaReader'));
+
+test('createStubReader: returns reader with correct providerId', () => {
+  const reader = createStubReader('claude');
+  assert.strictEqual(reader.providerId, 'claude');
+});
+
+test('createStubReader: read returns unavailable freshness', async () => {
+  const reader = createStubReader('codex');
+  const result = await reader.read();
+  assert.strictEqual(result.providerId, 'codex');
+  assert.strictEqual(result.freshness, 'unavailable');
+  assert.strictEqual(result.windows.length, 0);
+});
+
+// === Live quota: statusModel integration ===
+
+const {
+  applyLiveQuotaResults,
+  getLiveQuotaState,
+} = require(path.join(OUT, 'core/statusModel'));
+
+const syntheticLiveQuota = {
+  providerId: 'claude',
+  windows: [
+    {
+      windowId: '5h',
+      usedPercentage: 45,
+      remainingPercentage: 55,
+      resetsAtEpochMs: Date.now() + 5 * 60 * 60 * 1000,
+      sourceKind: 'localSession',
+      sourceUpdatedEpochMs: Date.now(),
+      sourceAuthorityRank: 200,
+    },
+    {
+      windowId: '7d',
+      usedPercentage: 62,
+      remainingPercentage: 38,
+      resetsAtEpochMs: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      sourceKind: 'localSession',
+      sourceUpdatedEpochMs: Date.now(),
+      sourceAuthorityRank: 200,
+    },
+  ],
+  freshness: 'live',
+  lastUpdatedEpochMs: Date.now(),
+};
+
+test('applyLiveQuotaResults: applies synthetic live quota to status', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  assert.strictEqual(updated.liveQuotaStates.length, 1);
+  assert.strictEqual(updated.liveQuotaStates[0].providerId, 'claude');
+  assert.strictEqual(updated.liveQuotaStates[0].freshness, 'live');
+  assert.strictEqual(updated.liveQuotaStates[0].windows.length, 2);
+});
+
+test('applyLiveQuotaResults: filters unknown providerId', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    { ...syntheticLiveQuota, providerId: 'openai' },
+  ]);
+  assert.strictEqual(updated.liveQuotaStates.length, 0);
+});
+
+test('getLiveQuotaState: returns state for matching provider', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const state = getLiveQuotaState(updated, 'claude');
+  assert.ok(state !== undefined, 'expected live quota state for claude');
+  assert.strictEqual(state.freshness, 'live');
+});
+
+test('getLiveQuotaState: returns undefined for missing provider', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const state = getLiveQuotaState(updated, 'codex');
+  assert.strictEqual(state, undefined);
+});
+
+test('live quota window: 5h has correct shape', () => {
+  const w5h = syntheticLiveQuota.windows.find(w => w.windowId === '5h');
+  assert.ok(w5h !== undefined, 'expected 5h window');
+  assert.ok(typeof w5h.usedPercentage === 'number', 'expected usedPercentage');
+  assert.ok(typeof w5h.remainingPercentage === 'number', 'expected remainingPercentage');
+  assert.ok(typeof w5h.resetsAtEpochMs === 'number', 'expected resetsAtEpochMs');
+  assert.ok(typeof w5h.sourceAuthorityRank === 'number', 'expected sourceAuthorityRank');
+});
+
+test('live quota window: 7d has correct shape', () => {
+  const w7d = syntheticLiveQuota.windows.find(w => w.windowId === '7d');
+  assert.ok(w7d !== undefined, 'expected 7d window');
+  assert.ok(typeof w7d.usedPercentage === 'number', 'expected usedPercentage');
+  assert.ok(typeof w7d.remainingPercentage === 'number', 'expected remainingPercentage');
+});
+
 // === Compiled artifacts ===
 
 const fs = require('fs');

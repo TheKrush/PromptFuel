@@ -1,8 +1,10 @@
 import { ProviderQuotaState, ProviderQuotaStatus } from './quotaTypes';
 import { ReadResult } from './providerReader';
+import type { LiveQuotaStatus } from './liveQuotaTypes';
 
 export interface PromptFuelStatus {
   providerStates: ProviderQuotaState[];
+  liveQuotaStates: LiveQuotaStatus[];
   lastRefreshedMs: number | undefined;
   enabledProviderIds: string[];
 }
@@ -15,6 +17,7 @@ export function createInitialStatus(
       providerId: id,
       status: 'no-data' as const,
     })),
+    liveQuotaStates: [],
     lastRefreshedMs: undefined,
     enabledProviderIds: enabledProviderIds.slice(),
   };
@@ -62,6 +65,7 @@ export function applyRefreshResults(
 
   return {
     providerStates: [...stateMap.values()],
+    liveQuotaStates: status.liveQuotaStates.slice(),
     lastRefreshedMs: Date.now(),
     enabledProviderIds: status.enabledProviderIds.slice(),
   };
@@ -80,4 +84,26 @@ export function hasAnyLoaded(status: PromptFuelStatus): boolean {
 
 export function hasAnyError(status: PromptFuelStatus): boolean {
   return status.providerStates.some(s => s.status === 'unknown');
+}
+
+export function applyLiveQuotaResults(
+  status: PromptFuelStatus,
+  results: LiveQuotaStatus[],
+): PromptFuelStatus {
+  const providerIdSet = new Set(status.enabledProviderIds);
+  const filtered = results.filter(r => providerIdSet.has(r.providerId));
+
+  return {
+    providerStates: status.providerStates.slice(),
+    liveQuotaStates: filtered,
+    lastRefreshedMs: Date.now(),
+    enabledProviderIds: status.enabledProviderIds.slice(),
+  };
+}
+
+export function getLiveQuotaState(
+  status: PromptFuelStatus,
+  providerId: string,
+): LiveQuotaStatus | undefined {
+  return status.liveQuotaStates.find(s => s.providerId === providerId);
 }
