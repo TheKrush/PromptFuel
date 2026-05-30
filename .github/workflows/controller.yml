@@ -11,36 +11,11 @@ permissions:
 
 jobs:
   # ----------------------------------------
-  # 🧩 Precheck
-  # ----------------------------------------
-  precheck:
-    name: 🧮 Precheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    continue-on-error: true
-    outputs:
-      over_limit: ${{ steps.assume_ok.outputs.over_limit || 'false' }}
-
-    steps:
-      - name: 🔎 Owner info
-        run: |
-          echo "Repository:  ${{ github.repository }}"
-          echo "Owner:       ${{ github.repository_owner }}"
-          echo "Owner type:  ${{ github.event.repository.owner.type }}"
-
-      - name: ✅ Assume under limit
-        id: assume_ok
-        run: |
-          echo "User-owned repo; skipping org usage checks."
-          echo "over_limit=false" >> "$GITHUB_OUTPUT"
-
-  # ----------------------------------------
   # 🔍 Analyze repo / commit to decide what to run
   # ----------------------------------------
   analyze:
-    name: ${{ format('🔍 Analyze {0}', needs.precheck.outputs.over_limit == 'true' && '(Self-Hosted)' || '(GitHub)') }}
-    needs: precheck
-    runs-on: ${{ needs.precheck.outputs.over_limit == 'true' && 'self-hosted' || 'ubuntu-latest' }}
+    name: 🔍 Analyze
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     outputs:
@@ -156,7 +131,7 @@ jobs:
   # ----------------------------------------
   safety-tag:
     name: 💾 Safety Tag
-    needs: [precheck, analyze]
+    needs: analyze
     uses: ./.github/workflows/create-safety-tag.yml
     with:
       run:   ${{ needs.analyze.outputs.run_safety_tag }}

@@ -6,36 +6,11 @@ on:
 
 jobs:
   # ----------------------------------------
-  # 🧩 Precheck
-  # ----------------------------------------
-  precheck:
-    name: 🧮 Precheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    continue-on-error: true
-    outputs:
-      over_limit: ${{ steps.assume_ok.outputs.over_limit || 'false' }}
-
-    steps:
-      - name: 🔎 Owner info
-        run: |
-          echo "Repository:  ${{ github.repository }}"
-          echo "Owner:       ${{ github.repository_owner }}"
-          echo "Owner type:  ${{ github.event.repository.owner.type }}"
-
-      - name: ✅ Assume under limit
-        id: assume_ok
-        run: |
-          echo "User-owned repo; skipping org usage checks."
-          echo "over_limit=false" >> "$GITHUB_OUTPUT"
-
-  # ----------------------------------------
   # 🏗️ Compile
   # ----------------------------------------
   compile:
-    name: ${{ format('🏗️ Compile {0}', needs.precheck.outputs.over_limit == 'true' && '(Self-Hosted)' || '(GitHub)') }}
-    needs: precheck
-    runs-on: ${{ needs.precheck.outputs.over_limit == 'true' && 'self-hosted' || 'ubuntu-latest' }}
+    name: 🏗️ Compile
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -52,7 +27,3 @@ jobs:
 
       - name: 🏗️ Build
         uses: ./.github/actions/build-node
-
-      - name: 🧹 Cleanup Runner
-        if: always()
-        uses: ./.github/actions/cleanup-runner
