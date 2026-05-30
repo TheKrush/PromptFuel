@@ -37,7 +37,7 @@ code --extensionDevelopmentPath=.
 
 ## How to Contribute
 
-1. **Fork or branch from `main`** — external contributors should fork; collaborators may create a feature branch.
+1. **Fork or branch from `master`** — external contributors should fork; collaborators may create a feature branch.
 2. **Create or link an issue** — reference an existing issue or open a new one outlining what you plan to do.
 3. **Make focused, readable commits** — group related changes, use clear messages, and describe *why* a change was made.
 4. **Add tests where appropriate** — update or add tests if the project has them; include validation steps for scripts or workflows.
