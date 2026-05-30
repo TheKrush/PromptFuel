@@ -1,0 +1,17 @@
+name: 🏗️ Build Node
+description: Install dependencies, compile TypeScript, and validate the extension manifest.
+
+runs:
+  using: "composite"
+  steps:
+    - name: 📦 Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: 🔨 Compile TypeScript
+      shell: bash
+      run: npm run compile
+
+    - name: ✅ Validate manifest
+      shell: bash
+      run: npm run validate:manifest

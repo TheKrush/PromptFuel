@@ -1,0 +1,55 @@
+name: 🛟 Create Safety Tag
+description: Create a non-version "safety" tag as a restore point.
+
+inputs:
+  prefix:
+    description: "Tag prefix (e.g., safety, backup, checkpoint)"
+    default: "safety"
+  label:
+    description: "Short slug describing why this checkpoint exists"
+    default: ""
+  ref:
+    description: "Git ref/sha to tag (default: current HEAD)"
+    default: ""
+
+outputs:
+  tag:
+    description: "The created tag name"
+    value: ${{ steps.tag.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - id: tag
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        PREFIX="${{ inputs.prefix }}"
+        LABEL="${{ inputs.label }}"
+        REF="${{ inputs.ref }}"
+
+        if [[ -z "$REF" ]]; then
+          REF="${GITHUB_SHA}"
+        fi
+
+        STAMP="$(date +'%Y.%m.%d-%H%M%S')"
+
+        SLUG="$LABEL"
+        SLUG="$(echo "$SLUG" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9._-')"
+
+        if [[ -n "$SLUG" ]]; then
+          TAG="${PREFIX}-${STAMP}-${SLUG}"
+        else
+          TAG="${PREFIX}-${STAMP}"
+        fi
+
+        echo "Creating safety tag: $TAG -> $REF"
+
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        git tag -a "$TAG" -m "Safety checkpoint: $LABEL" "$REF"
+        git push origin "$TAG"
+
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"

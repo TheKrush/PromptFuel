@@ -2,107 +2,142 @@ name: 🎛️ Workflow Controller
 
 on:
   push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+    branches: [ '**' ]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   # ----------------------------------------
-  # 🔍 Analyze commit / changes
+  # 🧩 Precheck
+  # ----------------------------------------
+  precheck:
+    name: 🧮 Precheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+    outputs:
+      over_limit: ${{ steps.assume_ok.outputs.over_limit || 'false' }}
+
+    steps:
+      - name: 🔎 Owner info
+        run: |
+          echo "Repository:  ${{ github.repository }}"
+          echo "Owner:       ${{ github.repository_owner }}"
+          echo "Owner type:  ${{ github.event.repository.owner.type }}"
+
+      - name: ✅ Assume under limit
+        id: assume_ok
+        run: |
+          echo "User-owned repo; skipping org usage checks."
+          echo "over_limit=false" >> "$GITHUB_OUTPUT"
+
+  # ----------------------------------------
+  # 🔍 Analyze repo / commit to decide what to run
   # ----------------------------------------
   analyze:
-    name: 🔍 Analyze
-    runs-on: ubuntu-latest
+    name: ${{ format('🔍 Analyze {0}', needs.precheck.outputs.over_limit == 'true' && '(Self-Hosted)' || '(GitHub)') }}
+    needs: precheck
+    runs-on: ${{ needs.precheck.outputs.over_limit == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     outputs:
-      run_compile: ${{ steps.check.outputs.run_compile }}
-      run_package: ${{ steps.check.outputs.run_package }}
+      run_compile:         ${{ steps.check.outputs.run_compile }}
+      run_publish_package: ${{ steps.check.outputs.run_publish_package }}
+      has_compile:         ${{ steps.check.outputs.has_compile }}
+      has_publish_package: ${{ steps.check.outputs.has_publish_package }}
+      run_safety_tag:      ${{ steps.check.outputs.run_safety_tag }}
+      safety_label:        ${{ steps.check.outputs.safety_label }}
 
     steps:
-      - uses: actions/checkout@v6
+      - name: 🧾 Checkout
+        uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
-      - id: check
+      - name: 🔍 Analyze commit message, branch, and file changes
+        id: check
         shell: bash
         run: |
-          # defaults
-          echo "run_compile=false" >> "$GITHUB_OUTPUT"
-          echo "run_package=false" >> "$GITHUB_OUTPUT"
-
-          # pull_request — run compile+manifest, skip package
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "run_compile=true" >> "$GITHUB_OUTPUT"
-            echo "PR event — running compile + manifest."
-            exit 0
-          fi
-
-          # commit message
+          branch="${GITHUB_REF##*/}"
           msg="$(git log -1 --pretty=%B)"
 
+          echo "Branch: $branch"
           echo "Commit message:"
           printf '%s\n' "$msg"
 
-          # [skip-ci]
-          if [[ "$msg" == *"[skip-ci]"* ]]; then
-            echo "Detected [skip-ci]; exiting early."
+          # defaults
+          echo "run_compile=false"          >> $GITHUB_OUTPUT
+          echo "run_publish_package=false"  >> $GITHUB_OUTPUT
+          echo "run_safety_tag=false"       >> $GITHUB_OUTPUT
+          echo "safety_label="              >> $GITHUB_OUTPUT
+
+          if [[ "$msg" == *"[skip ci]"* ]]; then
+            echo "Detected [skip ci]; exiting early."
             exit 0
           fi
 
-          # [full-ci]
-          if [[ "$msg" == *"[full-ci]"* ]]; then
-            echo "run_compile=true" >> "$GITHUB_OUTPUT"
-            echo "run_package=true"  >> "$GITHUB_OUTPUT"
-            echo "Run reason: [full-ci] tag"
-            exit 0
+          # ----------------------------------------
+          # 💾 Safety tag trigger
+          #   [safety]              -> label = branch name
+          #   [safety:some-label]   -> label = "some-label"
+          # ----------------------------------------
+          safety_label=""
+
+          if [[ "$msg" =~ \[safety:([a-zA-Z0-9 _.-]+)\] ]]; then
+            safety_label="${BASH_REMATCH[1]}"
+          elif [[ "$msg" == *"[safety]"* ]]; then
+            safety_label="$branch"
           fi
 
-          # changed files
+          if [[ -n "$safety_label" ]]; then
+            norm="$(echo "$safety_label" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9._-')"
+            echo "Detected safety tag request with label: $norm"
+            echo "run_safety_tag=true" >> $GITHUB_OUTPUT
+            echo "safety_label=$norm"  >> $GITHUB_OUTPUT
+          fi
+
+          # ----------------------------------------
+          # 🔧 Source file filters
+          # ----------------------------------------
+          CODE_FILTERS=(
+            '^src/'
+            '^package\.json$'
+            '^package-lock\.json$'
+            '^tsconfig'
+            '^scripts/'
+            '\.github/'
+          )
+
           git diff --name-only HEAD~1 > changed.txt || true
           echo "Changed files:"
           cat changed.txt || echo "(none)"
 
-          SOURCE_R='^(src/|package\.json$|package-lock\.json$|tsconfig\.json$)'
-          MANIFEST_R='^(package\.json$|\.vscodeignore$|README\.md$|LICENSE$|SECURITY\.md$)'
-          WORKFLOW_R='^\.github/'
-          DOCS_R='^(CODE_OF_CONDUCT\.md$|CONTRIBUTING\.md$|.*\.png$|DO_NOT_DELETE/|images\.txt$|\.gitignore$)'
-
-          SRC=false; MFT=false; WKF=false
-          while IFS= read -r f; do
-            [[ -z "$f" ]] && continue
-            echo "$f" | grep -qE "$SOURCE_R"   && SRC=true
-            echo "$f" | grep -qE "$MANIFEST_R" && MFT=true
-            echo "$f" | grep -qE "$WORKFLOW_R" && WKF=true
-          done < changed.txt
-
-          # docs/assets-only check
-          DOCS_ONLY=true
-          while IFS= read -r f; do
-            [[ -z "$f" ]] && continue
-            echo "$f" | grep -qE "$DOCS_R" || DOCS_ONLY=false
-          done < changed.txt
-
-          if $DOCS_ONLY && [ -s changed.txt ]; then
-            echo "Docs/assets-only changes — skipping all steps."
-            exit 0
+          pattern="${CODE_FILTERS[*]}"
+          if grep -E "${pattern// /|}" changed.txt >/dev/null 2>&1; then
+            echo "Detected matching source file → compile enabled."
+            echo "run_compile=true" >> $GITHUB_OUTPUT
+          else
+            echo "No matching source changes → skipping compile."
+            echo "run_compile=false" >> $GITHUB_OUTPUT
           fi
 
-          # path-based decisions
-          $SRC || $WKF && echo "run_compile=true" >> "$GITHUB_OUTPUT"
-          $SRC || $MFT || $WKF && echo "run_package=true" >> "$GITHUB_OUTPUT"
+          # ----------------------------------------
+          # Publish trigger (only on main/master/release/*)
+          # ----------------------------------------
+          if [[ "$branch" == "main" || "$branch" == "master" || "$branch" == release/* ]]; then
+            if [[ "$msg" == *"[publish-package]"* || "$msg" == *"[publishpackage]"* ]]; then
+              echo "run_publish_package=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Branch '$branch' not eligible for publish."
+          fi
 
-          # tag overrides
-          if [[ "$msg" == *"[pack]"* ]]; then
-            echo "run_package=true" >> "$GITHUB_OUTPUT"
-          fi
-          if [[ "$msg" == *"[no-pack]"* ]]; then
-            echo "run_package=false" >> "$GITHUB_OUTPUT"
-          fi
+          # detect workflow existence
+          [[ -f ".github/workflows/compile.yml" ]]         && echo "has_compile=true"         >> $GITHUB_OUTPUT || echo "has_compile=false"         >> $GITHUB_OUTPUT
+          [[ -f ".github/workflows/publish-package.yml" ]] && echo "has_publish_package=true" >> $GITHUB_OUTPUT || echo "has_publish_package=false" >> $GITHUB_OUTPUT
 
       - name: 🧠 Summary
         run: |
@@ -111,36 +146,41 @@ jobs:
           echo "------------------------------------------"
           echo "Repository:    ${{ github.repository }}"
           echo "Branch:        ${GITHUB_REF##*/}"
-          echo "Compile:       ${{ steps.check.outputs.run_compile }}"
-          echo "Package:       ${{ steps.check.outputs.run_package }}"
+          echo "Compile:       ${{ steps.check.outputs.run_compile }} (exists: ${{ steps.check.outputs.has_compile }})"
+          echo "Publish-Pkg:   ${{ steps.check.outputs.run_publish_package }} (exists: ${{ steps.check.outputs.has_publish_package }})"
+          echo "Safety Tag:    ${{ steps.check.outputs.run_safety_tag }} (label: ${{ steps.check.outputs.safety_label }})"
           echo "------------------------------------------"
 
   # ----------------------------------------
-  # ⚙️ Compile (inline — no separate workflow)
+  # 💾 Optional safety checkpoint
+  # ----------------------------------------
+  safety-tag:
+    name: 💾 Safety Tag
+    needs: [precheck, analyze]
+    uses: ./.github/workflows/create-safety-tag.yml
+    with:
+      run:   ${{ needs.analyze.outputs.run_safety_tag }}
+      label: ${{ needs.analyze.outputs.safety_label }}
+    secrets: inherit
+
+  # ----------------------------------------
+  # ⚙️ Compile
   # ----------------------------------------
   compile:
-    if: ${{ needs.analyze.outputs.run_compile == 'true' }}
-    needs: analyze
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - run: npm ci
-
-      - run: npm run compile
-
-      - run: npm run validate:manifest
+    name: ⚙️ Compile
+    if: ${{ needs.analyze.outputs.run_compile == 'true' &&
+            needs.analyze.outputs.has_compile == 'true' }}
+    needs: [analyze, safety-tag]
+    uses: ./.github/workflows/compile.yml
+    secrets: inherit
 
   # ----------------------------------------
-  # 📦 Package (reusable pipeline)
+  # 📦 Publish Package
   # ----------------------------------------
-  package:
-    if: ${{ needs.analyze.outputs.run_package == 'true' }}
-    needs: analyze
-    uses: ./.github/workflows/package.yml
+  publish-package:
+    name: 📦 Publish Package
+    if: ${{ needs.analyze.outputs.run_publish_package == 'true' &&
+            needs.analyze.outputs.has_publish_package == 'true' }}
+    needs: [analyze, safety-tag]
+    uses: ./.github/workflows/publish-package.yml
+    secrets: inherit

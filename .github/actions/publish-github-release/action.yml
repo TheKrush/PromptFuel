@@ -1,0 +1,71 @@
+name: 🏷️ Tag and Publish GitHub Release
+description: Creates a git tag and GitHub release for any build output.
+
+inputs:
+  version:
+    description: "Version string (e.g. 1.2.3)"
+    required: true
+  tag:
+    description: "Exact git tag to create (e.g. v1.2.3). Defaults to v<version>."
+    required: false
+  gh-token:
+    description: "GitHub token for pushing and creating releases"
+    required: true
+  files:
+    description: "Path to artifact(s) to attach (e.g. artifacts/*.vsix)"
+    required: true
+  title:
+    description: "Release title"
+    default: "📦 Release"
+  keep-latest:
+    description: "Number of releases to keep when cleaning up old ones"
+    default: "100"
+
+runs:
+  using: "composite"
+  steps:
+    - name: 🏷️ Create Git Tag
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.tag }}" ]]; then
+          TAG="${{ inputs.tag }}"
+        else
+          TAG="v${{ inputs.version }}"
+        fi
+
+        echo "🏷️ Creating tag: $TAG"
+        git tag -a "$TAG" -m "Release $TAG"
+        git push origin "$TAG"
+        echo "✅ Tagged: $TAG"
+
+    - name: 🚀 Create GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: ${{ inputs.tag || format('v{0}', inputs.version) }}
+        name: ${{ format('{0} {1}', inputs.title, inputs.tag || format('v{0}', inputs.version)) }}
+        files: ${{ inputs.files }}
+        token: ${{ inputs.gh-token }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.gh-token }}
+
+    - name: 🧹 Clean up older releases
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        KEEP: ${{ inputs.keep-latest }}
+      run: |
+        echo "🧹 Keeping latest $KEEP releases, deleting older ones (tags preserved)..."
+        OLD_TAGS=$(gh release list --limit 1000 --json tagName,createdAt \
+          --jq "sort_by(.createdAt) | reverse | .[$KEEP:] | .[].tagName")
+
+        if [[ -z "$OLD_TAGS" ]]; then
+          echo "✅ Nothing to delete (≤ $KEEP releases present)."
+          exit 0
+        fi
+
+        while IFS= read -r tag; do
+          [[ -z "$tag" ]] && continue
+          echo "🗑️  Deleting release: $tag"
+          gh release delete "$tag" --yes
+        done <<< "$OLD_TAGS"
+        echo "✅ Cleanup complete."

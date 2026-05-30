@@ -1,0 +1,51 @@
+name: 💾 Create Safety Tag
+
+on:
+  workflow_call:
+    inputs:
+      run:
+        description: "Whether to actually create the tag"
+        type: string
+        default: 'false'
+      label:
+        description: "Short label for the tag"
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Optional label for the safety tag (e.g. pre-refactor)"
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  # ----------------------------------------
+  # 💾 Safety Tag
+  # ----------------------------------------
+  create-safety-tag:
+    name: 💾 Create Safety Tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            .github/actions
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN || github.token }}
+
+      - name: 💾 Create safety tag
+        if: ${{ startsWith(github.ref, 'refs/heads/') &&
+                (github.event_name == 'workflow_dispatch' || inputs.run == 'true') }}
+        uses: ./.github/actions/create-safety-tag
+        with:
+          prefix: safety
+          label: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.label || inputs.label }}
+
+      - name: 🧹 Cleanup Runner
+        if: always()
+        uses: ./.github/actions/cleanup-runner
