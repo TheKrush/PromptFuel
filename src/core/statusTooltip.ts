@@ -1,10 +1,17 @@
 import { PROVIDER_LABELS, ProviderId } from './providers';
 import { ProviderQuotaState } from './quotaTypes';
 import { PromptFuelStatus } from './statusModel';
+import { formatLiveQuotaTooltip, hasUsableLiveQuota, hasAnyLiveQuota } from './formatLiveQuota';
+
+export { formatLiveQuotaTooltip, hasUsableLiveQuota, hasAnyLiveQuota };
 
 const LINE_SEPARATOR = '\n';
 
 export function formatTooltip(status: PromptFuelStatus): string {
+  if (hasAnyLiveQuota(status)) {
+    return formatLiveQuotaTooltip(status);
+  }
+
   const lines: string[] = [];
 
   lines.push('PromptFuel');

@@ -670,6 +670,303 @@ test('dashboard: refresh button sends refreshDashboard command', () => {
   assert.ok(html.includes('refreshDashboard'), `expected refreshDashboard command in HTML`);
 });
 
+// === Live quota: formatLiveQuota integration ===
+
+const {
+  formatLiveQuotaStatusBarText,
+  formatLiveQuotaTooltip,
+  hasUsableLiveQuota,
+  hasAnyLiveQuota,
+  getFreshnessLabel,
+  getSanitizedErrorLabel,
+  formatCountdownLabel,
+  formatWindowLine,
+  formatPercentage,
+} = require(path.join(OUT, 'core/formatLiveQuota'));
+
+// --- Status bar: live quota preferred ---
+
+test('formatStatusBarText: live quota preferred over local history', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const t = formatStatusBarText(updated);
+  assert.ok(t.includes('Claude'), `expected "Claude" in status bar "${t}"`);
+  assert.ok(t.includes('5h'), `expected "5h" window in status bar "${t}"`);
+  assert.ok(!t.includes('local'), `should not show "local" suffix when live quota available "${t}"`);
+});
+
+test('formatStatusBarText: fallback to local history when no live quota', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.includes('local'), `expected "local" suffix "${t}"`);
+});
+
+test('formatStatusBarText: live quota unavailable falls back to local history', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'unavailable',
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.ok(t.includes('local'), `expected "local" suffix when live quota unavailable "${t}"`);
+});
+
+test('formatStatusBarText: live quota error falls back to local history', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'error',
+      error: 'some raw error with /path/to/file.jsonl and secret',
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.ok(t.includes('local'), `expected "local" suffix when live quota error "${t}"`);
+  assert.ok(!t.includes('secret'), `should not leak secrets "${t}"`);
+  assert.ok(!t.includes('.jsonl'), `should not leak file paths "${t}"`);
+});
+
+test('formatStatusBarText: both providers with live quota show both', () => {
+  const codexLiveQuota = {
+    providerId: 'codex',
+    windows: [
+      {
+        windowId: '5h',
+        remainingPercentage: 80,
+        resetsAtEpochMs: Date.now() + 5 * 60 * 60 * 1000,
+      },
+    ],
+    freshness: 'live',
+    lastUpdatedEpochMs: Date.now(),
+  };
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota, codexLiveQuota]);
+  const t = formatStatusBarText(updated);
+  assert.ok(t.includes('Claude'), `expected "Claude" "${t}"`);
+  assert.ok(t.includes('Codex'), `expected "Codex" "${t}"`);
+});
+
+// --- Tooltip: live quota sections ---
+
+test('formatTooltip: live quota shows provider sections', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
+  assert.ok(tooltip.includes('live'), `expected "live" freshness in tooltip`);
+  assert.ok(tooltip.includes('Local history + live quota'), `expected combined mode label`);
+  assert.ok(!tooltip.includes('Live quota not enabled yet'), `should not show "not enabled" when live quota present`);
+});
+
+test('formatTooltip: live quota error shows sanitized label', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'error',
+      error: 'some raw error with /path/to/file.jsonl and secret username:admin',
+    },
+  ]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(!tooltip.includes('secret'), `should not leak secrets`);
+  assert.ok(!tooltip.includes('.jsonl'), `should not leak file paths`);
+  assert.ok(!tooltip.includes('username'), `should not leak usernames`);
+  assert.ok(!tooltip.includes('admin'), `should not leak credentials`);
+  assert.ok(tooltip.includes(getSanitizedErrorLabel()), `expected sanitized error label`);
+});
+
+test('formatTooltip: live quota shows Live quota refreshed timestamp', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('Live quota refreshed:'), `expected "Live quota refreshed:" in tooltip`);
+});
+
+test('formatTooltip: live quota shows Local history refreshed timestamp', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('Local history refreshed:'), `expected "Local history refreshed:" in tooltip`);
+});
+
+test('formatTooltip: stale freshness shown correctly', () => {
+  const staleLiveQuota = {
+    ...syntheticLiveQuota,
+    freshness: 'stale',
+  };
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [staleLiveQuota]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('stale'), `expected "stale" freshness in tooltip`);
+});
+
+test('formatTooltip: cached freshness shown correctly', () => {
+  const cachedLiveQuota = {
+    ...syntheticLiveQuota,
+    freshness: 'cached',
+  };
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [cachedLiveQuota]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('cached'), `expected "cached" freshness in tooltip`);
+});
+
+// --- Helper: freshness labels ---
+
+test('getFreshnessLabel: returns correct labels', () => {
+  assert.strictEqual(getFreshnessLabel('live'), 'live');
+  assert.strictEqual(getFreshnessLabel('cached'), 'cached');
+  assert.strictEqual(getFreshnessLabel('stale'), 'stale');
+  assert.strictEqual(getFreshnessLabel('unavailable'), 'unavailable');
+  assert.strictEqual(getFreshnessLabel('error'), 'error');
+});
+
+// --- Helper: countdown formatting ---
+
+test('formatCountdownLabel: positive countdown', () => {
+  const reset = Date.now() + 3 * 60 * 60 * 1000;
+  const label = formatCountdownLabel(reset, Date.now());
+  assert.ok(label.includes('3h'), `expected "3h" in countdown "${label}"`);
+});
+
+test('formatCountdownLabel: past reset shows reset', () => {
+  const reset = Date.now() - 1000;
+  const label = formatCountdownLabel(reset, Date.now());
+  assert.strictEqual(label, 'reset');
+});
+
+test('formatCountdownLabel: days and hours', () => {
+  const reset = Date.now() + 2 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000;
+  const label = formatCountdownLabel(reset, Date.now());
+  assert.ok(label.includes('2d'), `expected "2d" in countdown "${label}"`);
+});
+
+// --- Helper: window line formatting ---
+
+test('formatWindowLine: includes window ID and remaining percentage', () => {
+  const window = {
+    windowId: '5h',
+    remainingPercentage: 55,
+    resetsAtEpochMs: Date.now() + 5 * 60 * 60 * 1000,
+  };
+  const line = formatWindowLine(window, Date.now());
+  assert.ok(line.includes('5h'), `expected "5h" in "${line}"`);
+  assert.ok(line.includes('55%'), `expected "55%" in "${line}"`);
+});
+
+test('formatWindowLine: used percentage when no remaining', () => {
+  const window = {
+    windowId: '7d',
+    usedPercentage: 40,
+  };
+  const line = formatWindowLine(window, Date.now());
+  assert.ok(line.includes('40%'), `expected "40%" in "${line}"`);
+  assert.ok(line.includes('used'), `expected "used" in "${line}"`);
+});
+
+// --- Helper: percentage formatting ---
+
+test('formatPercentage: rounds correctly', () => {
+  assert.strictEqual(formatPercentage(45.6), '46%');
+  assert.strictEqual(formatPercentage(0), '0%');
+  assert.strictEqual(formatPercentage(100), '100%');
+});
+
+test('formatPercentage: undefined returns undefined', () => {
+  assert.strictEqual(formatPercentage(undefined), undefined);
+});
+
+// --- Utility: hasUsableLiveQuota ---
+
+test('hasUsableLiveQuota: true when live freshness', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  assert.strictEqual(hasUsableLiveQuota(updated), true);
+});
+
+test('hasUsableLiveQuota: false when unavailable', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    { providerId: 'claude', windows: [], freshness: 'unavailable' },
+  ]);
+  assert.strictEqual(hasUsableLiveQuota(updated), false);
+});
+
+test('hasUsableLiveQuota: false when empty', () => {
+  const status = createInitialStatus(['claude']);
+  assert.strictEqual(hasUsableLiveQuota(status), false);
+});
+
+// --- Utility: hasAnyLiveQuota ---
+
+test('hasAnyLiveQuota: true when any state present', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  assert.strictEqual(hasAnyLiveQuota(updated), true);
+});
+
+test('hasAnyLiveQuota: false when empty', () => {
+  const status = createInitialStatus(['claude']);
+  assert.strictEqual(hasAnyLiveQuota(status), false);
+});
+
+// --- Safety: no raw error strings in status bar ---
+
+test('formatStatusBarText: raw error not surfaced', () => {
+  const rawError = 'connection refused at /path/to/api/endpoint.jsonl user:admin';
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'error',
+      error: rawError,
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.ok(!t.includes('connection'), `should not include raw error text "${t}"`);
+  assert.ok(!t.includes('refused'), `should not include raw error text "${t}"`);
+  assert.ok(!t.includes('.jsonl'), `should not include file paths "${t}"`);
+  assert.ok(!t.includes('admin'), `should not include credentials "${t}"`);
+});
+
+// --- Safety: no raw error strings in tooltip ---
+
+test('formatTooltip: raw error not surfaced', () => {
+  const rawError = 'ECONNREFUSED /path/to/file.jsonl credentials:secret123';
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'error',
+      error: rawError,
+    },
+  ]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(!tooltip.includes('ECONNREFUSED'), `should not include raw error code`);
+  assert.ok(!tooltip.includes('.jsonl'), `should not include file paths`);
+  assert.ok(!tooltip.includes('credentials'), `should not include credential keywords`);
+  assert.ok(!tooltip.includes('secret123'), `should not include secrets`);
+});
+
 // Summary
 console.log('');
 console.log(`smoke-core: ${pass} passed, ${fail} failed`);
