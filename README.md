@@ -1,6 +1,6 @@
 # PromptFuel
 
-Track AI coding assistant usage history and opt-in live quota status from the VS Code status bar.
+Track AI coding assistant usage history and live quota status from the VS Code status bar.
 
 ## Features
 
@@ -16,7 +16,7 @@ Track AI coding assistant usage history and opt-in live quota status from the VS
 
 ## Privacy & Data
 
-- **Local history stays local.** Live quota reads contact provider services only when enabled.
+- **Local history stays local.** Live quota reads are enabled by default when supported/configured and may contact provider services using existing provider auth state; set `promptFuel.liveQuotaEnabled` to `false` to turn them off.
 - **No raw prompts, responses, or transcripts are collected or displayed.**
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
 - **No telemetry** is sent by PromptFuel.
