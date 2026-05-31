@@ -106,7 +106,7 @@ test('CONFIG_DEFAULTS has expected keys', () => {
 // --- formatQuota ---
 const { formatStatusBarText, formatRefreshSummary, formatTokenCount } = require(path.join(OUT, 'core/formatQuota'));
 const { formatTooltip } = require(path.join(OUT, 'core/statusTooltip'));
-const { createInitialStatus, applyRefreshResults } = require(path.join(OUT, 'core/statusModel'));
+const { createInitialStatus, applyRefreshResults, applySnapshotReadResults } = require(path.join(OUT, 'core/statusModel'));
 
 // === Status bar text: all no-data ===
 
@@ -601,6 +601,27 @@ function localHistoryWindowsFixture({ today, last5h, last7d, all }) {
   };
 }
 
+function sourceTotals(model, sourceMode) {
+  const totals = model.sourceModeTotals.find(t => t.sourceMode === sourceMode);
+  assert.ok(totals, `expected ${sourceMode} source totals`);
+  return totals;
+}
+
+function providerSourceTotals(model, sourceMode, providerId) {
+  const totals = sourceTotals(model, sourceMode);
+  const provider = totals.providers.find(p => p.providerId === providerId);
+  assert.ok(provider, `expected ${providerId} provider totals for ${sourceMode}`);
+  return provider;
+}
+
+function snapshotStateFixture(providers, snapshotCount = 1) {
+  return {
+    providers,
+    snapshotCount,
+    lastReadEpochMs: new Date('2026-05-31T20:00:00.000Z').getTime(),
+  };
+}
+
 function dashboardTabPanel(html, tabId) {
   const marker = `data-dashboard-tab-panel="${tabId}"`;
   const markerIndex = html.indexOf(marker);
@@ -739,6 +760,147 @@ test('dashboard: local history windows combine loaded providers and default to T
   assert.strictEqual(claude.localHistoryWindows.find(w => w.windowId === 'last7d').totalTokens, 300);
 });
 
+test('dashboard source modes: no snapshots default to Local only and disable unavailable modes', () => {
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
+  assert.strictEqual(model.defaultSourceMode, 'local');
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'local').available, true);
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'snapshots').available, false);
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'combined').available, false);
+});
+
+test('dashboard source modes: snapshots present default to Combined', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(1500, 3),
+  }]));
+  const model = buildDashboardModel(status);
+  assert.strictEqual(model.defaultSourceMode, 'combined');
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'snapshots').available, true);
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'combined').available, true);
+});
+
+test('dashboard source modes: Local only, Snapshots only, and Combined totals are pure aggregates', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 10,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 100, messages: 1 },
+        last5h: { tokens: 80, messages: 1 },
+        last7d: { tokens: 300, messages: 3 },
+        all: { tokens: 1000, messages: 10 },
+      }),
+    }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    windowTotals: {
+      today: aggregateFixture(50, 1),
+      all: aggregateFixture(500, 5),
+    },
+  }]));
+  const model = buildDashboardModel(status);
+
+  assert.strictEqual(sourceTotals(model, 'local').windows.find(w => w.windowId === 'all').totalTokens, 1000);
+  assert.strictEqual(sourceTotals(model, 'snapshots').windows.find(w => w.windowId === 'all').totalTokens, 500);
+  assert.strictEqual(sourceTotals(model, 'combined').windows.find(w => w.windowId === 'all').totalTokens, 1500);
+  assert.strictEqual(sourceTotals(model, 'combined').windows.find(w => w.windowId === 'today').totalTokens, 150);
+});
+
+test('dashboard source modes: provider tabs filter source totals by provider', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([
+    {
+      providerId: 'claude',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(300, 3),
+    },
+    {
+      providerId: 'codex',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(700, 7),
+    },
+  ]));
+  const model = buildDashboardModel(status);
+
+  assert.strictEqual(providerSourceTotals(model, 'combined', 'claude').totalTokens, 1300);
+  assert.strictEqual(providerSourceTotals(model, 'combined', 'codex').totalTokens, 2700);
+  assert.strictEqual(providerSourceTotals(model, 'snapshots', 'claude').totalAssistantMessages, 3);
+  assert.strictEqual(providerSourceTotals(model, 'snapshots', 'codex').totalAssistantMessages, 7);
+});
+
+test('dashboard source modes: recent windows do not invent snapshot data when windows are missing', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 10,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 100, messages: 1 },
+        last5h: { tokens: 80, messages: 1 },
+        last7d: { tokens: 300, messages: 3 },
+        all: { tokens: 1000, messages: 10 },
+      }),
+    }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+  }]));
+  const model = buildDashboardModel(status);
+
+  assert.strictEqual(sourceTotals(model, 'snapshots').windows.find(w => w.windowId === 'today').totalTokens, 0);
+  assert.strictEqual(sourceTotals(model, 'combined').windows.find(w => w.windowId === 'today').totalTokens, 100);
+  assert.deepStrictEqual(sourceTotals(model, 'combined').missingSnapshotWindowIds, ['today', 'last5h', 'last7d']);
+});
+
+test('dashboard source modes: explicit zero snapshot windows count as provided', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    windowTotals: {
+      today: aggregateFixture(0, 0),
+    },
+  }]));
+  const model = buildDashboardModel(status);
+  assert.strictEqual(sourceTotals(model, 'snapshots').windows.find(w => w.windowId === 'today').totalTokens, 0);
+  assert.deepStrictEqual(sourceTotals(model, 'snapshots').missingSnapshotWindowIds, ['last5h', 'last7d']);
+});
+
+test('dashboard source modes: All local history combines local all-history and snapshot aggregate totals', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 2500, totalAssistantMessages: 4, filesFound: 1 }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(750, 2),
+  }]));
+  const model = buildDashboardModel(status);
+  const all = sourceTotals(model, 'combined').windows.find(w => w.windowId === 'all');
+  assert.strictEqual(all.totalTokens, 3250);
+  assert.strictEqual(all.totalAssistantMessages, 6);
+});
+
 test('dashboard: uses local history wording, not subscription', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
@@ -751,8 +913,8 @@ test('dashboard: uses local history wording, not subscription', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Usage overview'), `expected "Usage overview" subtitle`);
-  assert.ok(html.includes('Local history tokens'), `expected "Local history tokens" overview label`);
-  assert.ok(html.includes('Local history messages'), `expected "Local history messages" overview label`);
+  assert.ok(html.includes('Usage history tokens'), `expected "Usage history tokens" overview label`);
+  assert.ok(html.includes('Usage history messages'), `expected "Usage history messages" overview label`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
 });
 
@@ -787,6 +949,80 @@ test('dashboard: local history selector labels and values are windowed', () => {
   assert.ok(html.includes('125 tokens'), `expected Today default tokens`);
   assert.ok(html.includes('data-tokens-all="5.0K tokens"'), `expected all-history tokens to remain available`);
   assert.ok(html.includes('data-messages-last7d="3"'), `expected provider window details`);
+});
+
+test('dashboard source modes: buttons render and no-snapshot modes are disabled', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const model = buildDashboardModel(createInitialStatus(['claude']));
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('data-source-mode="local"'), `expected Local only source button`);
+  assert.ok(html.includes('data-source-mode="snapshots"'), `expected Snapshots only source button`);
+  assert.ok(html.includes('data-source-mode="combined"'), `expected Combined source button`);
+  assert.ok(html.includes('No imported snapshots found. Showing local history only.'), `expected no-snapshot source copy`);
+  assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots button disabled without snapshots`);
+  assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined button disabled without snapshots`);
+});
+
+test('dashboard source modes: snapshot copy, summary, and data attributes render when snapshots exist', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    sourceLabel: 'snapshot import',
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('Imported snapshots available. Choose Local only, Snapshots only, or Combined.'), `expected snapshot-available source copy`);
+  assert.ok(html.includes('data-source-mode="combined" aria-pressed="true"'), `expected Combined default with snapshots`);
+  assert.ok(html.includes('Imported snapshots'), `expected snapshot summary section`);
+  assert.ok(html.includes('Provider coverage'), `expected provider coverage summary`);
+  assert.ok(html.includes('data-tokens-local-all="1.0K tokens"'), `expected local all-history source data`);
+  assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
+  assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);
+  assert.ok(html.includes('snapshot import'), `expected safe source label`);
+});
+
+test('dashboard source modes: missing snapshot windows are labeled honestly in HTML', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('Imported snapshots do not provide Today, Last 5h, Last 7d totals; missing snapshot windows contribute 0.'), `expected missing-window note`);
+  assert.ok(html.includes('data-tokens-snapshots-today="0 tokens"'), `expected missing snapshot Today to remain zero`);
+});
+
+test('dashboard source modes: no raw filenames, paths, internal labels, or private source labels appear in HTML', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const rawPrivate = 'raw-internal-label C:\\Users\\keith\\session.jsonl secret-token';
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    sourceLabel: rawPrivate,
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(!html.includes('.jsonl'), `should not include raw filenames`);
+  assert.ok(!html.includes('C:\\'), `should not include raw paths`);
+  assert.ok(!html.includes('raw-internal-label'), `should not include private labels`);
+  assert.ok(!html.includes('secret-token'), `should not include credential-looking values`);
 });
 
 test('dashboard: renders Overview, Claude, and Codex tabs with Overview active by default', () => {
@@ -852,13 +1088,13 @@ test('dashboard: provider tabs isolate local history details by provider', () =>
   const claudePanel = dashboardTabPanel(html, 'claude');
   const codexPanel = dashboardTabPanel(html, 'codex');
 
-  assert.ok(claudePanel.includes('Claude provider local history details'), `expected Claude local detail heading`);
+  assert.ok(claudePanel.includes('Claude provider usage history details'), `expected Claude usage detail heading`);
   assert.ok(claudePanel.includes('data-provider-local-detail="claude"'), `expected Claude detail card`);
   assert.ok(claudePanel.includes('Parse errors: 2 lines skipped'), `expected Claude parse count`);
   assert.ok(!claudePanel.includes('data-provider-local-detail="codex"'), `Claude tab should not include Codex local detail card`);
   assert.ok(!claudePanel.includes('Parse errors: 3 lines skipped'), `Claude tab should not include Codex parse count`);
 
-  assert.ok(codexPanel.includes('Codex provider local history details'), `expected Codex local detail heading`);
+  assert.ok(codexPanel.includes('Codex provider usage history details'), `expected Codex usage detail heading`);
   assert.ok(codexPanel.includes('data-provider-local-detail="codex"'), `expected Codex detail card`);
   assert.ok(codexPanel.includes('Parse errors: 3 lines skipped'), `expected Codex parse count`);
   assert.ok(!codexPanel.includes('data-provider-local-detail="claude"'), `Codex tab should not include Claude local detail card`);
@@ -906,8 +1142,8 @@ test('dashboard: includes local history disclaimer banner', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Live quota is shown first'), `expected live quota-first disclaimer in HTML`);
-  assert.ok(html.includes('Local history is secondary'), `expected secondary local history disclaimer in HTML`);
-  assert.ok(html.includes('Snapshots not included'), `expected snapshot disclaimer in HTML`);
+  assert.ok(html.includes('Usage history is secondary'), `expected secondary usage history disclaimer in HTML`);
+  assert.ok(html.includes('No imported snapshots found. Showing local history only.'), `expected no-snapshot source-mode copy in HTML`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {
@@ -975,7 +1211,7 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Live quota unavailable'), `expected unavailable live quota in dashboard`);
   assert.ok(html.includes('UNAVAILABLE'), `expected unavailable badge in dashboard`);
-  assert.ok(html.includes('Local history tokens'), `expected local history to remain separated`);
+  assert.ok(html.includes('Usage history tokens'), `expected usage history to remain separated`);
 });
 
 test('dashboard: live quota values are not filtered by local history selector', () => {
@@ -1136,8 +1372,8 @@ test('dashboard: local history secondary label and parse wording', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Local history (secondary)'), `expected secondary local history section`);
-  assert.ok(html.includes('Provider local history details'), `expected provider local detail heading`);
+  assert.ok(html.includes('Usage history (secondary)'), `expected secondary usage history section`);
+  assert.ok(html.includes('Provider usage history details'), `expected provider usage detail heading`);
   assert.ok(html.includes('Parse errors: 1 line skipped'), `expected non-alarming parse wording`);
 });
 

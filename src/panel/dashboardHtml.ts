@@ -4,6 +4,8 @@ import {
   DashboardLocalHistoryWindow,
   DashboardModel,
   DashboardProviderCard,
+  DashboardSourceModeProviderCard,
+  DashboardSourceModeTotals,
 } from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
 import { formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
@@ -14,17 +16,6 @@ function esc(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function statusBadge(status: string): string {
-  const map: Record<string, string> = {
-    'loaded': '<span class="badge loaded">loaded</span>',
-    'no-data': '<span class="badge no-data">no data</span>',
-    'unknown': '<span class="badge error">error</span>',
-    'disabled': '<span class="badge disabled">disabled</span>',
-    'not-found': '<span class="badge no-data">not found</span>',
-  };
-  return map[status] ?? `<span class="badge">${esc(status)}</span>`;
 }
 
 function freshnessBadge(freshness: string): string {
@@ -135,6 +126,28 @@ function renderLiveQuotaEmptyState(model: DashboardModel, label?: string): strin
   return `<div class="live-quota-not-enabled">${prefix}${esc(stateText)} ${badge}</div>`;
 }
 
+function statusBadgeClass(status: string): string {
+  const map: Record<string, string> = {
+    'loaded': 'loaded',
+    'no-data': 'no-data',
+    'unknown': 'error',
+    'disabled': 'disabled',
+    'not-found': 'no-data',
+  };
+  return map[status] ?? '';
+}
+
+function statusBadgeLabel(status: string): string {
+  const map: Record<string, string> = {
+    'loaded': 'loaded',
+    'no-data': 'no data',
+    'unknown': 'error',
+    'disabled': 'disabled',
+    'not-found': 'not found',
+  };
+  return map[status] ?? status;
+}
+
 function renderLiveQuotaCards(cards: DashboardLiveQuotaCard[]): string {
   return cards.map(card => {
     if (card.freshness === 'unavailable' || card.freshness === 'error') {
@@ -209,6 +222,39 @@ function findLocalHistoryWindow(
     ?? { windowId: 'all', label: 'All local history', totalTokens: 0, totalAssistantMessages: 0 };
 }
 
+function findSourceModeTotals(
+  totals: DashboardSourceModeTotals[],
+  sourceMode: string,
+): DashboardSourceModeTotals {
+  return totals.find(t => t.sourceMode === sourceMode)
+    ?? totals.find(t => t.sourceMode === 'local')
+    ?? {
+      sourceMode: 'local',
+      label: 'Local only',
+      totalTokens: 0,
+      totalAssistantMessages: 0,
+      providers: [],
+      windows: [],
+      missingSnapshotWindowIds: [],
+    };
+}
+
+function findSourceProvider(
+  sourceTotals: DashboardSourceModeTotals,
+  providerId: string,
+): DashboardSourceModeProviderCard {
+  return sourceTotals.providers.find(p => p.providerId === providerId)
+    ?? {
+      providerId: providerId as 'claude' | 'codex',
+      label: providerId,
+      status: 'no-data',
+      totalTokens: 0,
+      totalAssistantMessages: 0,
+      parseErrors: 0,
+      windows: [],
+    };
+}
+
 function localHistoryDataAttributes(
   windows: DashboardLocalHistoryWindow[],
   value: 'tokens' | 'messages',
@@ -216,6 +262,36 @@ function localHistoryDataAttributes(
   return windows.map(w => {
     const raw = value === 'tokens' ? formatTokenCount(w.totalTokens) : String(w.totalAssistantMessages);
     return `data-${value}-${esc(w.windowId)}="${esc(raw)}"`;
+  }).join(' ');
+}
+
+function sourceModeDataAttributes(
+  totals: DashboardSourceModeTotals[],
+  value: 'tokens' | 'messages',
+  providerId?: string,
+): string {
+  return totals.flatMap(sourceTotals => {
+    const windows = providerId
+      ? findSourceProvider(sourceTotals, providerId).windows
+      : sourceTotals.windows;
+    return windows.map(w => {
+      const raw = value === 'tokens' ? formatTokenCount(w.totalTokens) : String(w.totalAssistantMessages);
+      return `data-${value}-${esc(sourceTotals.sourceMode)}-${esc(w.windowId)}="${esc(raw)}"`;
+    });
+  }).join(' ');
+}
+
+function sourceProviderStatusAttributes(
+  totals: DashboardSourceModeTotals[],
+  providerId: string,
+): string {
+  return totals.map(sourceTotals => {
+    const provider = findSourceProvider(sourceTotals, providerId);
+    return [
+      `data-status-${esc(sourceTotals.sourceMode)}="${esc(provider.status)}"`,
+      `data-status-label-${esc(sourceTotals.sourceMode)}="${esc(statusBadgeLabel(provider.status))}"`,
+      `data-status-class-${esc(sourceTotals.sourceMode)}="${esc(statusBadgeClass(provider.status))}"`,
+    ].join(' ');
   }).join(' ');
 }
 
@@ -231,42 +307,63 @@ function renderLocalHistoryWindowSelector(model: DashboardModel): string {
   </div>`;
 }
 
-function renderLocalHistorySummary(
-  windows: DashboardLocalHistoryWindow[],
+function renderSourceModeSelector(model: DashboardModel): string {
+  const buttons = model.sourceModes.map(mode => {
+    const selected = mode.sourceMode === model.defaultSourceMode;
+    const disabled = !mode.available;
+    return `<button class="source-btn${selected ? ' active' : ''}" data-source-mode="${esc(mode.sourceMode)}" aria-pressed="${selected ? 'true' : 'false'}"${disabled ? ' disabled aria-disabled="true"' : ''}>${esc(mode.label)}</button>`;
+  }).join('\n');
+
+  return `
+  <div class="source-selector" aria-label="Usage history source">
+    ${buttons}
+  </div>`;
+}
+
+function renderSourceHistorySummary(
+  model: DashboardModel,
   defaultWindowId: string,
 ): string {
-  const selectedWindow = findLocalHistoryWindow(windows, defaultWindowId);
+  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
+  const selectedWindow = findLocalHistoryWindow(selectedSource.windows, defaultWindowId);
 
   return `
   <div class="overview">
     <div class="overview-row">
-      <span class="overview-label">Local history tokens</span>
-      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${localHistoryDataAttributes(windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
+      <span class="overview-label">Usage history source</span>
+      <span class="overview-value source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span>
     </div>
     <div class="overview-row">
-      <span class="overview-label">Local history messages</span>
-      <span class="overview-value local-history-summary-value" data-local-value="messages" ${localHistoryDataAttributes(windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
+      <span class="overview-label">Usage history tokens</span>
+      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens')} ${localHistoryDataAttributes(selectedSource.windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
+    </div>
+    <div class="overview-row">
+      <span class="overview-label">Usage history messages</span>
+      <span class="overview-value local-history-summary-value" data-local-value="messages" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages')} ${localHistoryDataAttributes(selectedSource.windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
     </div>
   </div>`;
 }
 
-function renderProviderCards(providers: DashboardProviderCard[], defaultWindowId: string): string {
+function renderProviderCards(model: DashboardModel, providers: DashboardProviderCard[], defaultWindowId: string): string {
+  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
   return providers.map(p => {
-    const providerSelectedWindow = findLocalHistoryWindow(p.localHistoryWindows, defaultWindowId);
+    const sourceProvider = findSourceProvider(selectedSource, p.providerId);
+    const providerSelectedWindow = findLocalHistoryWindow(sourceProvider.windows, defaultWindowId);
+    const badgeClass = statusBadgeClass(sourceProvider.status);
     return `
     <div class="provider-card" data-provider-local-detail="${esc(p.providerId)}">
       <div class="provider-header">
         <span class="provider-label">${esc(p.label)}</span>
-        ${statusBadge(p.status)}
+        <span class="badge source-provider-status ${esc(badgeClass)}" ${sourceProviderStatusAttributes(model.sourceModeTotals, p.providerId)}>${esc(statusBadgeLabel(sourceProvider.status))}</span>
       </div>
       <div class="provider-metrics">
         <div class="metric">
           <span class="metric-label">Tokens</span>
-          <span class="metric-value provider-window-value" ${localHistoryDataAttributes(p.localHistoryWindows, 'tokens')}>${esc(formatTokenCount(providerSelectedWindow.totalTokens))}</span>
+          <span class="metric-value provider-window-value" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens', p.providerId)} ${localHistoryDataAttributes(sourceProvider.windows, 'tokens')}>${esc(formatTokenCount(providerSelectedWindow.totalTokens))}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Messages</span>
-          <span class="metric-value provider-window-value" ${localHistoryDataAttributes(p.localHistoryWindows, 'messages')}>${esc(String(providerSelectedWindow.totalAssistantMessages))}</span>
+          <span class="metric-value provider-window-value" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages', p.providerId)} ${localHistoryDataAttributes(sourceProvider.windows, 'messages')}>${esc(String(providerSelectedWindow.totalAssistantMessages))}</span>
         </div>
         ${p.parseErrors > 0 ? `
         <div class="metric">
@@ -289,12 +386,127 @@ function renderProviderTab(model: DashboardModel, providerId: string): string {
   <section class="tab-panel" id="tab-${esc(provider.providerId)}" data-dashboard-tab-panel="${esc(provider.providerId)}" role="tabpanel" aria-labelledby="tab-button-${esc(provider.providerId)}" hidden>
     ${renderProviderLiveQuotaSection(model, provider)}
 
-    <div class="section-title">${esc(provider.label)} local history (secondary)</div>
-    ${renderLocalHistorySummary(provider.localHistoryWindows, model.defaultLocalHistoryWindowId)}
+    <div class="section-title">${esc(provider.label)} usage history (secondary)</div>
+    ${renderSourceHistorySummaryForProvider(model, provider, model.defaultLocalHistoryWindowId)}
 
-    <div class="section-title">${esc(provider.label)} provider local history details</div>
-    ${renderProviderCards([provider], model.defaultLocalHistoryWindowId)}
+    <div class="section-title">${esc(provider.label)} provider usage history details</div>
+    ${renderProviderCards(model, [provider], model.defaultLocalHistoryWindowId)}
   </section>`;
+}
+
+function renderSourceHistorySummaryForProvider(
+  model: DashboardModel,
+  provider: DashboardProviderCard,
+  defaultWindowId: string,
+): string {
+  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
+  const selectedProvider = findSourceProvider(selectedSource, provider.providerId);
+  const selectedWindow = findLocalHistoryWindow(selectedProvider.windows, defaultWindowId);
+
+  return `
+  <div class="overview">
+    <div class="overview-row">
+      <span class="overview-label">Usage history source</span>
+      <span class="overview-value source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span>
+    </div>
+    <div class="overview-row">
+      <span class="overview-label">Usage history tokens</span>
+      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens', provider.providerId)} ${localHistoryDataAttributes(selectedProvider.windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
+    </div>
+    <div class="overview-row">
+      <span class="overview-label">Usage history messages</span>
+      <span class="overview-value local-history-summary-value" data-local-value="messages" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages', provider.providerId)} ${localHistoryDataAttributes(selectedProvider.windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
+    </div>
+  </div>`;
+}
+
+function renderSourceModeCopy(model: DashboardModel): string {
+  if (model.snapshotAggregate.snapshotCount === 0 || model.snapshotAggregate.providers.length === 0) {
+    return 'No imported snapshots found. Showing local history only.';
+  }
+  return 'Imported snapshots available. Choose Local only, Snapshots only, or Combined.';
+}
+
+function renderSnapshotSummary(model: DashboardModel): string {
+  const aggregate = model.snapshotAggregate;
+  if (aggregate.snapshotCount === 0 || aggregate.providers.length === 0) {
+    return '';
+  }
+
+  const providerCoverage = Array.from(new Set(aggregate.providers.map(p => p.label))).sort().join(', ');
+  const latestGeneratedMs = aggregate.providers.reduce<number | undefined>((latest, provider) => {
+    if (latest === undefined || provider.generatedAtMs > latest) {
+      return provider.generatedAtMs;
+    }
+    return latest;
+  }, undefined);
+  const generated = latestGeneratedMs !== undefined
+    ? formatRefreshTime(latestGeneratedMs)
+    : 'Not provided';
+  const refreshed = aggregate.lastReadMs !== undefined
+    ? formatRefreshTime(aggregate.lastReadMs)
+    : 'Not yet refreshed';
+  const providerCards = aggregate.providers.map(provider => `
+    <div class="snapshot-card">
+      <div class="provider-header">
+        <span class="provider-label">${esc(provider.label)}</span>
+        <span class="badge cached">SNAPSHOT</span>
+      </div>
+      <div class="provider-metrics">
+        <div class="metric">
+          <span class="metric-label">Generated</span>
+          <span class="metric-value small">${esc(formatRefreshTime(provider.generatedAtMs))}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Tokens</span>
+          <span class="metric-value">${esc(formatTokenCount(provider.totalTokens))}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Messages</span>
+          <span class="metric-value">${esc(String(provider.totalAssistantMessages))}</span>
+        </div>
+        ${provider.sourceLabel ? `
+        <div class="metric">
+          <span class="metric-label">Source</span>
+          <span class="metric-value small">${esc(provider.sourceLabel)}</span>
+        </div>` : ''}
+      </div>
+      <div class="snapshot-note">Imported aggregate-only data.</div>
+    </div>`).join('\n');
+
+  return `
+  <div class="snapshot-summary">
+    <div class="section-title">Imported snapshots</div>
+    <div class="overview">
+      <div class="overview-row">
+        <span class="overview-label">Snapshots</span>
+        <span class="overview-value">${esc(String(aggregate.snapshotCount))}</span>
+      </div>
+      <div class="overview-row">
+        <span class="overview-label">Provider coverage</span>
+        <span class="overview-value">${esc(providerCoverage)}</span>
+      </div>
+      <div class="overview-row">
+        <span class="overview-label">Latest generated</span>
+        <span class="overview-value">${esc(generated)}</span>
+      </div>
+      <div class="overview-row">
+        <span class="overview-label">Snapshot refresh</span>
+        <span class="overview-value">${esc(refreshed)}</span>
+      </div>
+    </div>
+    ${providerCards}
+  </div>`;
+}
+
+function renderSnapshotWindowNotes(model: DashboardModel): string {
+  return model.sourceModeTotals
+    .filter(t => t.sourceMode !== 'local' && t.missingSnapshotWindowIds.length > 0)
+    .map(t => {
+      const labels = t.missingSnapshotWindowIds.map(windowId => findLocalHistoryWindow(t.windows, windowId).label).join(', ');
+      return `<div class="source-window-note" data-source-window-note="${esc(t.sourceMode)}" data-missing-windows="${esc(t.missingSnapshotWindowIds.join(','))}" hidden>Imported snapshots do not provide ${esc(labels)} totals; missing snapshot windows contribute 0.</div>`;
+    })
+    .join('\n');
 }
 
 export function buildDashboardHtml(
@@ -355,13 +567,15 @@ export function buildDashboardHtml(
     padding: 16px;
     margin-bottom: 16px;
   }
-  .window-selector {
+  .window-selector,
+  .source-selector {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
   }
-  .window-btn {
+  .window-btn,
+  .source-btn {
     background: transparent;
     color: var(--vscode-foreground, #cccccc);
     border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
@@ -370,12 +584,18 @@ export function buildDashboardHtml(
     cursor: pointer;
     font-size: 12px;
   }
-  .window-btn:hover {
+  .window-btn:hover,
+  .source-btn:hover {
     background: rgba(127,127,127,0.12);
   }
-  .window-btn.active {
+  .window-btn.active,
+  .source-btn.active {
     background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.18));
     border-color: var(--vscode-focusBorder, #007acc);
+  }
+  .source-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
   .tabs {
     display: flex;
@@ -417,6 +637,12 @@ export function buildDashboardHtml(
     font-weight: 600;
   }
   .provider-card {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .snapshot-card {
     border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
     border-radius: 4px;
     padding: 14px 16px;
@@ -599,10 +825,23 @@ export function buildDashboardHtml(
     font-size: 16px;
     font-weight: 600;
   }
+  .metric-value.small {
+    font-size: 12px;
+    font-weight: 500;
+  }
   .metric-value.errors {
     color: var(--vscode-descriptionForeground, #999999);
     font-size: 12px;
     font-weight: 500;
+  }
+  .snapshot-note,
+  .source-window-note {
+    margin: -2px 0 12px;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999999);
+  }
+  .source-window-note[hidden] {
+    display: none;
   }
   .footer {
     margin-top: 20px;
@@ -636,7 +875,7 @@ export function buildDashboardHtml(
 <div class="dashboard">
   <div class="title">PromptFuel</div>
   <div class="subtitle">Usage overview</div>
-  <div class="disclaimer">Live quota is shown first when provider APIs are available. Local history is secondary and comes from session files. Snapshots not included.</div>
+  <div class="disclaimer">Live quota is shown first when provider APIs are available. Usage history is secondary and can use local history, imported snapshots, or both. ${esc(renderSourceModeCopy(model))}</div>
 
   <div class="tabs" role="tablist" aria-label="Dashboard provider views">
     <button class="tab-btn active" id="tab-button-overview" data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>
@@ -644,17 +883,23 @@ export function buildDashboardHtml(
     <button class="tab-btn" id="tab-button-codex" data-dashboard-tab="codex" role="tab" aria-controls="tab-codex" aria-selected="false">Codex</button>
   </div>
 
+  <div class="section-title">Usage history source</div>
+  ${renderSourceModeSelector(model)}
+
   <div class="section-title">Local history window</div>
   ${renderLocalHistoryWindowSelector(model)}
+  ${renderSnapshotWindowNotes(model)}
 
   <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
     ${renderLiveQuotaSection(model)}
 
-    <div class="section-title">Local history (secondary)</div>
-    ${renderLocalHistorySummary(model.localHistoryWindows, model.defaultLocalHistoryWindowId)}
+    <div class="section-title">Usage history (secondary)</div>
+    ${renderSourceHistorySummary(model, model.defaultLocalHistoryWindowId)}
 
-    <div class="section-title">Provider local history details</div>
-    ${renderProviderCards(model.providers, model.defaultLocalHistoryWindowId)}
+    <div class="section-title">Provider usage history details</div>
+    ${renderProviderCards(model, model.providers, model.defaultLocalHistoryWindowId)}
+
+    ${renderSnapshotSummary(model)}
   </section>
 
   ${renderProviderTab(model, 'claude')}
@@ -675,6 +920,61 @@ export function buildDashboardHtml(
     var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab]'));
     var tabPanels = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab-panel]'));
     var windowButtons = Array.prototype.slice.call(document.querySelectorAll('[data-local-window]'));
+    var sourceButtons = Array.prototype.slice.call(document.querySelectorAll('[data-source-mode]'));
+    var activeSourceMode = '${model.defaultSourceMode}';
+    var activeWindowId = '${model.defaultLocalHistoryWindowId}';
+    function statusClass(statusClassName) {
+      return statusClassName ? 'badge source-provider-status ' + statusClassName : 'badge source-provider-status';
+    }
+    function updateSourceWindowNotes() {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-source-window-note]'), function(el) {
+        var sourceMode = el.getAttribute('data-source-window-note');
+        var missing = (el.getAttribute('data-missing-windows') || '').split(',');
+        var visible = sourceMode === activeSourceMode && missing.indexOf(activeWindowId) >= 0;
+        if (visible) {
+          el.removeAttribute('hidden');
+        } else {
+          el.setAttribute('hidden', '');
+        }
+      });
+    }
+    function updateSourceModeLabels() {
+      Array.prototype.forEach.call(document.querySelectorAll('.source-mode-label-value'), function(el) {
+        var label = el.getAttribute('data-source-label-' + activeSourceMode);
+        if (label !== null) {
+          el.textContent = label;
+        }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.source-provider-status'), function(el) {
+        var label = el.getAttribute('data-status-label-' + activeSourceMode);
+        var className = el.getAttribute('data-status-class-' + activeSourceMode);
+        if (label !== null) {
+          el.textContent = label;
+        }
+        el.className = statusClass(className);
+      });
+    }
+    function updateHistoryValues() {
+      Array.prototype.forEach.call(document.querySelectorAll('.local-history-summary-value'), function(el) {
+        var valueKind = el.getAttribute('data-local-value');
+        if (valueKind === 'tokens') {
+          el.textContent = el.getAttribute('data-tokens-' + activeSourceMode + '-' + activeWindowId) || '0 tokens';
+        } else if (valueKind === 'messages') {
+          el.textContent = el.getAttribute('data-messages-' + activeSourceMode + '-' + activeWindowId) || '0';
+        }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
+        var tokens = el.getAttribute('data-tokens-' + activeSourceMode + '-' + activeWindowId);
+        var messages = el.getAttribute('data-messages-' + activeSourceMode + '-' + activeWindowId);
+        if (tokens !== null) {
+          el.textContent = tokens;
+        } else if (messages !== null) {
+          el.textContent = messages;
+        }
+      });
+      updateSourceModeLabels();
+      updateSourceWindowNotes();
+    }
     function setActiveTab(tabId) {
       if (!tabId) {
         return;
@@ -697,25 +997,28 @@ export function buildDashboardHtml(
       if (!windowId) {
         return;
       }
-      Array.prototype.forEach.call(document.querySelectorAll('.local-history-summary-value'), function(el) {
-        var valueKind = el.getAttribute('data-local-value');
-        if (valueKind === 'tokens') {
-          el.textContent = el.getAttribute('data-tokens-' + windowId) || '0 tokens';
-        } else if (valueKind === 'messages') {
-          el.textContent = el.getAttribute('data-messages-' + windowId) || '0';
-        }
-      });
-      Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
-        var tokens = el.getAttribute('data-tokens-' + windowId);
-        var messages = el.getAttribute('data-messages-' + windowId);
-        if (tokens !== null) {
-          el.textContent = tokens;
-        } else if (messages !== null) {
-          el.textContent = messages;
-        }
-      });
+      activeWindowId = windowId;
+      updateHistoryValues();
       windowButtons.forEach(function(button) {
         var selected = button.getAttribute('data-local-window') === windowId;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+    }
+    function setSourceMode(sourceMode) {
+      if (!sourceMode) {
+        return;
+      }
+      var sourceButton = sourceButtons.filter(function(button) {
+        return button.getAttribute('data-source-mode') === sourceMode;
+      })[0];
+      if (sourceButton && sourceButton.disabled) {
+        return;
+      }
+      activeSourceMode = sourceMode;
+      updateHistoryValues();
+      sourceButtons.forEach(function(button) {
+        var selected = button.getAttribute('data-source-mode') === sourceMode;
         button.classList.toggle('active', selected);
         button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
@@ -723,6 +1026,11 @@ export function buildDashboardHtml(
     tabButtons.forEach(function(button) {
       button.addEventListener('click', function() {
         setActiveTab(button.getAttribute('data-dashboard-tab'));
+      });
+    });
+    sourceButtons.forEach(function(button) {
+      button.addEventListener('click', function() {
+        setSourceMode(button.getAttribute('data-source-mode'));
       });
     });
     windowButtons.forEach(function(button) {
@@ -742,6 +1050,7 @@ export function buildDashboardHtml(
         btn.textContent = 'Refresh';
       }
     });
+    updateHistoryValues();
   })();
 </script>
 </body>

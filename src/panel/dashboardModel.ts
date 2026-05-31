@@ -1,6 +1,6 @@
 import { PromptFuelStatus } from '../core/statusModel';
 import { ProviderQuotaState } from '../core/quotaTypes';
-import { PROVIDER_LABELS } from '../core/providers';
+import { KNOWN_PROVIDERS, PROVIDER_LABELS, isKnownProvider, type ProviderId } from '../core/providers';
 import type { LiveQuotaFreshness } from '../core/liveQuotaTypes';
 import {
   DEFAULT_LOCAL_HISTORY_WINDOW_ID,
@@ -13,11 +13,58 @@ import {
 } from '../core/usageAggregate';
 import type { PromptFuelSnapshotProviderAggregate } from '../core/snapshotTypes';
 
+export type DashboardSourceMode = 'local' | 'snapshots' | 'combined';
+
+export const DASHBOARD_SOURCE_MODES: ReadonlyArray<DashboardSourceMode> = [
+  'local',
+  'snapshots',
+  'combined',
+];
+
+export const DASHBOARD_SOURCE_MODE_LABELS: Record<DashboardSourceMode, string> = {
+  local: 'Local only',
+  snapshots: 'Snapshots only',
+  combined: 'Combined',
+};
+
+const SAFE_SNAPSHOT_SOURCE_LABELS = new Set([
+  'imported',
+  'manual import',
+  'snapshot',
+  'snapshot import',
+]);
+
 export interface DashboardLocalHistoryWindow {
   windowId: LocalHistoryWindowId;
   label: string;
   totalTokens: number;
   totalAssistantMessages: number;
+}
+
+export interface DashboardSourceModeOption {
+  sourceMode: DashboardSourceMode;
+  label: string;
+  available: boolean;
+}
+
+export interface DashboardSourceModeProviderCard {
+  providerId: ProviderId;
+  label: string;
+  status: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  parseErrors: number;
+  windows: DashboardLocalHistoryWindow[];
+}
+
+export interface DashboardSourceModeTotals {
+  sourceMode: DashboardSourceMode;
+  label: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  providers: DashboardSourceModeProviderCard[];
+  windows: DashboardLocalHistoryWindow[];
+  missingSnapshotWindowIds: LocalHistoryWindowId[];
 }
 
 export interface DashboardProviderCard {
@@ -53,6 +100,7 @@ export interface DashboardSnapshotProviderCard {
   totalAssistantMessages: number;
   sourceLabel?: string;
   windows: DashboardLocalHistoryWindow[];
+  providedWindowIds: LocalHistoryWindowId[];
 }
 
 export interface DashboardSnapshotAggregate {
@@ -75,6 +123,9 @@ export interface DashboardModel {
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
   snapshotAggregate: DashboardSnapshotAggregate;
+  sourceModes: DashboardSourceModeOption[];
+  sourceModeTotals: DashboardSourceModeTotals[];
+  defaultSourceMode: DashboardSourceMode;
 }
 
 export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
@@ -109,6 +160,12 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     };
   });
 
+  const snapshotAggregate = buildDashboardSnapshotAggregate(status.snapshotState.providers, status.snapshotState.snapshotCount, status.snapshotLastReadMs);
+  const snapshotsAvailable = snapshotAggregate.snapshotCount > 0 && snapshotAggregate.providers.length > 0;
+  const sourceModes = buildSourceModeOptions(snapshotsAvailable);
+  const defaultSourceMode: DashboardSourceMode = snapshotsAvailable ? 'combined' : 'local';
+  const sourceModeTotals = buildSourceModeTotals(cards, snapshotAggregate, combinedWindows);
+
   const liveQuotaCards: DashboardLiveQuotaCard[] = status.liveQuotaStates.map(s => ({
     providerId: s.providerId,
     label: PROVIDER_LABELS[s.providerId as keyof typeof PROVIDER_LABELS] ?? s.providerId,
@@ -133,7 +190,10 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     lastRefreshedMs: status.lastRefreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
-    snapshotAggregate: buildDashboardSnapshotAggregate(status.snapshotState.providers, status.snapshotState.snapshotCount, status.snapshotLastReadMs),
+    snapshotAggregate,
+    sourceModes,
+    sourceModeTotals,
+    defaultSourceMode,
   };
 }
 
@@ -207,15 +267,25 @@ function buildDashboardSnapshotAggregate(
 function buildDashboardSnapshotProviderCard(
   provider: PromptFuelSnapshotProviderAggregate,
 ): DashboardSnapshotProviderCard {
+  const sourceLabel = safeSnapshotSourceLabel(provider.sourceLabel);
   return {
     providerId: provider.providerId,
     label: PROVIDER_LABELS[provider.providerId],
     generatedAtMs: provider.generatedAtEpochMs,
     totalTokens: provider.aggregate.totalTokens,
     totalAssistantMessages: provider.aggregate.totalAssistantMessages,
-    ...(provider.sourceLabel ? { sourceLabel: provider.sourceLabel } : {}),
+    ...(sourceLabel ? { sourceLabel } : {}),
     windows: buildSnapshotWindowCards(provider.windowTotals, provider.aggregate),
+    providedWindowIds: getProvidedSnapshotWindowIds(provider.windowTotals),
   };
+}
+
+function safeSnapshotSourceLabel(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return SAFE_SNAPSHOT_SOURCE_LABELS.has(normalized) ? normalized : undefined;
 }
 
 function buildSnapshotWindowCards(
@@ -229,6 +299,209 @@ function buildSnapshotWindowCards(
       label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
       totalTokens: windowAggregate?.totalTokens ?? (windowId === 'all' ? aggregate.totalTokens : 0),
       totalAssistantMessages: windowAggregate?.totalAssistantMessages ?? (windowId === 'all' ? aggregate.totalAssistantMessages : 0),
+    };
+  });
+}
+
+function getProvidedSnapshotWindowIds(
+  windows: Partial<LocalHistoryWindowAggregateMap> | undefined,
+): LocalHistoryWindowId[] {
+  const ids = new Set<LocalHistoryWindowId>();
+  ids.add('all');
+  if (windows) {
+    for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
+      if (windows[windowId]) {
+        ids.add(windowId);
+      }
+    }
+  }
+  return LOCAL_HISTORY_WINDOW_IDS.filter(windowId => ids.has(windowId));
+}
+
+function buildSourceModeOptions(snapshotsAvailable: boolean): DashboardSourceModeOption[] {
+  return DASHBOARD_SOURCE_MODES.map(sourceMode => ({
+    sourceMode,
+    label: DASHBOARD_SOURCE_MODE_LABELS[sourceMode],
+    available: sourceMode === 'local' || snapshotsAvailable,
+  }));
+}
+
+function buildSourceModeTotals(
+  localProviders: DashboardProviderCard[],
+  snapshotAggregate: DashboardSnapshotAggregate,
+  localWindows: LocalHistoryWindowAggregateMap,
+): DashboardSourceModeTotals[] {
+  const snapshotProviders = buildSnapshotSourceProviders(snapshotAggregate.providers);
+  const localSourceProviders = buildLocalSourceProviders(localProviders);
+  const snapshotWindows = buildCombinedSnapshotWindowTotals(snapshotAggregate.providers);
+  const snapshotWindowIds = getSnapshotWindowIds(snapshotAggregate.providers);
+
+  const localTotals = buildSourceTotals(
+    'local',
+    localSourceProviders,
+    buildLocalHistoryWindowCards(localWindows, localWindows.all.totalTokens, localWindows.all.totalAssistantMessages),
+    [],
+  );
+
+  const snapshotTotals = buildSourceTotals(
+    'snapshots',
+    snapshotProviders,
+    buildLocalHistoryWindowCards(snapshotWindows, snapshotWindows.all.totalTokens, snapshotWindows.all.totalAssistantMessages),
+    getMissingSnapshotWindowIds(snapshotWindowIds),
+  );
+
+  const combinedProviders = KNOWN_PROVIDERS.map(providerId => {
+    const local = localSourceProviders.find(p => p.providerId === providerId);
+    const snapshot = snapshotProviders.find(p => p.providerId === providerId);
+    return combineSourceProviderCards(providerId, local, snapshot);
+  });
+  const combinedWindows = combineWindowCards(
+    localTotals.windows,
+    snapshotTotals.windows,
+  );
+  const combinedTotals = buildSourceTotals(
+    'combined',
+    combinedProviders,
+    combinedWindows,
+    getMissingSnapshotWindowIds(snapshotWindowIds),
+  );
+
+  return [localTotals, snapshotTotals, combinedTotals];
+}
+
+function buildSourceTotals(
+  sourceMode: DashboardSourceMode,
+  providers: DashboardSourceModeProviderCard[],
+  windows: DashboardLocalHistoryWindow[],
+  missingSnapshotWindowIds: LocalHistoryWindowId[],
+): DashboardSourceModeTotals {
+  return {
+    sourceMode,
+    label: DASHBOARD_SOURCE_MODE_LABELS[sourceMode],
+    totalTokens: windows.find(w => w.windowId === 'all')?.totalTokens ?? 0,
+    totalAssistantMessages: windows.find(w => w.windowId === 'all')?.totalAssistantMessages ?? 0,
+    providers,
+    windows,
+    missingSnapshotWindowIds,
+  };
+}
+
+function buildLocalSourceProviders(
+  providers: DashboardProviderCard[],
+): DashboardSourceModeProviderCard[] {
+  return providers
+    .filter(provider => isKnownProvider(provider.providerId))
+    .map(provider => ({
+      providerId: provider.providerId as ProviderId,
+      label: provider.label,
+      status: provider.status,
+      totalTokens: provider.totalTokens,
+      totalAssistantMessages: provider.totalAssistantMessages,
+      parseErrors: provider.parseErrors,
+      windows: provider.localHistoryWindows,
+    }));
+}
+
+function buildSnapshotSourceProviders(
+  providers: DashboardSnapshotProviderCard[],
+): DashboardSourceModeProviderCard[] {
+  return KNOWN_PROVIDERS.map(providerId => {
+    const matching = providers.filter(provider => provider.providerId === providerId);
+    const aggregateWindows = createEmptyLocalHistoryWindowTotals();
+    let totalTokens = 0;
+    let totalAssistantMessages = 0;
+
+    for (const provider of matching) {
+      totalTokens += provider.totalTokens;
+      totalAssistantMessages += provider.totalAssistantMessages;
+      mergeDashboardWindowTotals(aggregateWindows, provider.windows);
+    }
+
+    aggregateWindows.all.totalTokens = totalTokens;
+    aggregateWindows.all.totalAssistantMessages = totalAssistantMessages;
+
+    return {
+      providerId,
+      label: PROVIDER_LABELS[providerId],
+      status: totalTokens > 0 || totalAssistantMessages > 0 ? 'loaded' : 'no-data',
+      totalTokens,
+      totalAssistantMessages,
+      parseErrors: 0,
+      windows: buildLocalHistoryWindowCards(aggregateWindows, totalTokens, totalAssistantMessages),
+    };
+  });
+}
+
+function buildCombinedSnapshotWindowTotals(
+  providers: DashboardSnapshotProviderCard[],
+): LocalHistoryWindowAggregateMap {
+  const totals = createEmptyLocalHistoryWindowTotals();
+  let allTokens = 0;
+  let allMessages = 0;
+
+  for (const provider of providers) {
+    allTokens += provider.totalTokens;
+    allMessages += provider.totalAssistantMessages;
+    mergeDashboardWindowTotals(totals, provider.windows);
+  }
+
+  totals.all.totalTokens = allTokens;
+  totals.all.totalAssistantMessages = allMessages;
+  return totals;
+}
+
+function getSnapshotWindowIds(
+  providers: DashboardSnapshotProviderCard[],
+): Set<LocalHistoryWindowId> {
+  const ids = new Set<LocalHistoryWindowId>();
+  for (const provider of providers) {
+    for (const windowId of provider.providedWindowIds) {
+      ids.add(windowId);
+    }
+  }
+  return ids;
+}
+
+function getMissingSnapshotWindowIds(
+  snapshotWindowIds: Set<LocalHistoryWindowId>,
+): LocalHistoryWindowId[] {
+  return LOCAL_HISTORY_WINDOW_IDS.filter(windowId => windowId !== 'all' && !snapshotWindowIds.has(windowId));
+}
+
+function combineSourceProviderCards(
+  providerId: ProviderId,
+  local: DashboardSourceModeProviderCard | undefined,
+  snapshot: DashboardSourceModeProviderCard | undefined,
+): DashboardSourceModeProviderCard {
+  const localWindows = local?.windows ?? buildLocalHistoryWindowCards(undefined, 0, 0);
+  const snapshotWindows = snapshot?.windows ?? buildLocalHistoryWindowCards(undefined, 0, 0);
+  const windows = combineWindowCards(localWindows, snapshotWindows);
+  const totalTokens = (local?.totalTokens ?? 0) + (snapshot?.totalTokens ?? 0);
+  const totalAssistantMessages = (local?.totalAssistantMessages ?? 0) + (snapshot?.totalAssistantMessages ?? 0);
+
+  return {
+    providerId,
+    label: PROVIDER_LABELS[providerId],
+    status: totalTokens > 0 || totalAssistantMessages > 0 ? 'loaded' : (local?.status ?? 'no-data'),
+    totalTokens,
+    totalAssistantMessages,
+    parseErrors: local?.parseErrors ?? 0,
+    windows,
+  };
+}
+
+function combineWindowCards(
+  left: DashboardLocalHistoryWindow[],
+  right: DashboardLocalHistoryWindow[],
+): DashboardLocalHistoryWindow[] {
+  return LOCAL_HISTORY_WINDOW_IDS.map(windowId => {
+    const leftWindow = left.find(w => w.windowId === windowId);
+    const rightWindow = right.find(w => w.windowId === windowId);
+    return {
+      windowId,
+      label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
+      totalTokens: (leftWindow?.totalTokens ?? 0) + (rightWindow?.totalTokens ?? 0),
+      totalAssistantMessages: (leftWindow?.totalAssistantMessages ?? 0) + (rightWindow?.totalAssistantMessages ?? 0),
     };
   });
 }
