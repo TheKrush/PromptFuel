@@ -16,7 +16,7 @@ export function formatTooltip(status: PromptFuelStatus): string {
 
   lines.push('PromptFuel');
   lines.push('Local history only');
-  lines.push('Live quota not enabled yet');
+  lines.push('Live quota not enabled');
   lines.push('Snapshots not included');
   lines.push('');
 

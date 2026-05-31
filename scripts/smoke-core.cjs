@@ -256,7 +256,7 @@ test('formatTooltip: includes Local history only disclaimer', () => {
 test('formatTooltip: includes Live quota not enabled disclaimer', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Live quota not enabled yet'), `expected "Live quota not enabled yet" in tooltip`);
+  assert.ok(tooltip.includes('Live quota not enabled'), `expected "Live quota not enabled" in tooltip`);
 });
 
 test('formatTooltip: includes Snapshots not included disclaimer', () => {
@@ -634,8 +634,8 @@ test('dashboard: includes local history disclaimer banner', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Live quota shows'), `expected "Live quota shows" disclaimer in HTML`);
-  assert.ok(html.includes('Local history shows'), `expected "Local history shows" disclaimer in HTML`);
+  assert.ok(html.includes('live quota from provider APIs'), `expected live quota disclaimer in HTML`);
+  assert.ok(html.includes('local history from session files'), `expected local history disclaimer in HTML`);
   assert.ok(html.includes('Snapshots'), `expected "Snapshots" disclaimer in HTML`);
 });
 

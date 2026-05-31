@@ -111,7 +111,7 @@ function renderLiveQuotaSection(model: DashboardModel): string {
     return `
   <div class="live-quota-section">
     <div class="subtitle">Live quota</div>
-    <div class="live-quota-not-enabled">Live quota not enabled.</div>
+    <div class="live-quota-not-enabled">Live quota not enabled</div>
   </div>`;
   }
 
@@ -434,7 +434,7 @@ export function buildDashboardHtml(
 <div class="dashboard">
   <div class="title">PromptFuel</div>
   <div class="subtitle">Usage overview</div>
-  <div class="disclaimer">Live quota shows provider-reported limits. Local history shows usage from local session files. Snapshots are not included yet.</div>
+  <div class="disclaimer">Status bar and tooltip may show live quota from provider APIs when enabled. Dashboard overview shows local history from session files. Snapshots are not included.</div>
 
   ${renderLiveQuotaSection(model)}
 
