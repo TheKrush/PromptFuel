@@ -1,3 +1,5 @@
+import { LocalHistoryWindowAggregateMap } from './usageAggregate';
+
 export type QuotaWindowId = '5h' | '7d';
 
 export const QUOTA_WINDOWS: ReadonlyArray<QuotaWindowId> = ['5h', '7d'];
@@ -15,4 +17,5 @@ export interface ProviderQuotaState {
   totalTokens?: number;
   totalAssistantMessages?: number;
   parseErrors?: number;
+  localHistoryWindows?: LocalHistoryWindowAggregateMap;
 }

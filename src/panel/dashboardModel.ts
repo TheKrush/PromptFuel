@@ -2,6 +2,21 @@ import { PromptFuelStatus } from '../core/statusModel';
 import { ProviderQuotaState } from '../core/quotaTypes';
 import { PROVIDER_LABELS } from '../core/providers';
 import type { LiveQuotaFreshness } from '../core/liveQuotaTypes';
+import {
+  DEFAULT_LOCAL_HISTORY_WINDOW_ID,
+  LOCAL_HISTORY_WINDOW_IDS,
+  LOCAL_HISTORY_WINDOW_LABELS,
+  LocalHistoryWindowAggregateMap,
+  LocalHistoryWindowId,
+  createEmptyAggregate,
+} from '../core/usageAggregate';
+
+export interface DashboardLocalHistoryWindow {
+  windowId: LocalHistoryWindowId;
+  label: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+}
 
 export interface DashboardProviderCard {
   providerId: string;
@@ -10,6 +25,7 @@ export interface DashboardProviderCard {
   totalTokens: number;
   totalAssistantMessages: number;
   parseErrors: number;
+  localHistoryWindows: DashboardLocalHistoryWindow[];
 }
 
 export interface DashboardLiveQuotaWindow {
@@ -31,6 +47,8 @@ export interface DashboardModel {
   totalTokens: number;
   totalAssistantMessages: number;
   providers: DashboardProviderCard[];
+  localHistoryWindows: DashboardLocalHistoryWindow[];
+  defaultLocalHistoryWindowId: LocalHistoryWindowId;
   liveQuotaCards: DashboardLiveQuotaCard[];
   liveQuotaEnabled: boolean;
   lastRefreshedMs: number | undefined;
@@ -41,15 +59,22 @@ export interface DashboardModel {
 export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
   let totalTokens = 0;
   let totalAssistantMessages = 0;
+  const combinedWindows = createEmptyLocalHistoryWindowTotals();
 
   const cards: DashboardProviderCard[] = status.providerStates.map((state: ProviderQuotaState) => {
     const tokens = state.totalTokens ?? 0;
     const messages = state.totalAssistantMessages ?? 0;
     const errors = state.parseErrors ?? 0;
+    const providerWindows = buildLocalHistoryWindowCards(
+      state.localHistoryWindows,
+      tokens,
+      messages,
+    );
 
     if (state.status === 'loaded') {
       totalTokens += tokens;
       totalAssistantMessages += messages;
+      mergeDashboardWindowTotals(combinedWindows, providerWindows);
     }
 
     return {
@@ -59,6 +84,7 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
       totalTokens: tokens,
       totalAssistantMessages: messages,
       parseErrors: errors,
+      localHistoryWindows: providerWindows,
     };
   });
 
@@ -79,10 +105,56 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     totalTokens,
     totalAssistantMessages,
     providers: cards,
+    localHistoryWindows: buildLocalHistoryWindowCards(combinedWindows, totalTokens, totalAssistantMessages),
+    defaultLocalHistoryWindowId: DEFAULT_LOCAL_HISTORY_WINDOW_ID,
     liveQuotaCards,
     liveQuotaEnabled: status.liveQuotaEnabled,
     lastRefreshedMs: status.lastRefreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
   };
+}
+
+function buildLocalHistoryWindowCards(
+  windows: LocalHistoryWindowAggregateMap | undefined,
+  totalTokens: number,
+  totalAssistantMessages: number,
+): DashboardLocalHistoryWindow[] {
+  return LOCAL_HISTORY_WINDOW_IDS.map(windowId => {
+    const aggregate = windows?.[windowId];
+    if (aggregate) {
+      return {
+        windowId,
+        label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
+        totalTokens: aggregate.totalTokens,
+        totalAssistantMessages: aggregate.totalAssistantMessages,
+      };
+    }
+
+    return {
+      windowId,
+      label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
+      totalTokens: windowId === 'all' ? totalTokens : 0,
+      totalAssistantMessages: windowId === 'all' ? totalAssistantMessages : 0,
+    };
+  });
+}
+
+function createEmptyLocalHistoryWindowTotals(): LocalHistoryWindowAggregateMap {
+  return {
+    today: createEmptyAggregate(),
+    last5h: createEmptyAggregate(),
+    last7d: createEmptyAggregate(),
+    all: createEmptyAggregate(),
+  };
+}
+
+function mergeDashboardWindowTotals(
+  totals: LocalHistoryWindowAggregateMap,
+  windows: DashboardLocalHistoryWindow[],
+): void {
+  for (const window of windows) {
+    totals[window.windowId].totalTokens += window.totalTokens;
+    totals[window.windowId].totalAssistantMessages += window.totalAssistantMessages;
+  }
 }

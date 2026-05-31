@@ -575,6 +575,72 @@ test('formatTooltip: no file paths in output', () => {
 // === Dashboard model ===
 
 const { buildDashboardModel } = require(path.join(OUT, 'panel/dashboardModel'));
+const {
+  createEmptyLocalHistoryWindowAggregateMap,
+  mergeTokenUsageIntoLocalHistoryWindows,
+  parseTimestampEpochMs,
+} = require(path.join(OUT, 'core/usageAggregate'));
+
+function aggregateFixture(tokens, messages) {
+  return {
+    totalInputTokens: tokens,
+    totalOutputTokens: 0,
+    totalCacheCreationInputTokens: 0,
+    totalCacheReadInputTokens: 0,
+    totalTokens: tokens,
+    totalAssistantMessages: messages,
+  };
+}
+
+function localHistoryWindowsFixture({ today, last5h, last7d, all }) {
+  return {
+    today: aggregateFixture(today.tokens, today.messages),
+    last5h: aggregateFixture(last5h.tokens, last5h.messages),
+    last7d: aggregateFixture(last7d.tokens, last7d.messages),
+    all: aggregateFixture(all.tokens, all.messages),
+  };
+}
+
+test('local history windows: aggregates Today, Last 5h, Last 7d, and all history', () => {
+  const now = new Date('2026-05-31T20:00:00.000Z').getTime();
+  const windows = createEmptyLocalHistoryWindowAggregateMap();
+  const usage = (tokens) => ({
+    inputTokens: tokens,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  });
+
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage(100), now - (2 * 60 * 60 * 1000), now);
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage(200), now - (6 * 60 * 60 * 1000), now);
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage(300), now - (2 * 24 * 60 * 60 * 1000), now);
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage(400), now - (8 * 24 * 60 * 60 * 1000), now);
+
+  assert.strictEqual(windows.today.totalTokens, 300, 'expected Today to include same-day records');
+  assert.strictEqual(windows.last5h.totalTokens, 100, 'expected Last 5h to include only recent records');
+  assert.strictEqual(windows.last7d.totalTokens, 600, 'expected Last 7d to include last-week records');
+  assert.strictEqual(windows.all.totalTokens, 1000, 'expected all history to remain unchanged');
+});
+
+test('local history windows: missing, invalid, and future timestamps stay out of recent windows', () => {
+  const now = new Date('2026-05-31T20:00:00.000Z').getTime();
+  const windows = createEmptyLocalHistoryWindowAggregateMap();
+  const usage = {
+    inputTokens: 100,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  };
+
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage, undefined, now);
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage, parseTimestampEpochMs('not a timestamp'), now);
+  mergeTokenUsageIntoLocalHistoryWindows(windows, usage, now + 60 * 1000, now);
+
+  assert.strictEqual(windows.today.totalTokens, 0, 'expected no guessed Today records');
+  assert.strictEqual(windows.last5h.totalTokens, 0, 'expected no guessed Last 5h records');
+  assert.strictEqual(windows.last7d.totalTokens, 0, 'expected no guessed Last 7d records');
+  assert.strictEqual(windows.all.totalTokens, 300, 'expected all history to retain records');
+});
 
 test('dashboard: provider labels match expected', () => {
   const status = applyRefreshResults(
@@ -617,6 +683,52 @@ test('dashboard: no-data provider excluded from totals', () => {
   assert.strictEqual(model.totalAssistantMessages, 2, 'expected only claude messages');
 });
 
+test('dashboard: local history windows combine loaded providers and default to Today', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 100, messages: 1 },
+          last5h: { tokens: 80, messages: 1 },
+          last7d: { tokens: 300, messages: 3 },
+          all: { tokens: 1000, messages: 10 },
+        }),
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 50, messages: 1 },
+          last5h: { tokens: 50, messages: 1 },
+          last7d: { tokens: 400, messages: 4 },
+          all: { tokens: 2000, messages: 20 },
+        }),
+      },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const today = model.localHistoryWindows.find(w => w.windowId === 'today');
+  const all = model.localHistoryWindows.find(w => w.windowId === 'all');
+  const claude = model.providers.find(p => p.providerId === 'claude');
+
+  assert.strictEqual(model.defaultLocalHistoryWindowId, 'today');
+  assert.strictEqual(model.totalTokens, 3000, 'expected all-history aggregate to remain unchanged');
+  assert.strictEqual(model.totalAssistantMessages, 30, 'expected all-history message aggregate to remain unchanged');
+  assert.strictEqual(today.totalTokens, 150, 'expected combined Today tokens');
+  assert.strictEqual(today.totalAssistantMessages, 2, 'expected combined Today messages');
+  assert.strictEqual(all.totalTokens, 3000, 'expected combined all-history tokens');
+  assert.strictEqual(claude.localHistoryWindows.find(w => w.windowId === 'last7d').totalTokens, 300);
+});
+
 test('dashboard: uses local history wording, not subscription', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
@@ -632,6 +744,39 @@ test('dashboard: uses local history wording, not subscription', () => {
   assert.ok(html.includes('Local history tokens'), `expected "Local history tokens" overview label`);
   assert.ok(html.includes('Local history messages'), `expected "Local history messages" overview label`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
+});
+
+test('dashboard: local history selector labels and values are windowed', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 5000,
+        totalAssistantMessages: 5,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 125, messages: 1 },
+          last5h: { tokens: 75, messages: 1 },
+          last7d: { tokens: 1200, messages: 3 },
+          all: { tokens: 5000, messages: 5 },
+        }),
+      },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('Today'), `expected Today window label`);
+  assert.ok(html.includes('Last 5h'), `expected Last 5h window label`);
+  assert.ok(html.includes('Last 7d'), `expected Last 7d window label`);
+  assert.ok(html.includes('All local history'), `expected All local history window label`);
+  assert.ok(html.includes('125 tokens'), `expected Today default tokens`);
+  assert.ok(html.includes('data-tokens-all="5.0K tokens"'), `expected all-history tokens to remain available`);
+  assert.ok(html.includes('data-messages-last7d="3"'), `expected provider window details`);
 });
 
 test('dashboard: includes local history disclaimer banner', () => {
@@ -716,6 +861,44 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   assert.ok(html.includes('Live quota unavailable'), `expected unavailable live quota in dashboard`);
   assert.ok(html.includes('UNAVAILABLE'), `expected unavailable badge in dashboard`);
   assert.ok(html.includes('Local history tokens'), `expected local history to remain separated`);
+});
+
+test('dashboard: live quota values are not filtered by local history selector', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const now = Date.now();
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 5000,
+      totalAssistantMessages: 5,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 100, messages: 1 },
+        last5h: { tokens: 80, messages: 1 },
+        last7d: { tokens: 1200, messages: 3 },
+        all: { tokens: 5000, messages: 5 },
+      }),
+    }],
+  );
+  const status = applyLiveQuotaResults(localStatus, [{
+    providerId: 'claude',
+    windows: [
+      { windowId: '5h', usedPercentage: 92, remainingPercentage: 8, resetsAtEpochMs: now + 1000 },
+      { windowId: '7d', usedPercentage: 72, remainingPercentage: 28, resetsAtEpochMs: now + 2000 },
+    ],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.strictEqual(model.liveQuotaCards[0].windows[0].usedPercentage, 92);
+  assert.ok(html.includes('92% used / 8% left'), `expected live quota 5h value`);
+  assert.ok(html.includes('72% used / 28% left'), `expected live quota 7d value`);
+  assert.ok(html.includes('data-local-window="all"'), `expected local selector to include all-history without affecting live quota`);
 });
 
 test('dashboard: stale live quota renders as stale card, not unavailable', () => {

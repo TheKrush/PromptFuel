@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { DashboardModel } from './dashboardModel';
+import { DashboardLocalHistoryWindow, DashboardModel } from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
 import { formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
 
@@ -168,13 +168,46 @@ function liveQuotaRefreshSummary(model: DashboardModel): string {
   return `Live quota refreshed: ${formatRefreshTime(model.liveQuotaLastRefreshedMs)}${cacheText}`;
 }
 
+function findLocalHistoryWindow(
+  windows: DashboardLocalHistoryWindow[],
+  windowId: string,
+): DashboardLocalHistoryWindow {
+  return windows.find(w => w.windowId === windowId)
+    ?? windows.find(w => w.windowId === 'all')
+    ?? { windowId: 'all', label: 'All local history', totalTokens: 0, totalAssistantMessages: 0 };
+}
+
+function localHistoryDataAttributes(
+  windows: DashboardLocalHistoryWindow[],
+  value: 'tokens' | 'messages',
+): string {
+  return windows.map(w => {
+    const raw = value === 'tokens' ? formatTokenCount(w.totalTokens) : String(w.totalAssistantMessages);
+    return `data-${value}-${esc(w.windowId)}="${esc(raw)}"`;
+  }).join(' ');
+}
+
+function renderLocalHistoryWindowSelector(model: DashboardModel): string {
+  const buttons = model.localHistoryWindows.map(w => {
+    const selected = w.windowId === model.defaultLocalHistoryWindowId;
+    return `<button class="window-btn${selected ? ' active' : ''}" data-local-window="${esc(w.windowId)}" aria-pressed="${selected ? 'true' : 'false'}">${esc(w.label)}</button>`;
+  }).join('\n');
+
+  return `
+  <div class="window-selector" aria-label="Local history window">
+    ${buttons}
+  </div>`;
+}
+
 export function buildDashboardHtml(
   webview: vscode.Webview,
   model: DashboardModel,
 ): string {
   const nonce = generateNonce();
+  const selectedWindow = findLocalHistoryWindow(model.localHistoryWindows, model.defaultLocalHistoryWindowId);
 
   const providerCards = model.providers.map(p => {
+    const providerSelectedWindow = findLocalHistoryWindow(p.localHistoryWindows, model.defaultLocalHistoryWindowId);
     return `
     <div class="provider-card">
       <div class="provider-header">
@@ -184,11 +217,11 @@ export function buildDashboardHtml(
       <div class="provider-metrics">
         <div class="metric">
           <span class="metric-label">Tokens</span>
-          <span class="metric-value">${esc(formatTokenCount(p.totalTokens))}</span>
+          <span class="metric-value provider-window-value" ${localHistoryDataAttributes(p.localHistoryWindows, 'tokens')}>${esc(formatTokenCount(providerSelectedWindow.totalTokens))}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Messages</span>
-          <span class="metric-value">${esc(String(p.totalAssistantMessages))}</span>
+          <span class="metric-value provider-window-value" ${localHistoryDataAttributes(p.localHistoryWindows, 'messages')}>${esc(String(providerSelectedWindow.totalAssistantMessages))}</span>
         </div>
         ${p.parseErrors > 0 ? `
         <div class="metric">
@@ -251,6 +284,28 @@ export function buildDashboardHtml(
     border-radius: 4px;
     padding: 16px;
     margin-bottom: 16px;
+  }
+  .window-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .window-btn {
+    background: transparent;
+    color: var(--vscode-foreground, #cccccc);
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .window-btn:hover {
+    background: rgba(127,127,127,0.12);
+  }
+  .window-btn.active {
+    background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.18));
+    border-color: var(--vscode-focusBorder, #007acc);
   }
   .overview-row {
     display: flex;
@@ -488,14 +543,15 @@ export function buildDashboardHtml(
   ${renderLiveQuotaSection(model)}
 
   <div class="section-title">Local history (secondary)</div>
+  ${renderLocalHistoryWindowSelector(model)}
   <div class="overview">
     <div class="overview-row">
       <span class="overview-label">Local history tokens</span>
-      <span class="overview-value">${esc(formatTokenCount(model.totalTokens))}</span>
+      <span class="overview-value" id="localHistoryTokens" ${localHistoryDataAttributes(model.localHistoryWindows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
     </div>
     <div class="overview-row">
       <span class="overview-label">Local history messages</span>
-      <span class="overview-value">${esc(String(model.totalAssistantMessages))}</span>
+      <span class="overview-value" id="localHistoryMessages" ${localHistoryDataAttributes(model.localHistoryWindows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
     </div>
   </div>
 
@@ -514,6 +570,39 @@ export function buildDashboardHtml(
   (function() {
     var acquired = acquireVsCodeApi();
     var btn = document.getElementById('refreshBtn');
+    var windowButtons = Array.prototype.slice.call(document.querySelectorAll('[data-local-window]'));
+    var localHistoryTokens = document.getElementById('localHistoryTokens');
+    var localHistoryMessages = document.getElementById('localHistoryMessages');
+    function setLocalWindow(windowId) {
+      if (!windowId) {
+        return;
+      }
+      if (localHistoryTokens) {
+        localHistoryTokens.textContent = localHistoryTokens.getAttribute('data-tokens-' + windowId) || '0 tokens';
+      }
+      if (localHistoryMessages) {
+        localHistoryMessages.textContent = localHistoryMessages.getAttribute('data-messages-' + windowId) || '0';
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
+        var tokens = el.getAttribute('data-tokens-' + windowId);
+        var messages = el.getAttribute('data-messages-' + windowId);
+        if (tokens !== null) {
+          el.textContent = tokens;
+        } else if (messages !== null) {
+          el.textContent = messages;
+        }
+      });
+      windowButtons.forEach(function(button) {
+        var selected = button.getAttribute('data-local-window') === windowId;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+    }
+    windowButtons.forEach(function(button) {
+      button.addEventListener('click', function() {
+        setLocalWindow(button.getAttribute('data-local-window'));
+      });
+    });
     btn.addEventListener('click', function() {
       btn.disabled = true;
       btn.textContent = 'Refreshing...';

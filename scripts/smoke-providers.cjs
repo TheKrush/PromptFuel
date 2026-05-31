@@ -10,6 +10,8 @@ const OUT = path.resolve(__dirname, '../out');
 
 const { ClaudeLocalReader } = require(path.join(OUT, 'providers/claudeLocal'));
 const { CodexLocalReader } = require(path.join(OUT, 'providers/codexLocal'));
+const { parseClaudeUsage } = require(path.join(OUT, 'providers/claudeUsageParser'));
+const { parseCodexUsage } = require(path.join(OUT, 'providers/codexUsageParser'));
 const { runEnabledReaders } = require(path.join(OUT, 'providers/readProviders'));
 const {
   formatRefreshSummary,
@@ -697,6 +699,52 @@ async function main() {
     assert.strictEqual(result.totalTokens, 3450);
   });
 
+  // Claude parser: timestamp windows
+  const claudeWindowed = path.join(FIXTURE_DIR, 'claude-windowed');
+  const windowNow = new Date('2026-05-31T20:00:00.000Z').getTime();
+  await createClaudeFixture(claudeWindowed, [
+    {
+      type: 'assistant',
+      timestamp: windowNow - 2 * 60 * 60 * 1000,
+      message: { usage: { input_tokens: 100, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: 'assistant',
+      timestamp: windowNow - 6 * 60 * 60 * 1000,
+      message: { usage: { input_tokens: 200, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: 'assistant',
+      timestamp: windowNow - 2 * 24 * 60 * 60 * 1000,
+      message: { usage: { input_tokens: 300, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: 'assistant',
+      timestamp: windowNow - 8 * 24 * 60 * 60 * 1000,
+      message: { usage: { input_tokens: 400, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: 'assistant',
+      message: { usage: { input_tokens: 500, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+    {
+      type: 'assistant',
+      timestamp: 'invalid timestamp',
+      message: { usage: { input_tokens: 600, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } },
+    },
+  ]);
+
+  await test('parseClaudeUsage: returns timestamp-aware local history windows', async () => {
+    const result = await parseClaudeUsage(claudeWindowed, { nowMs: windowNow });
+    assert.strictEqual(result.aggregate.totalTokens, 2100, 'all-history aggregate should be unchanged');
+    assert.strictEqual(result.localHistoryWindows.all.totalTokens, 2100);
+    assert.strictEqual(result.localHistoryWindows.today.totalTokens, 300);
+    assert.strictEqual(result.localHistoryWindows.last5h.totalTokens, 100);
+    assert.strictEqual(result.localHistoryWindows.last7d.totalTokens, 600);
+    assert.strictEqual(result.localHistoryWindows.all.totalAssistantMessages, 6);
+    assert.strictEqual(result.localHistoryWindows.last7d.totalAssistantMessages, 3);
+  });
+
   // Claude parser: malformed lines
   const claudeMalformed = path.join(FIXTURE_DIR, 'claude-malformed');
   await createClaudeFixture(claudeMalformed, [
@@ -793,6 +841,41 @@ async function main() {
     assert.strictEqual(result.totalAssistantMessages, 2);
     assert.strictEqual(result.totalInputTokens, 2800);
     assert.strictEqual(result.totalOutputTokens, 2100);
+  });
+
+  // Codex parser: timestamp windows
+  const codexWindowed = path.join(FIXTURE_DIR, 'codex-windowed');
+  await createCodexFixture(codexWindowed, [
+    {
+      type: 'tool_use',
+      timestamp: new Date(windowNow - 1 * 60 * 60 * 1000).toISOString(),
+      payload: { info: { last_token_usage: { input_tokens: 600, output_tokens: 400, cached_input_tokens: 0 } } },
+    },
+    {
+      type: 'tool_use',
+      timestamp: new Date(windowNow - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      payload: { info: { last_token_usage: { input_tokens: 1000, output_tokens: 1000, cached_input_tokens: 0 } } },
+    },
+    {
+      type: 'tool_use',
+      payload: { info: { last_token_usage: { input_tokens: 1500, output_tokens: 1500, cached_input_tokens: 0 } } },
+    },
+    {
+      type: 'tool_use',
+      timestamp: 'not a timestamp',
+      payload: { info: { last_token_usage: { input_tokens: 2000, output_tokens: 2000, cached_input_tokens: 0 } } },
+    },
+  ]);
+
+  await test('parseCodexUsage: returns timestamp-aware local history windows', async () => {
+    const result = await parseCodexUsage(codexWindowed, { nowMs: windowNow });
+    assert.strictEqual(result.aggregate.totalTokens, 10000, 'all-history aggregate should be unchanged');
+    assert.strictEqual(result.localHistoryWindows.all.totalTokens, 10000);
+    assert.strictEqual(result.localHistoryWindows.today.totalTokens, 1000);
+    assert.strictEqual(result.localHistoryWindows.last5h.totalTokens, 1000);
+    assert.strictEqual(result.localHistoryWindows.last7d.totalTokens, 3000);
+    assert.strictEqual(result.localHistoryWindows.all.totalAssistantMessages, 4);
+    assert.strictEqual(result.localHistoryWindows.last7d.totalAssistantMessages, 2);
   });
 
   // Codex parser: malformed lines

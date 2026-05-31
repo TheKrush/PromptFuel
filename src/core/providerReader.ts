@@ -1,3 +1,5 @@
+import { LocalHistoryWindowAggregateMap } from './usageAggregate';
+
 export type ReadResultStatus = 'ok' | 'not-found' | 'no-data' | 'error';
 
 export interface ReadResult {
@@ -12,6 +14,7 @@ export interface ReadResult {
   totalInputTokens?: number;
   totalOutputTokens?: number;
   totalAssistantMessages?: number;
+  localHistoryWindows?: LocalHistoryWindowAggregateMap;
 }
 
 export interface ProviderReader {

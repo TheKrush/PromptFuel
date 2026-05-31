@@ -1,5 +1,6 @@
 import { ProviderQuotaState, ProviderQuotaStatus, QUOTA_WINDOW_LABELS } from './quotaTypes';
 import { ReadResult } from './providerReader';
+import { cloneAggregate, LocalHistoryWindowAggregateMap } from './usageAggregate';
 import {
   availabilityFromFreshness,
   getGenericQuotaUnavailableMessage,
@@ -54,6 +55,22 @@ function readResultToQuotaState(
     totalTokens: result.totalTokens,
     totalAssistantMessages: result.totalAssistantMessages,
     parseErrors: result.parseErrors,
+    localHistoryWindows: cloneLocalHistoryWindows(result.localHistoryWindows),
+  };
+}
+
+function cloneLocalHistoryWindows(
+  windows: LocalHistoryWindowAggregateMap | undefined,
+): LocalHistoryWindowAggregateMap | undefined {
+  if (!windows) {
+    return undefined;
+  }
+
+  return {
+    today: cloneAggregate(windows.today),
+    last5h: cloneAggregate(windows.last5h),
+    last7d: cloneAggregate(windows.last7d),
+    all: cloneAggregate(windows.all),
   };
 }
 

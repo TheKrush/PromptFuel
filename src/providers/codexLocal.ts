@@ -23,7 +23,7 @@ export class CodexLocalReader implements ProviderReader {
       return { providerId: 'codex', status: 'not-found' };
     }
 
-    const { aggregate, stats } = await parseCodexUsage(this.sessionsRoot);
+    const { aggregate, localHistoryWindows, stats } = await parseCodexUsage(this.sessionsRoot);
 
     if (stats.recordsMatched === 0) {
       return {
@@ -47,6 +47,7 @@ export class CodexLocalReader implements ProviderReader {
       totalInputTokens: aggregate.totalInputTokens,
       totalOutputTokens: aggregate.totalOutputTokens,
       totalAssistantMessages: aggregate.totalAssistantMessages,
+      localHistoryWindows,
     };
   }
 }

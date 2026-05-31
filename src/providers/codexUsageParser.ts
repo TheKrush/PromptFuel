@@ -1,7 +1,15 @@
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as readline from 'node:readline';
-import { AggregateUsage, createEmptyAggregate, mergeTokenUsage } from '../core/usageAggregate';
+import {
+  AggregateUsage,
+  LocalHistoryWindowAggregateMap,
+  createEmptyAggregate,
+  createEmptyLocalHistoryWindowAggregateMap,
+  mergeTokenUsage,
+  mergeTokenUsageIntoLocalHistoryWindows,
+  parseTimestampEpochMs,
+} from '../core/usageAggregate';
 
 const MAX_DEPTH = 3;
 const MAX_LINES_PER_FILE = 5000;
@@ -27,12 +35,19 @@ export interface CodexParseStats {
   fileReadErrors: number;
 }
 
+export interface CodexUsageParseOptions {
+  nowMs?: number;
+}
+
 export async function parseCodexUsage(
   sessionsRoot: string,
-): Promise<{ aggregate: AggregateUsage; stats: CodexParseStats }> {
+  options: CodexUsageParseOptions = {},
+): Promise<{ aggregate: AggregateUsage; localHistoryWindows: LocalHistoryWindowAggregateMap; stats: CodexParseStats }> {
   const result = {
     aggregate: createEmptyAggregate(),
+    localHistoryWindows: createEmptyLocalHistoryWindowAggregateMap(),
     stats: createEmptyStats(),
+    nowMs: options.nowMs ?? Date.now(),
   };
 
   const files = await findJsonlFiles(sessionsRoot);
@@ -50,7 +65,12 @@ export async function parseCodexUsage(
 
 async function parseSingleFile(
   file: string,
-  result: { aggregate: AggregateUsage; stats: CodexParseStats },
+  result: {
+    aggregate: AggregateUsage;
+    localHistoryWindows: LocalHistoryWindowAggregateMap;
+    stats: CodexParseStats;
+    nowMs: number;
+  },
 ): Promise<void> {
   result.stats.filesInspected += 1;
 
@@ -89,6 +109,12 @@ async function parseSingleFile(
 
     result.stats.recordsMatched += 1;
     mergeTokenUsage(result.aggregate, usage);
+    mergeTokenUsageIntoLocalHistoryWindows(
+      result.localHistoryWindows,
+      usage,
+      parseTimestampEpochMs(record.timestamp),
+      result.nowMs,
+    );
   }
 }
 
