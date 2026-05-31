@@ -1,24 +1,29 @@
 # PromptFuel
 
-Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.
+Track AI coding assistant usage history and opt-in live quota status from the VS Code status bar.
 
 ## Features
 
-- **Status bar fuel display** - live quota percentages when available, with local history kept secondary
-- **Usage dashboard** - webview panel with live quota state and local usage history overview
-- **Snapshot imports** - open an import folder and drop in aggregate-only snapshot JSON for dashboard history
-- **Auto-refresh** - configurable interval to re-read quota and local history
-- **Live quota by default** - attempt authenticated quota reads from configured providers (`promptFuel.liveQuotaEnabled`, defaults `true`)
+- **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when provider APIs are available.
+- **Codex and Claude live quota support** - PromptFuel attempts live quota reads for configured providers from existing provider auth state.
+- **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
+- **Local history secondary** - local Claude and Codex aggregate history remains visible in the dashboard and tooltip, but does not replace live quota as the primary status.
+- **Dashboard tabs** - the dashboard includes Overview, Claude, and Codex tabs.
+- **Local-history windows** - switch usage history between Today, Last 5h, Last 7d, and All local history.
+- **Source modes** - switch dashboard usage history between Local only, Snapshots only, and Combined when imported snapshots are available.
+- **Snapshot imports** - open an import folder and drop in aggregate-only snapshot JSON for dashboard history.
+- **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
 ## Privacy & Data
 
-- **Local history stays local.** Live quota reads contact provider services when enabled.
-- **No raw prompts, responses, or transcripts are collected.**
-- **No secrets, tokens, or API keys are stored or transmitted by PromptFuel.**
-- **No telemetry** is sent by default.
-- Usage data is read from local Claude and Codex history files on your machine.
-- Live quota reads existing provider OAuth state; PromptFuel does not provide its own auth UI.
-- You can inspect all stored data via the "PromptFuel: Open Data Folder" command.
+- **Local history stays local.** Live quota reads contact provider services only when enabled.
+- **No raw prompts, responses, or transcripts are collected or displayed.**
+- **No secrets, tokens, or API keys are stored by PromptFuel.**
+- **No telemetry** is sent by PromptFuel.
+- Local history parsing uses aggregate metadata only.
+- Snapshot imports are aggregate-only JSON; private labels, local paths, filenames, usernames, machine names, and raw provider payloads are not product data.
+- Live quota reads use existing provider OAuth state when available; PromptFuel does not provide its own auth UI.
+- You can inspect PromptFuel's extension storage via **PromptFuel: Open Data Folder**.
 
 ## Commands
 
@@ -79,6 +84,16 @@ Minimal generic snapshot example:
   ]
 }
 ```
+
+Malformed snapshot files, unsupported schema versions, unknown providers, and private source labels are ignored. Snapshot recent-window totals are used only when the snapshot provides them; otherwise those recent windows contribute 0 while All local history uses the snapshot aggregate total.
+
+## Current Limitations
+
+- Live quota can be unavailable when provider quota data, provider auth state, or provider endpoints are unavailable.
+- PromptFuel does not include its own provider sign-in flow.
+- Dashboard charts, notifications, additional providers, and Marketplace publish automation are not part of the MVP.
+- Snapshot imports are read from JSON files placed in the imports folder; there is no in-dashboard upload flow yet.
+- Local history and snapshots are aggregate-only and may not include every provider-side detail.
 
 ## Settings
 

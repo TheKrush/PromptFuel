@@ -2,7 +2,7 @@
 
 ## 0.4.0
 
-Live quota visibility is now PromptFuel's primary product path. The extension attempts live quota reads automatically, shows safe loading/unavailable states, and keeps local history clearly secondary.
+Live quota visibility is now PromptFuel's primary product path. The extension attempts live quota reads automatically, shows safe loading/unavailable/stale states, and keeps local history clearly secondary.
 
 **Included in this release:**
 
@@ -13,18 +13,25 @@ Live quota visibility is now PromptFuel's primary product path. The extension at
 - Status bar now prioritizes live quota percentages when available.
 - Status bar now shows safe live quota loading, unavailable, and disabled states instead of silently falling back to local history as the primary experience.
 - Tooltip copy now separates live quota from local history and avoids local-history-only wording by default.
-- Dashboard now includes live quota visibility, including loading, unavailable, visible percentage, and disabled states.
+- Tooltip copy now reports snapshot import state instead of using stale fixed snapshot wording.
+- Dashboard now includes live quota visibility, including loading, unavailable, cached/stale, visible percentage, and disabled states.
+- Dashboard now includes Overview, Claude, and Codex tabs.
+- Dashboard local-history windows now include Today, Last 5h, Last 7d, and All local history.
+- Dashboard source modes now include Local only, Snapshots only, and Combined, with live quota kept independent from the selected usage-history source.
+- Imported snapshot support added for aggregate-only PromptFuel JSON snapshots.
+- `PromptFuel: Open Snapshot Imports Folder` command added for discoverable snapshot import placement.
 - Live quota UX copy polished for unavailable/auth-missing cases and sanitized errors.
 - Manifest and package validation updated, including a check that `promptFuel.liveQuotaEnabled` defaults to `true`.
 - `.vscodeignore` updated for package contents.
-- README and contributor docs updated for live quota behavior and current validation workflows.
-- Smoke coverage expanded for live quota status formatting, explicit opt-out, unavailable/error states, available percentages, dashboard copy, provider window parsing, and local history not masking live quota states.
+- README and contributor docs updated for live quota behavior, snapshot imports, source modes, privacy boundaries, and current validation workflows.
+- Smoke coverage expanded for live quota status formatting, explicit opt-out, unavailable/error/stale states, available percentages, display modes, dashboard tabs, local-history windows, source modes, snapshot imports, CSP nonce checks, provider window parsing, and local history not masking live quota states.
 
 **Scope notes:**
 
 - PromptFuel still does not provide its own provider auth UI.
 - Live quota can remain unavailable when provider quota data, existing provider auth, or provider endpoints are not available.
-- Local history remains aggregate-only and does not expose prompts, responses, transcripts, raw JSONL, file paths, usernames, machine names, secrets, or tokens.
+- Local history and imported snapshots remain aggregate-only and do not expose prompts, responses, transcripts, raw JSONL, file paths, usernames, machine names, secrets, or tokens.
+- Dashboard charts, notifications, additional providers, and Marketplace publish automation remain post-MVP.
 
 ## 0.3.0
 

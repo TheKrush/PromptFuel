@@ -21,7 +21,7 @@ function esc(s: string): string {
 function freshnessBadge(freshness: string): string {
   const map: Record<string, string> = {
     'live': '<span class="badge live">LIVE</span>',
-    'cached': '<span class="badge cached">STALE</span>',
+    'cached': '<span class="badge cached">CACHED</span>',
     'stale': '<span class="badge stale">STALE</span>',
     'unavailable': '<span class="badge error">UNAVAILABLE</span>',
     'error': '<span class="badge error">UNAVAILABLE</span>',

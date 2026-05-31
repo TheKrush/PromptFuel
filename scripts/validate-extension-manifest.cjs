@@ -17,6 +17,9 @@ const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'))
 if (pkg.name !== 'prompt-fuel') fail(`name is "${pkg.name}", expected "prompt-fuel"`);
 if (pkg.displayName !== 'PromptFuel') fail(`displayName is "${pkg.displayName}", expected "PromptFuel"`);
 if (pkg.publisher !== 'thekrush') fail(`publisher is "${pkg.publisher}", expected "thekrush"`);
+if (pkg.description !== 'Track AI coding assistant usage history and opt-in live quota status from the VS Code status bar.') {
+  fail(`description is "${pkg.description}", expected current release description`);
+}
 
 // Command checks
 const commands = pkg.contributes?.commands || [];
@@ -62,6 +65,20 @@ for (const key of Object.keys(properties)) {
 if (properties['promptFuel.liveQuotaEnabled']?.default !== true) {
   fail('setting "promptFuel.liveQuotaEnabled" default should be true');
 }
+if (properties['promptFuel.displayMode']?.default !== 'compact') {
+  fail('setting "promptFuel.displayMode" default should be "compact"');
+}
+if (properties['promptFuel.refreshIntervalMinutes']?.default !== 5) {
+  fail('setting "promptFuel.refreshIntervalMinutes" default should be 5');
+}
+const defaultProviders = properties['promptFuel.enabledProviders']?.default;
+if (!Array.isArray(defaultProviders) || defaultProviders.join(',') !== 'claude,codex') {
+  fail('setting "promptFuel.enabledProviders" default should be ["claude","codex"]');
+}
+
+if (!Array.isArray(pkg.activationEvents) || pkg.activationEvents.join(',') !== 'onStartupFinished') {
+  fail(`activationEvents should be ["onStartupFinished"], got ${JSON.stringify(pkg.activationEvents)}`);
+}
 
 // File existence checks
 for (const file of ['README.md', 'LICENSE', 'src/extension.ts', 'CHANGELOG.md', 'SUPPORT.md']) {
@@ -104,6 +121,22 @@ const requiredCategories = ['Machine Learning', 'Visualization', 'Other'];
 for (const cat of requiredCategories) {
   if (!(pkg.categories || []).includes(cat)) {
     fail(`package.json "categories" is missing "${cat}"`);
+  }
+}
+
+const requiredKeywords = ['ai', 'coding-assistant', 'quota', 'usage', 'status-bar', 'dashboard', 'claude', 'codex'];
+for (const keyword of requiredKeywords) {
+  if (!(pkg.keywords || []).includes(keyword)) {
+    fail(`package.json "keywords" is missing "${keyword}"`);
+  }
+}
+
+if (fs.existsSync(vscodeIgnorePath)) {
+  const vscodeIgnore = fs.readFileSync(vscodeIgnorePath, 'utf8');
+  for (const exclude of ['.git/**', '.vscode/**', 'scripts/**', 'tools/**', 'src/**', 'DO_NOT_DELETE/**']) {
+    if (!vscodeIgnore.includes(exclude)) {
+      fail(`.vscodeignore is missing package exclusion "${exclude}"`);
+    }
   }
 }
 

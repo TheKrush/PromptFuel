@@ -1,7 +1,7 @@
 {
   "name": "prompt-fuel",
   "displayName": "PromptFuel",
-  "description": "Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.",
+  "description": "Track AI coding assistant usage history and opt-in live quota status from the VS Code status bar.",
   "version": "0.4.0",
   "publisher": "thekrush",
   "author": "TheKrush",

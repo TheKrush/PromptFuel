@@ -298,10 +298,26 @@ test('formatTooltip: explicit opt-out shows Live quota disabled', () => {
   assert.ok(tooltip.includes('Live quota disabled'), `expected "Live quota disabled" in tooltip`);
 });
 
-test('formatTooltip: includes Snapshots not included disclaimer', () => {
+test('formatTooltip: reports snapshot state before first snapshot read', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Snapshots not included'), `expected "Snapshots not included" in tooltip`);
+  assert.ok(tooltip.includes('Imported snapshots: not checked yet.'), `expected not-checked snapshot state in tooltip`);
+});
+
+test('formatTooltip: reports no imported snapshots after snapshot read', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([], 0));
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Imported snapshots: none found.'), `expected empty snapshot state in tooltip`);
+});
+
+test('formatTooltip: reports imported aggregate snapshot state', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+  }]));
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Imported snapshots: 1 aggregate snapshot, 1 provider aggregate.'), `expected imported snapshot state in tooltip`);
 });
 
 // === Tooltip: provider splits still exist ===

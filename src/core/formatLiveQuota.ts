@@ -212,7 +212,7 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
     lines.push('Live quota loading');
   }
 
-  lines.push('Snapshots not included');
+  lines.push(formatSnapshotTooltipLine(status));
   lines.push('');
 
   // Live quota sections render unavailable/error states with sanitized labels.
@@ -271,6 +271,21 @@ function getLatestLiveQuotaTimestamp(status: PromptFuelStatus): number | undefin
     }
   }
   return latest;
+}
+
+function formatSnapshotTooltipLine(status: PromptFuelStatus): string {
+  const snapshotCount = status.snapshotState.snapshotCount;
+  const providerCount = status.snapshotState.providers.length;
+
+  if (snapshotCount > 0 && providerCount > 0) {
+    return `Imported snapshots: ${snapshotCount} aggregate snapshot${snapshotCount === 1 ? '' : 's'}, ${providerCount} provider aggregate${providerCount === 1 ? '' : 's'}.`;
+  }
+
+  if (status.snapshotLastReadMs !== undefined) {
+    return 'Imported snapshots: none found.';
+  }
+
+  return 'Imported snapshots: not checked yet.';
 }
 
 function getTooltipProviderIds(status: PromptFuelStatus): string[] {
