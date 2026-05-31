@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
-import { DashboardLocalHistoryWindow, DashboardModel } from './dashboardModel';
+import {
+  DashboardLiveQuotaCard,
+  DashboardLocalHistoryWindow,
+  DashboardModel,
+  DashboardProviderCard,
+} from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
 import { formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
 
@@ -92,7 +97,7 @@ function renderLiveQuotaWindow(window: { windowId: string; usedPercentage?: numb
       </div>`;
 }
 
-function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuotaCard): string {
+function renderLiveQuotaCard(card: DashboardLiveQuotaCard): string {
   const windowsHtml = card.windows.map(w => renderLiveQuotaWindow(w)).join('\n');
   const footerLabel = card.freshness === 'stale' || card.freshness === 'cached'
     ? 'Cached'
@@ -118,6 +123,32 @@ function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuota
     </div>`;
 }
 
+function renderLiveQuotaEmptyState(model: DashboardModel, label?: string): string {
+  const stateText = model.liveQuotaEnabled
+    ? 'Live quota loading'
+    : 'Live quota disabled';
+  const badge = model.liveQuotaEnabled
+    ? ''
+    : '<span class="badge disabled">DISABLED</span>';
+  const prefix = label ? `${esc(label)}: ` : '';
+
+  return `<div class="live-quota-not-enabled">${prefix}${esc(stateText)} ${badge}</div>`;
+}
+
+function renderLiveQuotaCards(cards: DashboardLiveQuotaCard[]): string {
+  return cards.map(card => {
+    if (card.freshness === 'unavailable' || card.freshness === 'error') {
+      return `
+    <div class="live-quota-unavailable">
+      <span class="live-quota-label">${esc(card.label)}</span>
+      ${freshnessBadge(card.freshness)}
+      <span>${esc(getSanitizedErrorLabel())}</span>
+    </div>`;
+    }
+    return renderLiveQuotaCard(card);
+  }).join('\n');
+}
+
 function renderLiveQuotaSection(model: DashboardModel): string {
   if (model.liveQuotaCards.length === 0) {
     const stateText = model.liveQuotaEnabled
@@ -133,22 +164,23 @@ function renderLiveQuotaSection(model: DashboardModel): string {
   </div>`;
   }
 
-  const cardsHtml = model.liveQuotaCards.map(card => {
-    if (card.freshness === 'unavailable' || card.freshness === 'error') {
-      return `
-    <div class="live-quota-unavailable">
-      <span class="live-quota-label">${esc(card.label)}</span>
-      ${freshnessBadge(card.freshness)}
-      <span>${esc(getSanitizedErrorLabel())}</span>
-    </div>`;
-    }
-    return renderLiveQuotaCard(card);
-  }).join('\n');
-
   return `
   <div class="live-quota-section">
     <div class="section-title">Live quota</div>
-    ${cardsHtml}
+    ${renderLiveQuotaCards(model.liveQuotaCards)}
+  </div>`;
+}
+
+function renderProviderLiveQuotaSection(model: DashboardModel, provider: DashboardProviderCard): string {
+  const card = model.liveQuotaCards.find(c => c.providerId === provider.providerId);
+  const body = card
+    ? renderLiveQuotaCards([card])
+    : renderLiveQuotaEmptyState(model, provider.label);
+
+  return `
+  <div class="live-quota-section" data-provider-live-quota="${esc(provider.providerId)}">
+    <div class="section-title">${esc(provider.label)} live quota</div>
+    ${body}
   </div>`;
 }
 
@@ -199,17 +231,30 @@ function renderLocalHistoryWindowSelector(model: DashboardModel): string {
   </div>`;
 }
 
-export function buildDashboardHtml(
-  webview: vscode.Webview,
-  model: DashboardModel,
+function renderLocalHistorySummary(
+  windows: DashboardLocalHistoryWindow[],
+  defaultWindowId: string,
 ): string {
-  const nonce = generateNonce();
-  const selectedWindow = findLocalHistoryWindow(model.localHistoryWindows, model.defaultLocalHistoryWindowId);
+  const selectedWindow = findLocalHistoryWindow(windows, defaultWindowId);
 
-  const providerCards = model.providers.map(p => {
-    const providerSelectedWindow = findLocalHistoryWindow(p.localHistoryWindows, model.defaultLocalHistoryWindowId);
+  return `
+  <div class="overview">
+    <div class="overview-row">
+      <span class="overview-label">Local history tokens</span>
+      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${localHistoryDataAttributes(windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
+    </div>
+    <div class="overview-row">
+      <span class="overview-label">Local history messages</span>
+      <span class="overview-value local-history-summary-value" data-local-value="messages" ${localHistoryDataAttributes(windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
+    </div>
+  </div>`;
+}
+
+function renderProviderCards(providers: DashboardProviderCard[], defaultWindowId: string): string {
+  return providers.map(p => {
+    const providerSelectedWindow = findLocalHistoryWindow(p.localHistoryWindows, defaultWindowId);
     return `
-    <div class="provider-card">
+    <div class="provider-card" data-provider-local-detail="${esc(p.providerId)}">
       <div class="provider-header">
         <span class="provider-label">${esc(p.label)}</span>
         ${statusBadge(p.status)}
@@ -232,6 +277,31 @@ export function buildDashboardHtml(
       </div>
     </div>`;
   }).join('\n');
+}
+
+function renderProviderTab(model: DashboardModel, providerId: string): string {
+  const provider = model.providers.find(p => p.providerId === providerId);
+  if (!provider) {
+    return '';
+  }
+
+  return `
+  <section class="tab-panel" id="tab-${esc(provider.providerId)}" data-dashboard-tab-panel="${esc(provider.providerId)}" role="tabpanel" aria-labelledby="tab-button-${esc(provider.providerId)}" hidden>
+    ${renderProviderLiveQuotaSection(model, provider)}
+
+    <div class="section-title">${esc(provider.label)} local history (secondary)</div>
+    ${renderLocalHistorySummary(provider.localHistoryWindows, model.defaultLocalHistoryWindowId)}
+
+    <div class="section-title">${esc(provider.label)} provider local history details</div>
+    ${renderProviderCards([provider], model.defaultLocalHistoryWindowId)}
+  </section>`;
+}
+
+export function buildDashboardHtml(
+  webview: vscode.Webview,
+  model: DashboardModel,
+): string {
+  const nonce = generateNonce();
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -306,6 +376,34 @@ export function buildDashboardHtml(
   .window-btn.active {
     background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.18));
     border-color: var(--vscode-focusBorder, #007acc);
+  }
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 16px 0 12px;
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    padding-bottom: 8px;
+  }
+  .tab-btn {
+    background: transparent;
+    color: var(--vscode-foreground, #cccccc);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .tab-btn:hover {
+    background: rgba(127,127,127,0.12);
+  }
+  .tab-btn.active {
+    background: var(--vscode-button-secondaryBackground, rgba(127,127,127,0.18));
+    border-color: var(--vscode-focusBorder, #007acc);
+  }
+  .tab-panel[hidden] {
+    display: none;
   }
   .overview-row {
     display: flex;
@@ -540,23 +638,27 @@ export function buildDashboardHtml(
   <div class="subtitle">Usage overview</div>
   <div class="disclaimer">Live quota is shown first when provider APIs are available. Local history is secondary and comes from session files. Snapshots not included.</div>
 
-  ${renderLiveQuotaSection(model)}
-
-  <div class="section-title">Local history (secondary)</div>
-  ${renderLocalHistoryWindowSelector(model)}
-  <div class="overview">
-    <div class="overview-row">
-      <span class="overview-label">Local history tokens</span>
-      <span class="overview-value" id="localHistoryTokens" ${localHistoryDataAttributes(model.localHistoryWindows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
-    </div>
-    <div class="overview-row">
-      <span class="overview-label">Local history messages</span>
-      <span class="overview-value" id="localHistoryMessages" ${localHistoryDataAttributes(model.localHistoryWindows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
-    </div>
+  <div class="tabs" role="tablist" aria-label="Dashboard provider views">
+    <button class="tab-btn active" id="tab-button-overview" data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>
+    <button class="tab-btn" id="tab-button-claude" data-dashboard-tab="claude" role="tab" aria-controls="tab-claude" aria-selected="false">Claude</button>
+    <button class="tab-btn" id="tab-button-codex" data-dashboard-tab="codex" role="tab" aria-controls="tab-codex" aria-selected="false">Codex</button>
   </div>
 
-  <div class="section-title">Provider local history details</div>
-  ${providerCards}
+  <div class="section-title">Local history window</div>
+  ${renderLocalHistoryWindowSelector(model)}
+
+  <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
+    ${renderLiveQuotaSection(model)}
+
+    <div class="section-title">Local history (secondary)</div>
+    ${renderLocalHistorySummary(model.localHistoryWindows, model.defaultLocalHistoryWindowId)}
+
+    <div class="section-title">Provider local history details</div>
+    ${renderProviderCards(model.providers, model.defaultLocalHistoryWindowId)}
+  </section>
+
+  ${renderProviderTab(model, 'claude')}
+  ${renderProviderTab(model, 'codex')}
 
   <div class="footer">
     <div>
@@ -570,19 +672,39 @@ export function buildDashboardHtml(
   (function() {
     var acquired = acquireVsCodeApi();
     var btn = document.getElementById('refreshBtn');
+    var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab]'));
+    var tabPanels = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab-panel]'));
     var windowButtons = Array.prototype.slice.call(document.querySelectorAll('[data-local-window]'));
-    var localHistoryTokens = document.getElementById('localHistoryTokens');
-    var localHistoryMessages = document.getElementById('localHistoryMessages');
+    function setActiveTab(tabId) {
+      if (!tabId) {
+        return;
+      }
+      tabButtons.forEach(function(button) {
+        var selected = button.getAttribute('data-dashboard-tab') === tabId;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+      });
+      tabPanels.forEach(function(panel) {
+        var selected = panel.getAttribute('data-dashboard-tab-panel') === tabId;
+        if (selected) {
+          panel.removeAttribute('hidden');
+        } else {
+          panel.setAttribute('hidden', '');
+        }
+      });
+    }
     function setLocalWindow(windowId) {
       if (!windowId) {
         return;
       }
-      if (localHistoryTokens) {
-        localHistoryTokens.textContent = localHistoryTokens.getAttribute('data-tokens-' + windowId) || '0 tokens';
-      }
-      if (localHistoryMessages) {
-        localHistoryMessages.textContent = localHistoryMessages.getAttribute('data-messages-' + windowId) || '0';
-      }
+      Array.prototype.forEach.call(document.querySelectorAll('.local-history-summary-value'), function(el) {
+        var valueKind = el.getAttribute('data-local-value');
+        if (valueKind === 'tokens') {
+          el.textContent = el.getAttribute('data-tokens-' + windowId) || '0 tokens';
+        } else if (valueKind === 'messages') {
+          el.textContent = el.getAttribute('data-messages-' + windowId) || '0';
+        }
+      });
       Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
         var tokens = el.getAttribute('data-tokens-' + windowId);
         var messages = el.getAttribute('data-messages-' + windowId);
@@ -598,6 +720,11 @@ export function buildDashboardHtml(
         button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
     }
+    tabButtons.forEach(function(button) {
+      button.addEventListener('click', function() {
+        setActiveTab(button.getAttribute('data-dashboard-tab'));
+      });
+    });
     windowButtons.forEach(function(button) {
       button.addEventListener('click', function() {
         setLocalWindow(button.getAttribute('data-local-window'));

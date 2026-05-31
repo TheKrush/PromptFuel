@@ -601,6 +601,16 @@ function localHistoryWindowsFixture({ today, last5h, last7d, all }) {
   };
 }
 
+function dashboardTabPanel(html, tabId) {
+  const marker = `data-dashboard-tab-panel="${tabId}"`;
+  const markerIndex = html.indexOf(marker);
+  assert.ok(markerIndex >= 0, `expected ${tabId} tab panel`);
+  const sectionStart = html.lastIndexOf('<section', markerIndex);
+  const sectionEnd = html.indexOf('</section>', markerIndex);
+  assert.ok(sectionStart >= 0 && sectionEnd >= 0, `expected complete ${tabId} tab panel`);
+  return html.slice(sectionStart, sectionEnd + '</section>'.length);
+}
+
 test('local history windows: aggregates Today, Last 5h, Last 7d, and all history', () => {
   const now = new Date('2026-05-31T20:00:00.000Z').getTime();
   const windows = createEmptyLocalHistoryWindowAggregateMap();
@@ -779,6 +789,111 @@ test('dashboard: local history selector labels and values are windowed', () => {
   assert.ok(html.includes('data-messages-last7d="3"'), `expected provider window details`);
 });
 
+test('dashboard: renders Overview, Claude, and Codex tabs with Overview active by default', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('data-dashboard-tab="overview"'), `expected Overview tab`);
+  assert.ok(html.includes('data-dashboard-tab="claude"'), `expected Claude tab`);
+  assert.ok(html.includes('data-dashboard-tab="codex"'), `expected Codex tab`);
+  assert.ok(html.includes('data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>'), `expected Overview active by default`);
+  assert.ok(html.includes('data-dashboard-tab-panel="overview"'), `expected Overview tab panel`);
+  assert.ok(html.includes('data-dashboard-tab-panel="claude" role="tabpanel" aria-labelledby="tab-button-claude" hidden'), `expected Claude tab hidden by default`);
+  assert.ok(html.includes('data-dashboard-tab-panel="codex" role="tabpanel" aria-labelledby="tab-button-codex" hidden'), `expected Codex tab hidden by default`);
+});
+
+test('dashboard: provider tabs isolate local history details by provider', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        parseErrors: 2,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 100, messages: 1 },
+          last5h: { tokens: 80, messages: 1 },
+          last7d: { tokens: 300, messages: 3 },
+          all: { tokens: 1000, messages: 10 },
+        }),
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        parseErrors: 3,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 200, messages: 2 },
+          last5h: { tokens: 150, messages: 2 },
+          last7d: { tokens: 600, messages: 6 },
+          all: { tokens: 2000, messages: 20 },
+        }),
+      },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(claudePanel.includes('Claude provider local history details'), `expected Claude local detail heading`);
+  assert.ok(claudePanel.includes('data-provider-local-detail="claude"'), `expected Claude detail card`);
+  assert.ok(claudePanel.includes('Parse errors: 2 lines skipped'), `expected Claude parse count`);
+  assert.ok(!claudePanel.includes('data-provider-local-detail="codex"'), `Claude tab should not include Codex local detail card`);
+  assert.ok(!claudePanel.includes('Parse errors: 3 lines skipped'), `Claude tab should not include Codex parse count`);
+
+  assert.ok(codexPanel.includes('Codex provider local history details'), `expected Codex local detail heading`);
+  assert.ok(codexPanel.includes('data-provider-local-detail="codex"'), `expected Codex detail card`);
+  assert.ok(codexPanel.includes('Parse errors: 3 lines skipped'), `expected Codex parse count`);
+  assert.ok(!codexPanel.includes('data-provider-local-detail="claude"'), `Codex tab should not include Claude local detail card`);
+  assert.ok(!codexPanel.includes('Parse errors: 2 lines skipped'), `Codex tab should not include Claude parse count`);
+});
+
+test('dashboard: local history selector updates tab summaries and provider details', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 5000,
+      totalAssistantMessages: 5,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 125, messages: 1 },
+        last5h: { tokens: 75, messages: 1 },
+        last7d: { tokens: 1200, messages: 3 },
+        all: { tokens: 5000, messages: 5 },
+      }),
+    }],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+
+  assert.ok(html.includes('data-local-window="last7d"'), `expected Last 7d selector button`);
+  assert.ok(html.includes('querySelectorAll(\'.local-history-summary-value\')'), `expected selector script to update visible tab summary values`);
+  assert.ok(claudePanel.includes('data-tokens-last7d="1.2K tokens"'), `expected Claude tab summary to carry Last 7d tokens`);
+  assert.ok(claudePanel.includes('data-messages-all="5"'), `expected Claude tab details to carry all-history messages`);
+});
+
 test('dashboard: includes local history disclaimer banner', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
@@ -901,6 +1016,71 @@ test('dashboard: live quota values are not filtered by local history selector', 
   assert.ok(html.includes('data-local-window="all"'), `expected local selector to include all-history without affecting live quota`);
 });
 
+test('dashboard: stale provider card renders inside provider tab only for that provider', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 92, remainingPercentage: 8 },
+        { windowId: '7d', usedPercentage: 72, remainingPercentage: 28 },
+      ],
+      freshness: 'stale',
+      lastUpdatedEpochMs: Date.now(),
+    },
+    {
+      providerId: 'codex',
+      windows: [
+        { windowId: '5h', usedPercentage: 15, remainingPercentage: 85 },
+      ],
+      freshness: 'live',
+      lastUpdatedEpochMs: Date.now(),
+    },
+  ]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(claudePanel.includes('Claude live quota'), `expected Claude live quota section`);
+  assert.ok(claudePanel.includes('STALE'), `expected stale badge in Claude tab`);
+  assert.ok(claudePanel.includes('92% used / 8% left'), `expected Claude stale value`);
+  assert.ok(!claudePanel.includes('15% used / 85% left'), `Claude tab should not include Codex live value`);
+  assert.ok(codexPanel.includes('LIVE'), `expected Codex live badge`);
+  assert.ok(!codexPanel.includes('92% used / 8% left'), `Codex tab should not include Claude stale value`);
+});
+
+test('dashboard: unavailable provider state renders inside provider tab', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+    { providerId: 'codex', windows: [], freshness: 'unavailable' },
+  ]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(codexPanel.includes('Codex live quota'), `expected Codex live quota section`);
+  assert.ok(codexPanel.includes('UNAVAILABLE'), `expected unavailable badge in Codex tab`);
+  assert.ok(codexPanel.includes('Live quota unavailable'), `expected sanitized unavailable copy in Codex tab`);
+});
+
+test('dashboard: disabled live quota state renders inside provider tabs', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = createInitialStatus(['claude', 'codex'], false);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(claudePanel.includes('Claude: Live quota disabled'), `expected Claude disabled copy`);
+  assert.ok(codexPanel.includes('Codex: Live quota disabled'), `expected Codex disabled copy`);
+  assert.ok(claudePanel.includes('DISABLED'), `expected disabled badge in Claude tab`);
+  assert.ok(codexPanel.includes('DISABLED'), `expected disabled badge in Codex tab`);
+});
+
 test('dashboard: stale live quota renders as stale card, not unavailable', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyLiveQuotaResults(createInitialStatus(['claude']), [
@@ -959,6 +1139,22 @@ test('dashboard: local history secondary label and parse wording', () => {
   assert.ok(html.includes('Local history (secondary)'), `expected secondary local history section`);
   assert.ok(html.includes('Provider local history details'), `expected provider local detail heading`);
   assert.ok(html.includes('Parse errors: 1 line skipped'), `expected non-alarming parse wording`);
+});
+
+test('dashboard: webview CSP and script nonce remain paired', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = createInitialStatus(['claude']);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const cspMatch = html.match(/script-src 'nonce-([^']+)'/);
+  const scriptMatch = html.match(/<script nonce="([^"]+)">/);
+
+  assert.ok(html.includes("default-src 'none'"), `expected restrictive default CSP`);
+  assert.ok(html.includes('style-src http://example.com'), `expected webview CSP source in style-src`);
+  assert.ok(cspMatch, `expected CSP nonce`);
+  assert.ok(scriptMatch, `expected script nonce`);
+  assert.strictEqual(scriptMatch[1], cspMatch[1], `expected script nonce to match CSP nonce`);
 });
 
 // === Live quota: formatLiveQuota integration ===
