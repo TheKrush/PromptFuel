@@ -2,7 +2,13 @@ import * as fs from 'node:fs/promises';
 import * as https from 'node:https';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { LiveQuotaFreshness, LiveQuotaStatus, LiveQuotaWindow } from '../core/liveQuotaTypes';
+import {
+  availabilityFromFreshness,
+  getGenericQuotaUnavailableMessage,
+  type LiveQuotaFreshness,
+  type LiveQuotaStatus,
+  type LiveQuotaWindow,
+} from '../core/liveQuotaTypes';
 import type { ProviderId } from '../core/providers';
 import type { LiveQuotaReader } from './liveQuotaReader';
 
@@ -33,7 +39,9 @@ export async function createAuthenticatedReader(
     read: async () => ({
       providerId,
       windows: [],
+      status: 'unavailable',
       freshness: 'unavailable',
+      sanitizedMessage: getGenericQuotaUnavailableMessage(),
     }),
   };
 }
@@ -228,25 +236,15 @@ function errorStatus(providerId: string, reason: string): LiveQuotaStatus {
   return {
     providerId,
     windows: [],
+    status: availabilityFromFreshness(freshness),
     freshness,
     lastUpdatedEpochMs: Date.now(),
-    error: sanitizeError(reason),
+    sanitizedMessage: sanitizeError(reason),
   };
 }
 
 function sanitizeError(reason: string): string {
-  switch (reason) {
-    case 'not_configured':
-      return 'Credentials not found';
-    case 'auth_expired':
-      return 'Auth token expired';
-    case 'http_error':
-      return 'HTTP request failed';
-    case 'parse_error':
-      return 'Response could not be parsed';
-    default:
-      return 'Live quota unavailable';
-  }
+  return getGenericQuotaUnavailableMessage();
 }
 
 // --- HTTP client ---

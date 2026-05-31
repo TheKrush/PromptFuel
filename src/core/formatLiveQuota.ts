@@ -143,7 +143,7 @@ function fallbackStatusBarText(status: PromptFuelStatus): string {
   const allNoData = status.providerStates.length > 0 &&
     status.providerStates.every(s => s.status === 'no-data');
   if (allNoData) {
-    return 'PromptFuel: no local usage';
+    return 'PromptFuel: local history';
   }
 
   let totalTokens = 0;
@@ -156,13 +156,16 @@ function fallbackStatusBarText(status: PromptFuelStatus): string {
   }
 
   if (!anyLoaded) {
-    return 'PromptFuel: no local usage';
+    return 'PromptFuel: local history';
   }
 
-  return `PromptFuel: ${formatTokenCountCompact(totalTokens)} local`;
+  return `PromptFuel: ${formatTokenCountCompact(totalTokens)} local history`;
 }
 
 function formatTokenCountCompact(count: number): string {
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  }
   if (count >= 1_000_000) {
     return `${(count / 1_000_000).toFixed(1)}M`;
   }
@@ -240,8 +243,8 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
     }
   }
 
-  if (status.lastRefreshedMs) {
-    lines.push(formatLocalHistoryRefreshedAt(status.lastRefreshedMs));
+  if (status.localHistoryLastRefreshedMs) {
+    lines.push(formatLocalHistoryRefreshedAt(status.localHistoryLastRefreshedMs));
   }
 
   return lines.join(LINE_SEPARATOR);
@@ -264,7 +267,7 @@ function formatLiveQuotaProviderSection(liveState: LiveQuotaStatus): string {
   const freshness = getFreshnessLabel(liveState.freshness);
 
   if (liveState.freshness === 'unavailable' || liveState.freshness === 'error') {
-    sectionLines.push(`${label} live quota: ${getSanitizedErrorLabel()} [${freshness}]`);
+    sectionLines.push(`${label} live quota: ${liveState.sanitizedMessage ?? getSanitizedErrorLabel()} [${freshness}]`);
     return sectionLines.join(LINE_SEPARATOR);
   }
 

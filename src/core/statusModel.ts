@@ -1,11 +1,18 @@
-import { ProviderQuotaState, ProviderQuotaStatus } from './quotaTypes';
+import { ProviderQuotaState, ProviderQuotaStatus, QUOTA_WINDOW_LABELS } from './quotaTypes';
 import { ReadResult } from './providerReader';
-import type { LiveQuotaStatus } from './liveQuotaTypes';
+import {
+  availabilityFromFreshness,
+  getGenericQuotaUnavailableMessage,
+  getResetInMs,
+  type LiveQuotaStatus,
+} from './liveQuotaTypes';
 
 export interface PromptFuelStatus {
   providerStates: ProviderQuotaState[];
   liveQuotaStates: LiveQuotaStatus[];
   lastRefreshedMs: number | undefined;
+  localHistoryLastRefreshedMs: number | undefined;
+  liveQuotaLastRefreshedMs: number | undefined;
   enabledProviderIds: string[];
 }
 
@@ -19,6 +26,8 @@ export function createInitialStatus(
     })),
     liveQuotaStates: [],
     lastRefreshedMs: undefined,
+    localHistoryLastRefreshedMs: undefined,
+    liveQuotaLastRefreshedMs: undefined,
     enabledProviderIds: enabledProviderIds.slice(),
   };
 }
@@ -49,6 +58,7 @@ export function applyRefreshResults(
   status: PromptFuelStatus,
   results: ReadResult[],
 ): PromptFuelStatus {
+  const refreshedMs = Date.now();
   const providerIdSet = new Set(status.enabledProviderIds);
   const stateMap = new Map<string, ProviderQuotaState>();
 
@@ -66,7 +76,9 @@ export function applyRefreshResults(
   return {
     providerStates: [...stateMap.values()],
     liveQuotaStates: status.liveQuotaStates.slice(),
-    lastRefreshedMs: Date.now(),
+    lastRefreshedMs: refreshedMs,
+    localHistoryLastRefreshedMs: refreshedMs,
+    liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
     enabledProviderIds: status.enabledProviderIds.slice(),
   };
 }
@@ -90,13 +102,18 @@ export function applyLiveQuotaResults(
   status: PromptFuelStatus,
   results: LiveQuotaStatus[],
 ): PromptFuelStatus {
+  const refreshedMs = Date.now();
   const providerIdSet = new Set(status.enabledProviderIds);
-  const filtered = results.filter(r => providerIdSet.has(r.providerId));
+  const filtered = results
+    .filter(r => providerIdSet.has(r.providerId))
+    .map(r => normalizeLiveQuotaStatus(r, refreshedMs));
 
   return {
     providerStates: status.providerStates.slice(),
     liveQuotaStates: filtered,
-    lastRefreshedMs: Date.now(),
+    lastRefreshedMs: refreshedMs,
+    localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
+    liveQuotaLastRefreshedMs: refreshedMs,
     enabledProviderIds: status.enabledProviderIds.slice(),
   };
 }
@@ -106,4 +123,28 @@ export function getLiveQuotaState(
   providerId: string,
 ): LiveQuotaStatus | undefined {
   return status.liveQuotaStates.find(s => s.providerId === providerId);
+}
+
+function normalizeLiveQuotaStatus(
+  result: LiveQuotaStatus,
+  nowMs: number,
+): LiveQuotaStatus {
+  const status = result.status ?? availabilityFromFreshness(result.freshness);
+  const sanitizedMessage = status === 'unavailable' || status === 'error'
+    ? getGenericQuotaUnavailableMessage()
+    : result.sanitizedMessage;
+
+  return {
+    providerId: result.providerId,
+    windows: result.windows.map(window => ({
+      ...window,
+      label: window.label ?? QUOTA_WINDOW_LABELS[window.windowId],
+      resetInMs: getResetInMs(window.resetsAtEpochMs, nowMs),
+      status: window.status ?? status,
+    })),
+    status,
+    freshness: result.freshness,
+    lastUpdatedEpochMs: result.lastUpdatedEpochMs,
+    sanitizedMessage,
+  };
 }

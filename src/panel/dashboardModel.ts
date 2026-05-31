@@ -33,6 +33,8 @@ export interface DashboardModel {
   providers: DashboardProviderCard[];
   liveQuotaCards: DashboardLiveQuotaCard[];
   lastRefreshedMs: number | undefined;
+  localHistoryLastRefreshedMs: number | undefined;
+  liveQuotaLastRefreshedMs: number | undefined;
 }
 
 export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
@@ -78,5 +80,7 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     providers: cards,
     liveQuotaCards,
     lastRefreshedMs: status.lastRefreshedMs,
+    localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
+    liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
   };
 }

@@ -70,6 +70,8 @@ async function main() {
     assert.strictEqual(status.providerStates[0].status, 'no-data');
     assert.strictEqual(status.providerStates[1].status, 'no-data');
     assert.strictEqual(status.lastRefreshedMs, undefined);
+    assert.strictEqual(status.localHistoryLastRefreshedMs, undefined);
+    assert.strictEqual(status.liveQuotaLastRefreshedMs, undefined);
     assert.deepStrictEqual(status.enabledProviderIds, ['claude', 'codex']);
   });
 
@@ -89,6 +91,8 @@ async function main() {
     const updated = applyRefreshResults(status, results);
     assert.ok(typeof updated.lastRefreshedMs === 'number', 'expected lastRefreshedMs to be a number');
     assert.ok(updated.lastRefreshedMs > 0, 'expected lastRefreshedMs > 0');
+    assert.strictEqual(updated.localHistoryLastRefreshedMs, updated.lastRefreshedMs);
+    assert.strictEqual(updated.liveQuotaLastRefreshedMs, undefined);
   });
 
   await test('applyRefreshResults: ok with tokens -> loaded status', async () => {
@@ -184,10 +188,10 @@ async function main() {
 
   // ===== formatStatusBarText: compact aggregate status bar =====
 
-  await test('formatStatusBarText: all providers no-data shows no local usage', async () => {
+  await test('formatStatusBarText: all providers no-data shows local history label', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const text = formatStatusBarText(status);
-    assert.strictEqual(text, 'PromptFuel: no local usage');
+    assert.strictEqual(text, 'PromptFuel: local history');
   });
 
   await test('formatStatusBarText: one provider loaded shows aggregate with local suffix', async () => {
@@ -198,7 +202,7 @@ async function main() {
     ]);
     const text = formatStatusBarText(updated);
     assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
-    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
     assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
   });
 
@@ -210,7 +214,7 @@ async function main() {
     ]);
     const text = formatStatusBarText(updated);
     assert.ok(text.includes('15.5K'), `expected aggregate "15.5K" in "${text}"`);
-    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
     assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
     assert.ok(!text.includes('⛽'), `should not include emoji in "${text}"`);
   });
@@ -232,7 +236,7 @@ async function main() {
     ]);
     const text = formatStatusBarText(updated);
     assert.ok(text.includes('5.0K'), `expected "5.0K" in "${text}"`);
-    assert.ok(text.includes('local'), `expected "local" in "${text}"`);
+    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
     assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
   });
 

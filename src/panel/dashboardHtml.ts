@@ -111,7 +111,7 @@ function renderLiveQuotaSection(model: DashboardModel): string {
     return `
   <div class="live-quota-section">
     <div class="subtitle">Live quota</div>
-    <div class="live-quota-not-enabled">Live quota not enabled</div>
+    <div class="live-quota-not-enabled">Live quota not enabled yet</div>
   </div>`;
   }
 
@@ -452,7 +452,7 @@ export function buildDashboardHtml(
   ${providerCards}
 
   <div class="footer">
-    <span>Last refreshed: ${esc(formatRefreshTime(model.lastRefreshedMs))}</span>
+    <span>Local history refreshed: ${esc(formatRefreshTime(model.localHistoryLastRefreshedMs))}</span>
     <button class="refresh-btn" id="refreshBtn">Refresh</button>
   </div>
 </div>

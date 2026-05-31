@@ -16,7 +16,7 @@ export function formatTooltip(status: PromptFuelStatus): string {
 
   lines.push('PromptFuel');
   lines.push('Local history only');
-  lines.push('Live quota not enabled');
+  lines.push('Live quota not enabled yet');
   lines.push('Snapshots not included');
   lines.push('');
 
@@ -43,9 +43,9 @@ export function formatTooltip(status: PromptFuelStatus): string {
     lines.push(`Parse errors: ${totalParseErrors}`);
   }
 
-  if (status.lastRefreshedMs) {
+  if (status.localHistoryLastRefreshedMs) {
     lines.push('');
-    lines.push(formatRefreshedAt(status.lastRefreshedMs));
+    lines.push(formatRefreshedAt(status.localHistoryLastRefreshedMs));
   }
 
   return lines.join(LINE_SEPARATOR);

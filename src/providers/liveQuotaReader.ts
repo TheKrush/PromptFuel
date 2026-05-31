@@ -12,7 +12,9 @@ export function createStubReader(providerId: string): LiveQuotaReader {
       return {
         providerId,
         windows: [],
+        status: 'unavailable',
         freshness: 'unavailable',
+        sanitizedMessage: 'Live quota unavailable',
       };
     },
   };

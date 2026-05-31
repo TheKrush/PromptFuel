@@ -106,16 +106,16 @@ const { createInitialStatus, applyRefreshResults } = require(path.join(OUT, 'cor
 
 // === Status bar text: all no-data ===
 
-test('formatStatusBarText: all disabled returns no local usage', () => {
+test('formatStatusBarText: all disabled returns local history label', () => {
   const status = createInitialStatus([]);
   const t = formatStatusBarText(status);
-  assert.strictEqual(t, 'PromptFuel: no local usage');
+  assert.strictEqual(t, 'PromptFuel: local history');
 });
 
-test('formatStatusBarText: all no-data returns no local usage', () => {
+test('formatStatusBarText: all no-data returns local history label', () => {
   const status = createInitialStatus(['claude', 'codex']);
   const t = formatStatusBarText(status);
-  assert.strictEqual(t, 'PromptFuel: no local usage');
+  assert.strictEqual(t, 'PromptFuel: local history');
 });
 
 // === Status bar text: loaded states ===
@@ -136,7 +136,7 @@ test('formatStatusBarText: loaded shows compact aggregate with local suffix', ()
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('5.0K'), `expected "5.0K" in "${t}"`);
-  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
   assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
@@ -160,7 +160,7 @@ test('formatStatusBarText: mixed providers shows single aggregate', () => {
   const t = formatStatusBarText(status);
   assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
   assert.ok(t.includes('5.0K'), `expected aggregate "5.0K" in "${t}"`);
-  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
   assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
@@ -176,7 +176,7 @@ test('formatStatusBarText: both loaded shows single aggregate total', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('15.5K'), `expected aggregate "15.5K" in "${t}"`);
-  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
   assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
 });
 
@@ -189,7 +189,17 @@ test('formatStatusBarText: large token counts use M suffix', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('2.5M'), `expected "2.5M" in "${t}"`);
-  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
+});
+
+test('formatStatusBarText: billion token counts use B suffix', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 6700000000, totalAssistantMessages: 10, filesFound: 5 }],
+  );
+  const t = formatStatusBarText(status);
+  assert.ok(t.includes('6.7B'), `expected "6.7B" in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
 });
 
 test('formatStatusBarText: small token counts show raw number', () => {
@@ -199,7 +209,7 @@ test('formatStatusBarText: small token counts show raw number', () => {
   );
   const t = formatStatusBarText(status);
   assert.ok(t.includes('500'), `expected "500" in "${t}"`);
-  assert.ok(t.includes('local'), `expected "local" suffix in "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
 });
 
 // === Disabled provider omitted ===
@@ -256,7 +266,7 @@ test('formatTooltip: includes Local history only disclaimer', () => {
 test('formatTooltip: includes Live quota not enabled disclaimer', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Live quota not enabled'), `expected "Live quota not enabled" in tooltip`);
+  assert.ok(tooltip.includes('Live quota not enabled yet'), `expected "Live quota not enabled yet" in tooltip`);
 });
 
 test('formatTooltip: includes Snapshots not included disclaimer', () => {
@@ -510,6 +520,7 @@ test('applyRefreshResults: sets lastRefreshedMs on each refresh', () => {
     { providerId: 'claude', status: 'ok', totalTokens: 100, totalAssistantMessages: 1, filesFound: 1 },
   ]);
   assert.ok(updated.lastRefreshedMs >= before, 'lastRefreshedMs should be recent');
+  assert.ok(updated.localHistoryLastRefreshedMs >= before, 'localHistoryLastRefreshedMs should be recent');
 });
 
 test('applyRefreshResults: second refresh updates lastRefreshedMs', () => {
@@ -522,6 +533,7 @@ test('applyRefreshResults: second refresh updates lastRefreshedMs', () => {
     { providerId: 'claude', status: 'ok', totalTokens: 200, totalAssistantMessages: 2, filesFound: 1 },
   ]);
   assert.ok(updated.lastRefreshedMs >= firstRefresh, 'second refresh should update timestamp');
+  assert.ok(updated.localHistoryLastRefreshedMs >= firstRefresh, 'second refresh should update local timestamp');
 });
 
 test('applyRefreshResults: preserves enabledProviderIds', () => {
@@ -701,7 +713,7 @@ test('formatStatusBarText: fallback to local history when no live quota', () => 
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('local'), `expected "local" suffix "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix "${t}"`);
 });
 
 test('formatStatusBarText: live quota unavailable falls back to local history', () => {
@@ -717,7 +729,7 @@ test('formatStatusBarText: live quota unavailable falls back to local history', 
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.ok(t.includes('local'), `expected "local" suffix when live quota unavailable "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix when live quota unavailable "${t}"`);
 });
 
 test('formatStatusBarText: live quota error falls back to local history', () => {
@@ -734,7 +746,7 @@ test('formatStatusBarText: live quota error falls back to local history', () => 
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.ok(t.includes('local'), `expected "local" suffix when live quota error "${t}"`);
+  assert.ok(t.includes('local history'), `expected "local history" suffix when live quota error "${t}"`);
   assert.ok(!t.includes('secret'), `should not leak secrets "${t}"`);
   assert.ok(!t.includes('.jsonl'), `should not leak file paths "${t}"`);
 });
@@ -804,6 +816,42 @@ test('formatTooltip: live quota shows Local history refreshed timestamp', () => 
   const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('Local history refreshed:'), `expected "Local history refreshed:" in tooltip`);
+});
+
+test('applyLiveQuotaResults: preserves local history timestamp separately', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const localHistoryRefreshed = status.localHistoryLastRefreshedMs;
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  assert.strictEqual(updated.localHistoryLastRefreshedMs, localHistoryRefreshed);
+  assert.ok(typeof updated.liveQuotaLastRefreshedMs === 'number', 'expected live quota timestamp');
+});
+
+test('applyLiveQuotaResults: normalizes window labels, reset countdown, and status', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  const window = updated.liveQuotaStates[0].windows[0];
+  assert.strictEqual(window.label, '5h');
+  assert.strictEqual(window.status, 'available');
+  assert.ok(typeof window.resetInMs === 'number', 'expected resetInMs');
+});
+
+test('applyLiveQuotaResults: stores sanitized unavailable message only', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [],
+      freshness: 'error',
+      error: 'raw /path/to/file.jsonl secret-token',
+    },
+  ]);
+  const liveState = updated.liveQuotaStates[0];
+  assert.strictEqual(liveState.status, 'error');
+  assert.strictEqual(liveState.sanitizedMessage, 'Live quota unavailable');
+  assert.strictEqual(liveState.error, undefined);
 });
 
 test('formatTooltip: stale freshness shown correctly', () => {

@@ -115,7 +115,9 @@ export class RefreshScheduler {
 
     try {
       this.statusState = applyRefreshResults(this.statusState, localResults);
-      this.statusState = applyLiveQuotaResults(this.statusState, liveResults);
+      if (cfg.liveQuotaEnabled) {
+        this.statusState = applyLiveQuotaResults(this.statusState, liveResults);
+      }
       this.updateBar();
       this.onRefreshed?.();
     } finally {
