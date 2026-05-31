@@ -47,6 +47,18 @@ for (const file of ['README.md', 'LICENSE', 'src/extension.ts', 'CHANGELOG.md', 
   }
 }
 
+const vscodeIgnorePath = path.join(REPO, '.vscodeignore');
+if (fs.existsSync(vscodeIgnorePath)) {
+  const vscodeIgnore = fs.readFileSync(vscodeIgnorePath, 'utf8');
+  for (const include of ['!out/snapshots/*.js', '!out/snapshots/*.js.map']) {
+    if (!vscodeIgnore.includes(include)) {
+      fail(`.vscodeignore is missing packaged include "${include}"`);
+    }
+  }
+} else {
+  fail('.vscodeignore not found');
+}
+
 // Icon existence check
 if (pkg.icon) {
   const iconPath = path.join(REPO, pkg.icon);

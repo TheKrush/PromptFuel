@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   scheduler = new RefreshScheduler(statusBarItem, context, onRefreshed, {
     info(message: string): void {
-      outputChannel.appendLine(`[live-quota] ${message}`);
+      outputChannel.appendLine(`[promptfuel] ${message}`);
     },
   });
   scheduler.start();

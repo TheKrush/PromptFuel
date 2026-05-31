@@ -28,3 +28,5 @@ assets/**
 !out/providers/*.js.map
 !out/panel/*.js
 !out/panel/*.js.map
+!out/snapshots/*.js
+!out/snapshots/*.js.map

@@ -1,16 +1,19 @@
 import * as vscode from 'vscode';
 import { getConfig } from '../config';
-import { PromptFuelStatus, createInitialStatus, applyRefreshResults, applyLiveQuotaResults } from './statusModel';
+import { PromptFuelStatus, createInitialStatus, applyRefreshResults, applyLiveQuotaResults, applySnapshotReadResults } from './statusModel';
 import { formatStatusBarText, formatTooltip } from './formatQuota';
 import { ReadResult } from './providerReader';
 import { LiveQuotaStatus } from './liveQuotaTypes';
 import { getGenericQuotaUnavailableMessage } from './liveQuotaTypes';
 import { applyLiveQuotaCacheFallback, type LiveQuotaDiagnostics } from './liveQuotaCache';
+import { createEmptySnapshotState, type PromptFuelSnapshotState } from './snapshotTypes';
 import { ClaudeLocalReader } from '../providers/claudeLocal';
 import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
 import { runLiveQuotaReaders } from '../providers/readLiveQuota';
 import { createAuthenticatedReader } from '../providers/authenticatedQuota';
+import { readPromptFuelSnapshots, type SnapshotDiagnostics } from '../snapshots/snapshotReader';
+import { getPromptFuelSnapshotImportFolderPathFromContext } from '../snapshots/snapshotStorage';
 
 export class RefreshScheduler {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -23,7 +26,7 @@ export class RefreshScheduler {
     private readonly statusBarItem: vscode.StatusBarItem,
     private readonly context: vscode.ExtensionContext,
     private readonly onRefreshed?: () => void,
-    private readonly diagnostics?: LiveQuotaDiagnostics,
+    private readonly diagnostics?: LiveQuotaDiagnostics & SnapshotDiagnostics,
   ) {
     const cfg = getConfig();
     this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
@@ -88,15 +91,26 @@ export class RefreshScheduler {
 
     let localResults: ReadResult[];
     let liveResults: LiveQuotaStatus[] = [];
+    let snapshotState: PromptFuelSnapshotState = createEmptySnapshotState();
+
+    const snapshotRead = readPromptFuelSnapshots({
+      snapshotDir: getPromptFuelSnapshotImportFolderPathFromContext(this.context),
+      enabledProviderIds: cfg.enabledProviders,
+      diagnostics: this.diagnostics,
+    }).then(result => result.state).catch(() => {
+      this.diagnostics?.info('malformed snapshot ignored; count=1');
+      return createEmptySnapshotState(Date.now());
+    });
 
     if (cfg.liveQuotaEnabled) {
       const liveReaders = await Promise.all(
         cfg.enabledProviders.map(id => createAuthenticatedReader(id)),
       );
       try {
-        [localResults, liveResults] = await Promise.all([
+        [localResults, liveResults, snapshotState] = await Promise.all([
           runEnabledReaders(localReaders, cfg.enabledProviders),
           runLiveQuotaReaders(liveReaders, cfg.enabledProviders),
+          snapshotRead,
         ]);
         liveResults = await applyLiveQuotaCacheFallback({
           storage: this.context.globalState,
@@ -106,6 +120,7 @@ export class RefreshScheduler {
           diagnostics: this.diagnostics,
         });
       } catch {
+        snapshotState = await snapshotRead;
         localResults = cfg.enabledProviders.map((id) => ({
           providerId: id,
           status: 'error' as const,
@@ -121,8 +136,12 @@ export class RefreshScheduler {
     } else {
       this.diagnostics?.info('live quota disabled; stale cache not used');
       try {
-        localResults = await runEnabledReaders(localReaders, cfg.enabledProviders);
+        [localResults, snapshotState] = await Promise.all([
+          runEnabledReaders(localReaders, cfg.enabledProviders),
+          snapshotRead,
+        ]);
       } catch {
+        snapshotState = await snapshotRead;
         localResults = cfg.enabledProviders.map((id) => ({
           providerId: id,
           status: 'error' as const,
@@ -132,6 +151,7 @@ export class RefreshScheduler {
 
     try {
       this.statusState = applyRefreshResults(this.statusState, localResults);
+      this.statusState = applySnapshotReadResults(this.statusState, snapshotState);
       if (cfg.liveQuotaEnabled) {
         this.statusState = applyLiveQuotaResults(this.statusState, liveResults);
       }

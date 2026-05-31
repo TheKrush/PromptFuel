@@ -7,6 +7,11 @@ import {
   getResetInMs,
   type LiveQuotaStatus,
 } from './liveQuotaTypes';
+import {
+  cloneSnapshotState,
+  createEmptySnapshotState,
+  type PromptFuelSnapshotState,
+} from './snapshotTypes';
 
 export interface PromptFuelStatus {
   providerStates: ProviderQuotaState[];
@@ -15,6 +20,8 @@ export interface PromptFuelStatus {
   lastRefreshedMs: number | undefined;
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
+  snapshotLastReadMs: number | undefined;
+  snapshotState: PromptFuelSnapshotState;
   enabledProviderIds: string[];
 }
 
@@ -32,6 +39,8 @@ export function createInitialStatus(
     lastRefreshedMs: undefined,
     localHistoryLastRefreshedMs: undefined,
     liveQuotaLastRefreshedMs: undefined,
+    snapshotLastReadMs: undefined,
+    snapshotState: createEmptySnapshotState(),
     enabledProviderIds: enabledProviderIds.slice(),
   };
 }
@@ -100,6 +109,8 @@ export function applyRefreshResults(
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: refreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
+    snapshotLastReadMs: status.snapshotLastReadMs,
+    snapshotState: cloneSnapshotState(status.snapshotState),
     enabledProviderIds: status.enabledProviderIds.slice(),
   };
 }
@@ -136,6 +147,26 @@ export function applyLiveQuotaResults(
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: refreshedMs,
+    snapshotLastReadMs: status.snapshotLastReadMs,
+    snapshotState: cloneSnapshotState(status.snapshotState),
+    enabledProviderIds: status.enabledProviderIds.slice(),
+  };
+}
+
+export function applySnapshotReadResults(
+  status: PromptFuelStatus,
+  snapshotState: PromptFuelSnapshotState,
+): PromptFuelStatus {
+  const readMs = snapshotState.lastReadEpochMs ?? Date.now();
+  return {
+    providerStates: status.providerStates.slice(),
+    liveQuotaStates: status.liveQuotaStates.slice(),
+    liveQuotaEnabled: status.liveQuotaEnabled,
+    lastRefreshedMs: status.lastRefreshedMs,
+    localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
+    liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
+    snapshotLastReadMs: readMs,
+    snapshotState: cloneSnapshotState(snapshotState),
     enabledProviderIds: status.enabledProviderIds.slice(),
   };
 }

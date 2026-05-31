@@ -6,10 +6,12 @@ import {
   DEFAULT_LOCAL_HISTORY_WINDOW_ID,
   LOCAL_HISTORY_WINDOW_IDS,
   LOCAL_HISTORY_WINDOW_LABELS,
+  type AggregateUsage,
   LocalHistoryWindowAggregateMap,
   LocalHistoryWindowId,
   createEmptyAggregate,
 } from '../core/usageAggregate';
+import type { PromptFuelSnapshotProviderAggregate } from '../core/snapshotTypes';
 
 export interface DashboardLocalHistoryWindow {
   windowId: LocalHistoryWindowId;
@@ -43,6 +45,24 @@ export interface DashboardLiveQuotaCard {
   lastUpdatedMs: number | undefined;
 }
 
+export interface DashboardSnapshotProviderCard {
+  providerId: string;
+  label: string;
+  generatedAtMs: number;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  sourceLabel?: string;
+  windows: DashboardLocalHistoryWindow[];
+}
+
+export interface DashboardSnapshotAggregate {
+  totalTokens: number;
+  totalAssistantMessages: number;
+  providers: DashboardSnapshotProviderCard[];
+  snapshotCount: number;
+  lastReadMs: number | undefined;
+}
+
 export interface DashboardModel {
   totalTokens: number;
   totalAssistantMessages: number;
@@ -54,6 +74,7 @@ export interface DashboardModel {
   lastRefreshedMs: number | undefined;
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
+  snapshotAggregate: DashboardSnapshotAggregate;
 }
 
 export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
@@ -112,6 +133,7 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     lastRefreshedMs: status.lastRefreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
+    snapshotAggregate: buildDashboardSnapshotAggregate(status.snapshotState.providers, status.snapshotState.snapshotCount, status.snapshotLastReadMs),
   };
 }
 
@@ -157,4 +179,56 @@ function mergeDashboardWindowTotals(
     totals[window.windowId].totalTokens += window.totalTokens;
     totals[window.windowId].totalAssistantMessages += window.totalAssistantMessages;
   }
+}
+
+function buildDashboardSnapshotAggregate(
+  providers: PromptFuelSnapshotProviderAggregate[],
+  snapshotCount: number,
+  lastReadMs: number | undefined,
+): DashboardSnapshotAggregate {
+  let totalTokens = 0;
+  let totalAssistantMessages = 0;
+
+  const cards = providers.map(provider => {
+    totalTokens += provider.aggregate.totalTokens;
+    totalAssistantMessages += provider.aggregate.totalAssistantMessages;
+    return buildDashboardSnapshotProviderCard(provider);
+  });
+
+  return {
+    totalTokens,
+    totalAssistantMessages,
+    providers: cards,
+    snapshotCount,
+    lastReadMs,
+  };
+}
+
+function buildDashboardSnapshotProviderCard(
+  provider: PromptFuelSnapshotProviderAggregate,
+): DashboardSnapshotProviderCard {
+  return {
+    providerId: provider.providerId,
+    label: PROVIDER_LABELS[provider.providerId],
+    generatedAtMs: provider.generatedAtEpochMs,
+    totalTokens: provider.aggregate.totalTokens,
+    totalAssistantMessages: provider.aggregate.totalAssistantMessages,
+    ...(provider.sourceLabel ? { sourceLabel: provider.sourceLabel } : {}),
+    windows: buildSnapshotWindowCards(provider.windowTotals, provider.aggregate),
+  };
+}
+
+function buildSnapshotWindowCards(
+  windows: Partial<LocalHistoryWindowAggregateMap> | undefined,
+  aggregate: AggregateUsage,
+): DashboardLocalHistoryWindow[] {
+  return LOCAL_HISTORY_WINDOW_IDS.map(windowId => {
+    const windowAggregate = windows?.[windowId];
+    return {
+      windowId,
+      label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
+      totalTokens: windowAggregate?.totalTokens ?? (windowId === 'all' ? aggregate.totalTokens : 0),
+      totalAssistantMessages: windowAggregate?.totalAssistantMessages ?? (windowId === 'all' ? aggregate.totalAssistantMessages : 0),
+    };
+  });
 }

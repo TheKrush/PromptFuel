@@ -33,6 +33,21 @@ const {
   LIVE_QUOTA_CACHE_KEY,
   readCachedLiveQuotaStateForTest,
 } = require(path.join(OUT, 'core/liveQuotaCache'));
+const {
+  PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+} = require(path.join(OUT, 'core/snapshotTypes'));
+const {
+  applySnapshotReadResults,
+} = require(path.join(OUT, 'core/statusModel'));
+const {
+  readPromptFuelSnapshots,
+} = require(path.join(OUT, 'snapshots/snapshotReader'));
+const {
+  getPromptFuelSnapshotImportFolderPath,
+} = require(path.join(OUT, 'snapshots/snapshotStorage'));
+const {
+  buildDashboardModel,
+} = require(path.join(OUT, 'panel/dashboardModel'));
 
 let pass = 0;
 let fail = 0;
@@ -372,6 +387,178 @@ async function main() {
     assert.ok(!serialized.includes('.jsonl'), 'cache should not include filenames');
     assert.ok(!serialized.includes('/private/path'), 'cache should not include local paths');
     assert.ok(!serialized.includes('sourceLabel'), 'cache should not include source labels');
+  });
+
+  // ===== snapshot reader foundation =====
+
+  const snapshotRoot = path.join(FIXTURE_DIR, 'snapshot-storage-root');
+  const snapshotDir = getPromptFuelSnapshotImportFolderPath(snapshotRoot);
+  const snapshotNow = new Date('2026-05-31T20:00:00.000Z').getTime();
+
+  await test('snapshotStorage: import folder is under PromptFuel storage root', async () => {
+    assert.strictEqual(snapshotDir, path.join(snapshotRoot, 'snapshot-imports'));
+  });
+
+  await test('readPromptFuelSnapshots: missing storage produces empty snapshot state', async () => {
+    const diagnostics = [];
+    const result = await readPromptFuelSnapshots({
+      snapshotDir: path.join(FIXTURE_DIR, 'missing-snapshot-storage'),
+      diagnostics: { info: message => diagnostics.push(message) },
+      nowMs: snapshotNow,
+    });
+    assert.strictEqual(result.state.providers.length, 0);
+    assert.strictEqual(result.state.snapshotCount, 0);
+    assert.strictEqual(result.filesRead, 0);
+    assert.ok(diagnostics.includes('snapshot data not found'), 'expected no-data diagnostic');
+  });
+
+  await test('readPromptFuelSnapshots: valid snapshot schema read preserves aggregate totals', async () => {
+    const dir = path.join(snapshotDir, 'valid');
+    await writeFile(dir, 'usage.json', JSON.stringify({
+      schemaVersion: PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+      generatedAtEpochMs: snapshotNow,
+      providers: [{
+        providerId: 'claude',
+        generatedAtEpochMs: snapshotNow,
+        sourceLabel: 'snapshot import',
+        aggregate: {
+          totalInputTokens: 1000,
+          totalOutputTokens: 500,
+          totalCacheCreationInputTokens: 200,
+          totalCacheReadInputTokens: 100,
+          totalTokens: 1800,
+          totalAssistantMessages: 3,
+        },
+        windowTotals: {
+          today: {
+            totalInputTokens: 400,
+            totalOutputTokens: 100,
+            totalCacheCreationInputTokens: 0,
+            totalCacheReadInputTokens: 0,
+            totalTokens: 500,
+            totalAssistantMessages: 1,
+          },
+        },
+      }],
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude'], nowMs: snapshotNow });
+    assert.strictEqual(result.state.snapshotCount, 1);
+    assert.strictEqual(result.state.providers.length, 1);
+    assert.strictEqual(result.state.providers[0].providerId, 'claude');
+    assert.strictEqual(result.state.providers[0].aggregate.totalTokens, 1800);
+    assert.strictEqual(result.state.providers[0].aggregate.totalAssistantMessages, 3);
+    assert.strictEqual(result.state.providers[0].windowTotals.today.totalTokens, 500);
+    assert.strictEqual(result.state.providers[0].sourceLabel, 'snapshot import');
+  });
+
+  await test('readPromptFuelSnapshots: malformed snapshot ignored', async () => {
+    const dir = path.join(snapshotDir, 'malformed');
+    await writeFile(dir, 'bad.json', '{not valid json');
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, nowMs: snapshotNow });
+    assert.strictEqual(result.state.providers.length, 0);
+    assert.strictEqual(result.malformedRecords, 1);
+  });
+
+  await test('readPromptFuelSnapshots: unsupported schema version ignored', async () => {
+    const dir = path.join(snapshotDir, 'unsupported');
+    await writeFile(dir, 'unsupported.json', JSON.stringify({
+      schemaVersion: 999,
+      generatedAtEpochMs: snapshotNow,
+      providers: [],
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, nowMs: snapshotNow });
+    assert.strictEqual(result.state.providers.length, 0);
+    assert.strictEqual(result.unsupportedSchemaVersions, 1);
+  });
+
+  await test('readPromptFuelSnapshots: unknown provider ignored safely', async () => {
+    const dir = path.join(snapshotDir, 'unknown-provider');
+    await writeFile(dir, 'unknown.json', JSON.stringify({
+      schemaVersion: PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+      generatedAtEpochMs: snapshotNow,
+      providers: [{
+        providerId: 'other-provider',
+        aggregate: {
+          totalTokens: 999,
+          totalAssistantMessages: 9,
+        },
+      }, {
+        providerId: 'codex',
+        aggregate: {
+          totalTokens: 1200,
+          totalAssistantMessages: 2,
+        },
+      }],
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['codex'], nowMs: snapshotNow });
+    assert.strictEqual(result.unknownProviders, 1);
+    assert.strictEqual(result.state.providers.length, 1);
+    assert.strictEqual(result.state.providers[0].providerId, 'codex');
+    assert.strictEqual(result.state.providers[0].aggregate.totalTokens, 1200);
+  });
+
+  await test('applySnapshotReadResults: reading snapshots does not change local history totals', async () => {
+    const localStatus = applyRefreshResults(
+      createInitialStatus(['claude']),
+      [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+    );
+    const localHistoryRefreshed = localStatus.localHistoryLastRefreshedMs;
+    const snapshotState = {
+      providers: [{
+        providerId: 'claude',
+        generatedAtEpochMs: snapshotNow,
+        aggregate: {
+          totalInputTokens: 1,
+          totalOutputTokens: 2,
+          totalCacheCreationInputTokens: 3,
+          totalCacheReadInputTokens: 4,
+          totalTokens: 10,
+          totalAssistantMessages: 1,
+        },
+      }],
+      snapshotCount: 1,
+      lastReadEpochMs: snapshotNow,
+    };
+    const updated = applySnapshotReadResults(localStatus, snapshotState);
+    assert.strictEqual(updated.providerStates[0].totalTokens, 5000);
+    assert.strictEqual(updated.providerStates[0].totalAssistantMessages, 2);
+    assert.strictEqual(updated.localHistoryLastRefreshedMs, localHistoryRefreshed);
+    assert.strictEqual(updated.snapshotState.providers[0].aggregate.totalTokens, 10);
+  });
+
+  await test('snapshots: raw private fields are not emitted into dashboard/status/tooltip strings', async () => {
+    const dir = path.join(snapshotDir, 'private-fields');
+    const rawPrivateValue = 'raw-provider-payload /tmp/session.jsonl credential-value';
+    await writeFile(dir, 'private.json', JSON.stringify({
+      schemaVersion: PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+      generatedAtEpochMs: snapshotNow,
+      privateInternalField: rawPrivateValue,
+      providers: [{
+        providerId: 'claude',
+        sourceLabel: rawPrivateValue,
+        aggregate: {
+          totalInputTokens: 100,
+          totalOutputTokens: 50,
+          totalCacheCreationInputTokens: 0,
+          totalCacheReadInputTokens: 0,
+          totalTokens: 150,
+          totalAssistantMessages: 1,
+        },
+        rawPayload: rawPrivateValue,
+      }],
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude'], nowMs: snapshotNow });
+    const status = applySnapshotReadResults(createInitialStatus(['claude']), result.state);
+    const dashboard = buildDashboardModel(status);
+    const combinedUiStrings = [
+      formatStatusBarText(status),
+      formatTooltip(status),
+      JSON.stringify(dashboard),
+    ].join('\n');
+    assert.ok(!combinedUiStrings.includes(rawPrivateValue), 'raw private value should not be emitted');
+    assert.ok(!combinedUiStrings.includes('.jsonl'), 'filenames should not be emitted');
+    assert.ok(!combinedUiStrings.includes('credential-value'), 'credential-looking values should not be emitted');
+    assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, undefined);
   });
 
   // ===== statusModel: hasAnyLoaded / hasAnyError =====
