@@ -20,12 +20,35 @@ if (pkg.publisher !== 'thekrush') fail(`publisher is "${pkg.publisher}", expecte
 
 // Command checks
 const commands = pkg.contributes?.commands || [];
+const expectedCommands = new Map([
+  ['promptFuel.openDashboard', 'PromptFuel: Open Usage Dashboard'],
+  ['promptFuel.refresh', 'PromptFuel: Refresh Now'],
+  ['promptFuel.openDataFolder', 'PromptFuel: Open Data Folder'],
+  ['promptFuel.openSnapshotImportsFolder', 'PromptFuel: Open Snapshot Imports Folder'],
+]);
 for (const cmd of commands) {
   if (!cmd.command.startsWith('promptFuel.')) {
     fail(`command "${cmd.command}" does not start with "promptFuel."`);
   }
   if (!cmd.title.startsWith('PromptFuel:')) {
     fail(`command title "${cmd.title}" does not start with "PromptFuel:"`);
+  }
+}
+for (const [command, title] of expectedCommands) {
+  const contributed = commands.find(cmd => cmd.command === command);
+  if (!contributed) {
+    fail(`required command "${command}" is not contributed`);
+    continue;
+  }
+  if (contributed.title !== title) {
+    fail(`command "${command}" title is "${contributed.title}", expected "${title}"`);
+  }
+}
+
+const extensionSource = fs.readFileSync(path.join(REPO, 'src/extension.ts'), 'utf8');
+for (const command of expectedCommands.keys()) {
+  if (!extensionSource.includes(`registerCommand(\n    '${command}'`)) {
+    fail(`required command "${command}" is not registered in src/extension.ts`);
   }
 }
 

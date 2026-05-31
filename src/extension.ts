@@ -3,6 +3,7 @@ import { getConfig } from './config';
 import { getDataFolderUri } from './dataFolder';
 import { RefreshScheduler } from './core/refreshScheduler';
 import { openDashboardPanel, postDashboardRefreshIfOpen } from './panel/dashboardPanel';
+import { ensurePromptFuelSnapshotImportFolder } from './snapshots/snapshotStorage';
 
 let scheduler: RefreshScheduler | undefined;
 
@@ -48,7 +49,17 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
-  context.subscriptions.push(statusBarItem, outputChannel, openDashboard, refresh, openDataFolder);
+  const openSnapshotImportsFolder = vscode.commands.registerCommand(
+    'promptFuel.openSnapshotImportsFolder',
+    async () => {
+      const folderPath = await ensurePromptFuelSnapshotImportFolder(context);
+      const uri = vscode.Uri.file(folderPath);
+      await vscode.commands.executeCommand('revealFileInOS', uri);
+      vscode.window.showInformationMessage('Opened PromptFuel snapshot imports folder. Add PromptFuel snapshot JSON files there, then refresh.');
+    },
+  );
+
+  context.subscriptions.push(statusBarItem, outputChannel, openDashboard, refresh, openDataFolder, openSnapshotImportsFolder);
 }
 
 function onRefreshed() {

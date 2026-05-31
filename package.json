@@ -61,6 +61,10 @@
       {
         "command": "promptFuel.openDataFolder",
         "title": "PromptFuel: Open Data Folder"
+      },
+      {
+        "command": "promptFuel.openSnapshotImportsFolder",
+        "title": "PromptFuel: Open Snapshot Imports Folder"
       }
     ],
     "configuration": {

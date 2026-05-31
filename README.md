@@ -6,6 +6,7 @@ Track AI coding assistant usage, remaining quota, reset windows, and API-equival
 
 - **Status bar fuel display** - live quota percentages when available, with local history kept secondary
 - **Usage dashboard** - webview panel with live quota state and local usage history overview
+- **Snapshot imports** - open an import folder and drop in aggregate-only snapshot JSON for dashboard history
 - **Auto-refresh** - configurable interval to re-read quota and local history
 - **Live quota by default** - attempt authenticated quota reads from configured providers (`promptFuel.liveQuotaEnabled`, defaults `true`)
 
@@ -26,6 +27,58 @@ Track AI coding assistant usage, remaining quota, reset windows, and API-equival
 | `promptFuel.openDashboard` | PromptFuel: Open Usage Dashboard |
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
+| `promptFuel.openSnapshotImportsFolder` | PromptFuel: Open Snapshot Imports Folder |
+
+## Snapshot Imports
+
+Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
+
+Snapshots are aggregate-only JSON files. They should contain provider totals for `claude` and/or `codex`; do not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, machine names, or source filenames.
+
+Imported snapshots appear in the dashboard source modes:
+
+| Source mode | Dashboard data |
+| --- | --- |
+| Local only | Local history only |
+| Snapshots only | Imported aggregate snapshots only |
+| Combined | Local history plus imported aggregate snapshots |
+
+Live quota remains separate and is not affected by the selected dashboard source mode.
+
+Minimal generic snapshot example:
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAtEpochMs": 1767225600000,
+  "providers": [
+    {
+      "providerId": "claude",
+      "generatedAtEpochMs": 1767225600000,
+      "aggregate": {
+        "totalInputTokens": 1000,
+        "totalOutputTokens": 500,
+        "totalCacheCreationInputTokens": 0,
+        "totalCacheReadInputTokens": 0,
+        "totalTokens": 1500,
+        "totalAssistantMessages": 3
+      }
+    },
+    {
+      "providerId": "codex",
+      "generatedAtEpochMs": 1767225600000,
+      "aggregate": {
+        "totalInputTokens": 800,
+        "totalOutputTokens": 400,
+        "totalCacheCreationInputTokens": 0,
+        "totalCacheReadInputTokens": 0,
+        "totalTokens": 1200,
+        "totalAssistantMessages": 2
+      }
+    }
+  ]
+}
+```
 
 ## Settings
 

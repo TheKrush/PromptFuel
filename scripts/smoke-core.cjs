@@ -1,9 +1,11 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const assert = require('assert');
 
 const OUT = path.resolve(__dirname, '../out');
+const REPO = path.resolve(__dirname, '..');
 
 let pass = 0;
 let fail = 0;
@@ -18,6 +20,9 @@ function test(name, fn) {
     fail++;
   }
 }
+
+const packageJson = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+const readme = fs.readFileSync(path.join(REPO, 'README.md'), 'utf8');
 
 // --- providers ---
 const { KNOWN_PROVIDERS, PROVIDER_LABELS, isKnownProvider } = require(path.join(OUT, 'core/providers'));
@@ -101,6 +106,32 @@ test('CONFIG_DEFAULTS.liveQuotaEnabled default is true', () => {
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
   assert.deepStrictEqual(keys, ['displayMode', 'enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes']);
+});
+
+// --- manifest and docs ---
+
+test('package.json contributes snapshot imports folder command', () => {
+  const commands = packageJson.contributes.commands;
+  assert.ok(commands.some(cmd =>
+    cmd.command === 'promptFuel.openSnapshotImportsFolder'
+    && cmd.title === 'PromptFuel: Open Snapshot Imports Folder',
+  ));
+});
+
+test('README documents snapshot import command and dashboard source modes', () => {
+  assert.ok(readme.includes('PromptFuel: Open Snapshot Imports Folder'), 'expected snapshot import command in README');
+  assert.ok(readme.includes('Local only'), 'expected Local only source mode in README');
+  assert.ok(readme.includes('Snapshots only'), 'expected Snapshots only source mode in README');
+  assert.ok(readme.includes('Combined'), 'expected Combined source mode in README');
+  assert.ok(/live quota remains separate/i.test(readme), 'expected live quota separation in README');
+});
+
+test('README and command text do not include private/internal labels', () => {
+  const commandText = packageJson.contributes.commands.map(cmd => `${cmd.command} ${cmd.title}`).join('\n');
+  const publicText = `${readme}\n${commandText}`;
+  for (const forbidden of ['AgentBridge', 'PHOENIX', 'WATCHER', 'CEREBRO', 'X-23', 'D:\\', 'keith']) {
+    assert.ok(!publicText.includes(forbidden), `public docs/commands should not include ${forbidden}`);
+  }
 });
 
 // --- formatQuota ---
@@ -496,8 +527,6 @@ test('live quota window: 7d has correct shape', () => {
 });
 
 // === Compiled artifacts ===
-
-const fs = require('fs');
 
 test('compiled refreshScheduler.js exists', () => {
   const schedulerPath = path.join(OUT, 'core/refreshScheduler.js');

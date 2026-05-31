@@ -44,6 +44,7 @@ const {
 } = require(path.join(OUT, 'snapshots/snapshotReader'));
 const {
   getPromptFuelSnapshotImportFolderPath,
+  ensurePromptFuelSnapshotImportFolder,
 } = require(path.join(OUT, 'snapshots/snapshotStorage'));
 const {
   buildDashboardModel,
@@ -397,6 +398,14 @@ async function main() {
 
   await test('snapshotStorage: import folder is under PromptFuel storage root', async () => {
     assert.strictEqual(snapshotDir, path.join(snapshotRoot, 'snapshot-imports'));
+  });
+
+  await test('snapshotStorage: ensure creates snapshot import folder', async () => {
+    const storageRoot = path.join(FIXTURE_DIR, 'snapshot-storage-ensure');
+    const ensuredPath = await ensurePromptFuelSnapshotImportFolder({ globalStorageUri: { fsPath: storageRoot } });
+    assert.strictEqual(ensuredPath, path.join(storageRoot, 'snapshot-imports'));
+    assert.strictEqual(fs.existsSync(ensuredPath), true);
+    assert.strictEqual(fs.statSync(ensuredPath).isDirectory(), true);
   });
 
   await test('readPromptFuelSnapshots: missing storage produces empty snapshot state', async () => {
