@@ -19,10 +19,11 @@ npm ci
 npm run compile
 ```
 
-Run tests and validate:
+Run smoke tests and validate:
 
 ```bash
-npm test
+npm run smoke:core
+npm run smoke:providers
 npm run validate:manifest
 npm run package
 ```
@@ -40,7 +41,7 @@ code --extensionDevelopmentPath=.
 1. **Fork or branch from `master`** — external contributors should fork; collaborators may create a feature branch.
 2. **Create or link an issue** — reference an existing issue or open a new one outlining what you plan to do.
 3. **Make focused, readable commits** — group related changes, use clear messages, and describe *why* a change was made.
-4. **Add tests where appropriate** — update or add tests if the project has them; include validation steps for scripts or workflows.
+4. **Add tests where appropriate** — update or add tests if the project has them; include validation steps for scripts or workflows. Smoke tests (`scripts/smoke-core.cjs`, `scripts/smoke-providers.cjs`) use the compiled `out/` directory and may run without VS Code.
 5. **Open a Pull Request** — describe the change, link the relevant issue, and call out anything that might affect CI, workflows, or other repos.
 6. **Respond to review** — keep the conversation constructive; tidy follow-up commits are fine.
 
@@ -50,16 +51,19 @@ code --extensionDevelopmentPath=.
 
 - **Settings** must be under `promptFuel.*` (e.g., `promptFuel.enabledProviders`).
 - **Commands** must be under `promptFuel.*` (e.g., `promptFuel.openDashboard`).
+- `promptFuel.liveQuotaEnabled` defaults to `false`. New live quota features must remain opt-in.
+- Live quota requires existing provider OAuth/auth state. Do not add PromptFuel-specific auth UI unless explicitly scoped.
+- Snapshots are not implemented. Do not commit snapshot or cached provider state unless explicitly scoped.
 - Do **not** commit raw prompts, responses, or conversation transcripts.
 - Do **not** include authenticated provider credentials, tokens, or API keys.
-- Do **not** include imported snapshot or cached provider state unless explicitly scoped.
 - Do **not** reference AgentBridge branding, internal paths, or coordination infrastructure from PromptFuel source code.
+- Marketplace publish is manual. Do not add publish automation unless explicitly scoped.
 
 ---
 
 ## Pull Requests
 
-Describe the validation run in your PR or issue — include which of `npm test`, `npm run validate:manifest`, and `npm run package` passed. Keep changes focused; split into separate PRs if a change touches multiple concerns.
+Describe the validation run in your PR or issue — include which of `npm run smoke:core`, `npm run smoke:providers`, `npm run validate:manifest`, and `npm run package` passed. Keep changes focused; split into separate PRs if a change touches multiple concerns.
 
 ---
 

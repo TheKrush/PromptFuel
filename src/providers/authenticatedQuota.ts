@@ -61,8 +61,8 @@ async function fetchClaudeLiveQuota(): Promise<LiveQuotaStatus> {
   }
 
   const body = asRecord(response.body);
-  const fiveHour = parseClaudeWindow(asRecord(body?.five_hour));
-  const sevenDay = parseClaudeWindow(asRecord(body?.seven_day));
+  const fiveHour = parseClaudeWindow('5h', asRecord(body?.five_hour));
+  const sevenDay = parseClaudeWindow('7d', asRecord(body?.seven_day));
 
   if (!fiveHour && !sevenDay) {
     return errorStatus('claude', 'parse_error');
@@ -152,6 +152,7 @@ async function readCodexAuth(): Promise<CodexAuth> {
 // --- Window parsing ---
 
 function parseClaudeWindow(
+  windowId: '5h' | '7d',
   window: Record<string, unknown> | undefined,
 ): LiveQuotaWindow | undefined {
   if (!window) {
@@ -164,7 +165,7 @@ function parseClaudeWindow(
     ?? parseResetEpochSeconds(window.reset_at)
     ?? parseResetEpochSeconds(window.resetsAt);
 
-  return buildWindow('5h', usedPercentage, resetsAtEpochSeconds);
+  return buildWindow(windowId, usedPercentage, resetsAtEpochSeconds);
 }
 
 function parseCodexWindow(
@@ -373,6 +374,13 @@ function normalizePercent(value: number | undefined): number | undefined {
   }
   return Math.max(0, Math.min(100, value));
 }
+
+// --- Test helpers (used by smoke tests only, not part of public API) ---
+export const _test = {
+  parseClaudeWindow: parseClaudeWindow as (windowId: '5h' | '7d', window: Record<string, unknown> | undefined) => LiveQuotaWindow | undefined,
+  parseCodexWindow: parseCodexWindow as (window: Record<string, unknown> | undefined, expectedSeconds: number) => LiveQuotaWindow | undefined,
+  buildWindow,
+};
 
 function parseResetEpochSeconds(value: unknown): number | undefined {
   const numeric = toNumber(value);

@@ -5,6 +5,7 @@
 .vscode/**
 .vscodeignore
 DO_NOT_DELETE/**
+vsix-inspect/**
 .github/**
 node_modules
 scripts/**

@@ -17,6 +17,7 @@ const {
   formatTooltip,
   formatTokenCount,
 } = require(path.join(OUT, 'core/formatQuota'));
+const { _test: authTest } = require(path.join(OUT, 'providers/authenticatedQuota'));
 const {
   createInitialStatus,
   applyRefreshResults,
@@ -636,6 +637,45 @@ async function main() {
     assert.strictEqual(results.length, 2);
     const ids = results.map(r => r.providerId).sort();
     assert.deepStrictEqual(ids, ['claude', 'codex']);
+  });
+
+  // ===== Authenticated quota window mapping (synthetic data) =====
+
+  await test('parseClaudeWindow: five_hour maps to 5h', async () => {
+    const w = authTest.parseClaudeWindow('5h', { utilization: 0.45, resets_at: Date.now() / 1000 + 5000 });
+    assert.strictEqual(w.windowId, '5h', 'five_hour should map to 5h');
+  });
+
+  await test('parseClaudeWindow: seven_day maps to 7d', async () => {
+    const w = authTest.parseClaudeWindow('7d', { utilization: 0.3, resets_at: Date.now() / 1000 + 70000 });
+    assert.strictEqual(w.windowId, '7d', 'seven_day should map to 7d');
+  });
+
+  await test('parseClaudeWindow: undefined window returns undefined', async () => {
+    const w = authTest.parseClaudeWindow('5h', undefined);
+    assert.strictEqual(w, undefined);
+  });
+
+  await test('parseCodexWindow: 18000s window maps to 5h', async () => {
+    const w = authTest.parseCodexWindow({ limit_window_seconds: 18000, used_percent: 50 }, 18000);
+    assert.strictEqual(w.windowId, '5h', '18000s should map to 5h');
+  });
+
+  await test('parseCodexWindow: 604800s window maps to 7d', async () => {
+    const w = authTest.parseCodexWindow({ limit_window_seconds: 604800, used_percent: 20 }, 604800);
+    assert.strictEqual(w.windowId, '7d', '604800s should map to 7d');
+  });
+
+  await test('parseCodexWindow: mismatched seconds returns undefined', async () => {
+    const w = authTest.parseCodexWindow({ limit_window_seconds: 99999, used_percent: 50 }, 18000);
+    assert.strictEqual(w, undefined);
+  });
+
+  await test('buildWindow: preserves windowId', async () => {
+    const w = authTest.buildWindow('7d', 50, Math.floor(Date.now() / 1000) + 86400);
+    assert.strictEqual(w.windowId, '7d');
+    assert.strictEqual(w.usedPercentage, 50);
+    assert.strictEqual(w.remainingPercentage, 50);
   });
 
   console.log('');
