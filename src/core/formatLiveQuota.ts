@@ -2,6 +2,13 @@ import { PROVIDER_LABELS, ProviderId } from './providers';
 import type { LiveQuotaFreshness, LiveQuotaStatus, LiveQuotaWindow } from './liveQuotaTypes';
 import { PromptFuelStatus } from './statusModel';
 
+const STATUS_WINDOW_SEPARATOR = ' · ';
+const STATUS_PROVIDER_SEPARATOR = ' | ';
+const STATUS_WINDOW_ORDER: Record<string, number> = {
+  '7d': 0,
+  '5h': 1,
+};
+
 // --- Freshness labels ---
 
 const FRESHNESS_LABELS: Record<LiveQuotaFreshness, string> = {
@@ -57,33 +64,30 @@ export function formatWindowLine(
   window: LiveQuotaWindow,
   nowMs: number = Date.now(),
 ): string {
-  const parts: string[] = [window.windowId];
+  const parts: string[] = [`${window.windowId}:`];
+
+  const used = formatPercentage(getUsedPercentage(window));
+  if (used !== undefined) {
+    parts.push(`${used} used`);
+  }
 
   const remaining = formatPercentage(window.remainingPercentage);
   if (remaining !== undefined) {
-    parts.push(`${remaining} left`);
-  }
-
-  const used = formatPercentage(window.usedPercentage);
-  if (used !== undefined && remaining === undefined) {
-    parts.push(`${used} used`);
+    parts.push(`${remaining} remaining`);
   }
 
   if (window.resetsAtEpochMs !== undefined) {
     const countdown = formatCountdownLabel(window.resetsAtEpochMs, nowMs);
-    parts.push(countdown);
+    parts.push(`reset ${countdown}`);
   }
 
-  return parts.join(', ');
+  return parts.join(' ');
 }
 
 // --- Status bar text with live quota preference ---
 
 export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
-  const hasLiveQuota = status.liveQuotaStates.length > 0 &&
-    status.liveQuotaStates.some(s => s.freshness !== 'unavailable' && s.freshness !== 'error');
-
-  if (hasLiveQuota) {
+  if (status.liveQuotaStates.length > 0) {
     return formatLiveQuotaStatusBarTextFromLive(status);
   }
 
@@ -91,47 +95,93 @@ export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
 }
 
 function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string {
-  const usableStates = status.liveQuotaStates.filter(
-    s => s.freshness !== 'unavailable' && s.freshness !== 'error',
-  );
-
-  if (usableStates.length === 0) {
-    return fallbackStatusBarText(status);
-  }
-
   const parts: string[] = [];
+  const includeCountdowns = status.liveQuotaStates.length === 1;
 
-  for (const liveState of usableStates) {
+  for (const liveState of status.liveQuotaStates) {
     const label = PROVIDER_LABELS[liveState.providerId as ProviderId] ?? liveState.providerId;
 
-    const usableWindows = liveState.windows.filter(
-      w => w.remainingPercentage !== undefined || w.usedPercentage !== undefined,
-    );
-
-    if (usableWindows.length === 0) {
+    if (liveState.freshness === 'unavailable' || liveState.freshness === 'error') {
+      parts.push(`${label} unavailable`);
       continue;
     }
 
-    const windowLabels = usableWindows.map(w => {
-      const remaining = formatPercentage(w.remainingPercentage);
-      if (remaining !== undefined) {
-        return `${w.windowId} ${remaining}`;
-      }
-      const used = formatPercentage(w.usedPercentage);
-      if (used !== undefined) {
-        return `${w.windowId} ${used} used`;
-      }
-      return w.windowId;
-    });
+    const windowLabels = getStatusBarWindows(liveState)
+      .map(w => formatStatusBarWindow(w, {
+        includeCountdowns,
+        includeWindowId: liveState.windows.length > 1,
+      }))
+      .filter((part): part is string => part !== undefined);
 
-    parts.push(`${label} ${windowLabels.join(' · ')}`);
+    if (windowLabels.length === 0) {
+      parts.push(formatNoWindowLiveState(label, liveState.freshness));
+      continue;
+    }
+
+    const freshnessPrefix = liveState.freshness === 'stale' ? 'stale ' : '';
+    parts.push(`${label} ${freshnessPrefix}${windowLabels.join(STATUS_WINDOW_SEPARATOR)}`);
   }
 
   if (parts.length === 0) {
-    return fallbackStatusBarText(status);
+    return 'PromptFuel: live quota unavailable';
   }
 
-  return `PromptFuel: ${parts.join(' | ')}`;
+  return `PromptFuel ${parts.join(STATUS_PROVIDER_SEPARATOR)}`;
+}
+
+function getStatusBarWindows(liveState: LiveQuotaStatus): LiveQuotaWindow[] {
+  return liveState.windows
+    .filter(w => getUsedPercentage(w) !== undefined)
+    .slice()
+    .sort((a, b) => {
+      const left = STATUS_WINDOW_ORDER[a.windowId] ?? 99;
+      const right = STATUS_WINDOW_ORDER[b.windowId] ?? 99;
+      return left - right;
+    });
+}
+
+function formatStatusBarWindow(
+  window: LiveQuotaWindow,
+  options: { includeCountdowns: boolean; includeWindowId: boolean },
+): string | undefined {
+  const used = formatPercentage(getUsedPercentage(window));
+  if (used === undefined) {
+    return undefined;
+  }
+
+  if (!options.includeWindowId) {
+    return used;
+  }
+
+  const label = options.includeCountdowns && window.resetsAtEpochMs !== undefined
+    ? formatCountdownLabel(window.resetsAtEpochMs)
+    : window.windowId;
+
+  return `${label} ${used}`;
+}
+
+function formatNoWindowLiveState(label: string, freshness: LiveQuotaFreshness): string {
+  if (freshness === 'stale') {
+    return `${label} stale`;
+  }
+  if (freshness === 'cached') {
+    return `${label} cached`;
+  }
+  return `${label} unavailable`;
+}
+
+function getUsedPercentage(window: LiveQuotaWindow): number | undefined {
+  if (window.usedPercentage !== undefined && Number.isFinite(window.usedPercentage)) {
+    return clampPercentage(window.usedPercentage);
+  }
+  if (window.remainingPercentage !== undefined && Number.isFinite(window.remainingPercentage)) {
+    return clampPercentage(100 - window.remainingPercentage);
+  }
+  return undefined;
+}
+
+function clampPercentage(value: number): number {
+  return Math.max(0, Math.min(100, value));
 }
 
 function fallbackStatusBarText(status: PromptFuelStatus): string {
@@ -182,13 +232,17 @@ const LINE_SEPARATOR = '\n';
 export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
   const lines: string[] = [];
 
-  const hasLiveQuota = status.liveQuotaStates.length > 0 &&
-    status.liveQuotaStates.some(s => s.freshness !== 'unavailable' && s.freshness !== 'error');
+  const hasLiveQuota = status.liveQuotaStates.length > 0;
+  const hasUsableQuota = status.liveQuotaStates.some(
+    s => s.freshness !== 'unavailable' && s.freshness !== 'error',
+  );
 
   lines.push('PromptFuel');
 
-  if (hasLiveQuota) {
-    lines.push('Local history + live quota');
+  if (hasUsableQuota) {
+    lines.push('Live quota + local history');
+  } else if (hasLiveQuota) {
+    lines.push('Live quota unavailable + local history');
   } else {
     lines.push('Local history only');
   }
@@ -196,7 +250,7 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
   lines.push('Snapshots not included');
   lines.push('');
 
-  // Live quota sections (render even error states for sanitized label)
+  // Live quota sections render unavailable/error states with sanitized labels.
   if (status.liveQuotaStates.length > 0) {
     for (const liveState of status.liveQuotaStates) {
       lines.push(formatLiveQuotaProviderSection(liveState));
@@ -207,7 +261,6 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
     lines.push('');
   }
 
-  // Local history sections
   lines.push('Local history:');
 
   let totalTokens = 0;
@@ -233,11 +286,10 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
     lines.push(`Parse errors: ${totalParseErrors}`);
   }
 
-  // Timestamps
   lines.push('');
 
   if (hasLiveQuota) {
-    const liveTimestamp = getLatestLiveQuotaTimestamp(status);
+    const liveTimestamp = getLatestLiveQuotaTimestamp(status) ?? status.liveQuotaLastRefreshedMs;
     if (liveTimestamp) {
       lines.push(formatLiveQuotaRefreshedAt(liveTimestamp));
     }
@@ -350,9 +402,8 @@ export function hasUsableLiveQuota(status: PromptFuelStatus): boolean {
     status.liveQuotaStates.some(s => s.freshness !== 'unavailable' && s.freshness !== 'error');
 }
 
-// --- Utility: check if any live quota data exists (even unavailable) ---
+// --- Utility: check if any live quota state exists ---
 
 export function hasAnyLiveQuota(status: PromptFuelStatus): boolean {
-  return status.liveQuotaStates.length > 0 &&
-    status.liveQuotaStates.some(s => s.freshness !== 'unavailable');
+  return status.liveQuotaStates.length > 0;
 }

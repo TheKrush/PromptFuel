@@ -703,8 +703,40 @@ test('formatStatusBarText: live quota preferred over local history', () => {
   const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
   const t = formatStatusBarText(updated);
   assert.ok(t.includes('Claude'), `expected "Claude" in status bar "${t}"`);
-  assert.ok(t.includes('5h'), `expected "5h" window in status bar "${t}"`);
+  assert.ok(t.includes('%'), `expected percentage in status bar "${t}"`);
   assert.ok(!t.includes('local'), `should not show "local" suffix when live quota available "${t}"`);
+});
+
+test('formatStatusBarText: live quota available shows exact compact percentages', () => {
+  const now = Date.now();
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [{
+    providerId: 'claude',
+    windows: [
+      { windowId: '5h', usedPercentage: 92 },
+      { windowId: '7d', usedPercentage: 72 },
+    ],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude 7d 72% · 5h 92%');
+});
+
+test('formatStatusBarText: single provider includes reset countdowns when compact', () => {
+  const now = Date.now();
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [{
+    providerId: 'claude',
+    windows: [
+      { windowId: '5h', usedPercentage: 92, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
+      { windowId: '7d', usedPercentage: 72, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
+    ],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude 6d5h 72% · 4h25m 92%');
 });
 
 test('formatStatusBarText: fallback to local history when no live quota', () => {
@@ -716,7 +748,7 @@ test('formatStatusBarText: fallback to local history when no live quota', () => 
   assert.ok(t.includes('local history'), `expected "local history" suffix "${t}"`);
 });
 
-test('formatStatusBarText: live quota unavailable falls back to local history', () => {
+test('formatStatusBarText: live quota unavailable shows compact safe state', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
@@ -729,10 +761,11 @@ test('formatStatusBarText: live quota unavailable falls back to local history', 
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.ok(t.includes('local history'), `expected "local history" suffix when live quota unavailable "${t}"`);
+  assert.strictEqual(t, 'PromptFuel Claude unavailable');
+  assert.ok(!t.includes('local history'), `should prefer live quota state over local fallback "${t}"`);
 });
 
-test('formatStatusBarText: live quota error falls back to local history', () => {
+test('formatStatusBarText: live quota error shows compact safe state', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
@@ -746,18 +779,18 @@ test('formatStatusBarText: live quota error falls back to local history', () => 
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.ok(t.includes('local history'), `expected "local history" suffix when live quota error "${t}"`);
+  assert.strictEqual(t, 'PromptFuel Claude unavailable');
   assert.ok(!t.includes('secret'), `should not leak secrets "${t}"`);
   assert.ok(!t.includes('.jsonl'), `should not leak file paths "${t}"`);
 });
 
-test('formatStatusBarText: both providers with live quota show both', () => {
+test('formatStatusBarText: multiple providers with live quota show both compactly', () => {
   const codexLiveQuota = {
     providerId: 'codex',
     windows: [
       {
         windowId: '5h',
-        remainingPercentage: 80,
+        usedPercentage: 0,
         resetsAtEpochMs: Date.now() + 5 * 60 * 60 * 1000,
       },
     ],
@@ -769,6 +802,21 @@ test('formatStatusBarText: both providers with live quota show both', () => {
   const t = formatStatusBarText(updated);
   assert.ok(t.includes('Claude'), `expected "Claude" "${t}"`);
   assert.ok(t.includes('Codex'), `expected "Codex" "${t}"`);
+  assert.strictEqual(t, 'PromptFuel Claude 7d 62% · 5h 45% | Codex 0%');
+});
+
+test('formatStatusBarText: stale quota keeps quota display with stale marker', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [{
+    providerId: 'claude',
+    windows: [
+      { windowId: '5h', usedPercentage: 92 },
+      { windowId: '7d', usedPercentage: 72 },
+    ],
+    freshness: 'stale',
+  }]);
+  const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude stale 7d 72% · 5h 92%');
 });
 
 // --- Tooltip: live quota sections ---
@@ -779,7 +827,7 @@ test('formatTooltip: live quota shows provider sections', () => {
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
   assert.ok(tooltip.includes('live'), `expected "live" freshness in tooltip`);
-  assert.ok(tooltip.includes('Local history + live quota'), `expected combined mode label`);
+  assert.ok(tooltip.includes('Live quota + local history'), `expected combined mode label`);
   assert.ok(!tooltip.includes('Live quota not enabled yet'), `should not show "not enabled" when live quota present`);
 });
 
@@ -916,7 +964,10 @@ test('formatWindowLine: includes window ID and remaining percentage', () => {
   };
   const line = formatWindowLine(window, Date.now());
   assert.ok(line.includes('5h'), `expected "5h" in "${line}"`);
+  assert.ok(line.includes('45%'), `expected derived used "45%" in "${line}"`);
+  assert.ok(line.includes('used'), `expected "used" in "${line}"`);
   assert.ok(line.includes('55%'), `expected "55%" in "${line}"`);
+  assert.ok(line.includes('remaining'), `expected "remaining" in "${line}"`);
 });
 
 test('formatWindowLine: used percentage when no remaining', () => {
@@ -967,6 +1018,14 @@ test('hasUsableLiveQuota: false when empty', () => {
 test('hasAnyLiveQuota: true when any state present', () => {
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
+  assert.strictEqual(hasAnyLiveQuota(updated), true);
+});
+
+test('hasAnyLiveQuota: true for unavailable state', () => {
+  const status = createInitialStatus(['claude']);
+  const updated = applyLiveQuotaResults(status, [
+    { providerId: 'claude', windows: [], freshness: 'unavailable' },
+  ]);
   assert.strictEqual(hasAnyLiveQuota(updated), true);
 });
 
