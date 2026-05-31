@@ -21,10 +21,16 @@ const { _test: authTest } = require(path.join(OUT, 'providers/authenticatedQuota
 const {
   createInitialStatus,
   applyRefreshResults,
+  applyLiveQuotaResults,
   getProviderState,
   hasAnyLoaded,
   hasAnyError,
 } = require(path.join(OUT, 'core/statusModel'));
+const {
+  applyLiveQuotaCacheFallback,
+  LIVE_QUOTA_CACHE_KEY,
+  readCachedLiveQuotaStateForTest,
+} = require(path.join(OUT, 'core/liveQuotaCache'));
 
 let pass = 0;
 let fail = 0;
@@ -38,6 +44,18 @@ async function test(name, fn) {
     console.error(`  FAIL  ${name}: ${e.message}`);
     fail++;
   }
+}
+
+function createMemoryStorage(initial = {}) {
+  return {
+    values: { ...initial },
+    get(key) {
+      return this.values[key];
+    },
+    async update(key, value) {
+      this.values[key] = value;
+    },
+  };
 }
 
 const FIXTURE_DIR = path.join(os.tmpdir(), `pf-smoke-fixtures-${Date.now()}`);
@@ -152,6 +170,206 @@ async function main() {
     const updated = applyRefreshResults(status, results);
     assert.strictEqual(updated.providerStates.length, 1);
     assert.strictEqual(updated.providerStates[0].providerId, 'claude');
+  });
+
+  // ===== liveQuotaCache: last-known-good stale fallback =====
+
+  await test('liveQuotaCache: first successful live read stores cache', async () => {
+    const storage = createMemoryStorage();
+    const refreshedAt = Date.now();
+    const results = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        lastUpdatedEpochMs: refreshedAt,
+        windows: [
+          { windowId: '5h', usedPercentage: 92, remainingPercentage: 8, resetsAtEpochMs: refreshedAt + 1000 },
+          { windowId: '7d', usedPercentage: 72, remainingPercentage: 28, resetsAtEpochMs: refreshedAt + 2000 },
+        ],
+      }],
+      nowMs: refreshedAt,
+    });
+    assert.strictEqual(results[0].freshness, 'live');
+    const cached = storage.get(LIVE_QUOTA_CACHE_KEY);
+    assert.ok(cached, 'expected live quota cache to be stored');
+    assert.strictEqual(cached.providers.claude.windows.length, 2);
+  });
+
+  await test('liveQuotaCache: failed refresh with cache returns stale windows', async () => {
+    const storage = createMemoryStorage();
+    const refreshedAt = Date.now();
+    await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        lastUpdatedEpochMs: refreshedAt,
+        windows: [
+          { windowId: '5h', usedPercentage: 92, remainingPercentage: 8 },
+          { windowId: '7d', usedPercentage: 72, remainingPercentage: 28 },
+        ],
+      }],
+      nowMs: refreshedAt,
+    });
+    const results = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'error',
+        status: 'error',
+        windows: [],
+        error: 'raw provider failure /private/path/session.jsonl private-auth-value',
+      }],
+      nowMs: refreshedAt + 1000,
+    });
+    assert.strictEqual(results[0].freshness, 'stale');
+    assert.strictEqual(results[0].status, 'stale');
+    assert.strictEqual(results[0].windows.length, 2);
+    assert.strictEqual(results[0].windows[0].sourceKind, 'stale');
+  });
+
+  await test('liveQuotaCache: failed refresh without cache returns unavailable', async () => {
+    const storage = createMemoryStorage();
+    const results = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'unavailable',
+        status: 'unavailable',
+        windows: [],
+      }],
+    });
+    assert.strictEqual(results[0].freshness, 'unavailable');
+    assert.strictEqual(results[0].windows.length, 0);
+  });
+
+  await test('liveQuotaCache: disabled live quota does not use cache', async () => {
+    const storage = createMemoryStorage();
+    await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        windows: [{ windowId: '5h', usedPercentage: 92 }],
+      }],
+    });
+    const results = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: false,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'error',
+        status: 'error',
+        windows: [],
+      }],
+    });
+    assert.deepStrictEqual(results, []);
+  });
+
+  await test('liveQuotaCache: mixed providers can return Claude stale and Codex live', async () => {
+    const storage = createMemoryStorage();
+    await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        windows: [
+          { windowId: '5h', usedPercentage: 92 },
+          { windowId: '7d', usedPercentage: 72 },
+        ],
+      }],
+    });
+    const results = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude', 'codex'],
+      liveQuotaEnabled: true,
+      liveResults: [
+        { providerId: 'claude', freshness: 'error', status: 'error', windows: [] },
+        {
+          providerId: 'codex',
+          freshness: 'live',
+          windows: [
+            { windowId: '5h', usedPercentage: 15 },
+            { windowId: '7d', usedPercentage: 27 },
+          ],
+        },
+      ],
+    });
+    const byProvider = Object.fromEntries(results.map(result => [result.providerId, result]));
+    assert.strictEqual(byProvider.claude.freshness, 'stale');
+    assert.strictEqual(byProvider.codex.freshness, 'live');
+  });
+
+  await test('liveQuotaCache: stale fallback does not overwrite local-history refresh timestamp', async () => {
+    const storage = createMemoryStorage();
+    await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        windows: [{ windowId: '5h', usedPercentage: 92 }],
+      }],
+    });
+    const localStatus = applyRefreshResults(
+      createInitialStatus(['claude']),
+      [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 }],
+    );
+    const localHistoryRefreshed = localStatus.localHistoryLastRefreshedMs;
+    const staleResults = await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{ providerId: 'claude', freshness: 'error', status: 'error', windows: [] }],
+    });
+    const updated = applyLiveQuotaResults(localStatus, staleResults);
+    assert.strictEqual(updated.localHistoryLastRefreshedMs, localHistoryRefreshed);
+    assert.ok(typeof updated.liveQuotaLastRefreshedMs === 'number', 'expected live quota refresh timestamp');
+  });
+
+  await test('liveQuotaCache: cache contains no raw/private provider data', async () => {
+    const storage = createMemoryStorage();
+    await applyLiveQuotaCacheFallback({
+      storage,
+      enabledProviderIds: ['claude'],
+      liveQuotaEnabled: true,
+      liveResults: [{
+        providerId: 'claude',
+        freshness: 'live',
+        error: 'raw provider failure /private/path/session.jsonl private-auth-value',
+        sanitizedMessage: 'Live quota unavailable',
+        windows: [{
+          windowId: '5h',
+          label: '5h',
+          usedPercentage: 92,
+          remainingPercentage: 8,
+          resetsAtEpochMs: Date.now() + 1000,
+          sourceLabel: 'raw provider payload should not persist',
+        }],
+      }],
+    });
+    const cached = readCachedLiveQuotaStateForTest(storage);
+    const serialized = JSON.stringify(cached);
+    assert.ok(!serialized.includes('raw provider'), 'cache should not include raw provider strings');
+    assert.ok(!serialized.includes('private-auth-value'), 'cache should not include auth values');
+    assert.ok(!serialized.includes('.jsonl'), 'cache should not include filenames');
+    assert.ok(!serialized.includes('/private/path'), 'cache should not include local paths');
+    assert.ok(!serialized.includes('sourceLabel'), 'cache should not include source labels');
   });
 
   // ===== statusModel: hasAnyLoaded / hasAnyError =====

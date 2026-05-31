@@ -293,6 +293,12 @@ function formatLiveQuotaProviderSection(liveState: LiveQuotaStatus): string {
 
   sectionLines.push(`${label} live quota [${freshness}]`);
 
+  if (liveState.freshness === 'stale') {
+    sectionLines.push('  Cached from last successful live refresh.');
+  } else if (liveState.freshness === 'cached') {
+    sectionLines.push('  Cached live quota.');
+  }
+
   for (const window of liveState.windows) {
     sectionLines.push(`  ${formatWindowLine(window)}`);
   }

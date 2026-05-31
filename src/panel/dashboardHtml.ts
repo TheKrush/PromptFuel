@@ -89,8 +89,11 @@ function renderLiveQuotaWindow(window: { windowId: string; usedPercentage?: numb
 
 function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuotaCard): string {
   const windowsHtml = card.windows.map(w => renderLiveQuotaWindow(w)).join('\n');
+  const footerLabel = card.freshness === 'stale' || card.freshness === 'cached'
+    ? 'Cached'
+    : 'Updated';
   const footer = card.lastUpdatedMs !== undefined
-    ? `<div class="live-quota-footer">Updated: ${esc(formatRefreshTime(card.lastUpdatedMs))}</div>`
+    ? `<div class="live-quota-footer">${footerLabel}: ${esc(formatRefreshTime(card.lastUpdatedMs))}</div>`
     : '';
 
   return `

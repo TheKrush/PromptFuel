@@ -5,6 +5,7 @@ import { formatStatusBarText, formatTooltip } from './formatQuota';
 import { ReadResult } from './providerReader';
 import { LiveQuotaStatus } from './liveQuotaTypes';
 import { getGenericQuotaUnavailableMessage } from './liveQuotaTypes';
+import { applyLiveQuotaCacheFallback, type LiveQuotaDiagnostics } from './liveQuotaCache';
 import { ClaudeLocalReader } from '../providers/claudeLocal';
 import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
@@ -22,6 +23,7 @@ export class RefreshScheduler {
     private readonly statusBarItem: vscode.StatusBarItem,
     private readonly context: vscode.ExtensionContext,
     private readonly onRefreshed?: () => void,
+    private readonly diagnostics?: LiveQuotaDiagnostics,
   ) {
     const cfg = getConfig();
     this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
@@ -96,14 +98,28 @@ export class RefreshScheduler {
           runEnabledReaders(localReaders, cfg.enabledProviders),
           runLiveQuotaReaders(liveReaders, cfg.enabledProviders),
         ]);
+        liveResults = await applyLiveQuotaCacheFallback({
+          storage: this.context.globalState,
+          enabledProviderIds: cfg.enabledProviders,
+          liveQuotaEnabled: true,
+          liveResults,
+          diagnostics: this.diagnostics,
+        });
       } catch {
         localResults = cfg.enabledProviders.map((id) => ({
           providerId: id,
           status: 'error' as const,
         }));
-        liveResults = createUnavailableLiveQuotaResults(cfg.enabledProviders);
+        liveResults = await applyLiveQuotaCacheFallback({
+          storage: this.context.globalState,
+          enabledProviderIds: cfg.enabledProviders,
+          liveQuotaEnabled: true,
+          liveResults: createUnavailableLiveQuotaResults(cfg.enabledProviders),
+          diagnostics: this.diagnostics,
+        });
       }
     } else {
+      this.diagnostics?.info('live quota disabled; stale cache not used');
       try {
         localResults = await runEnabledReaders(localReaders, cfg.enabledProviders);
       } catch {

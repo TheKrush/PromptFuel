@@ -7,6 +7,7 @@ import { openDashboardPanel, postDashboardRefreshIfOpen } from './panel/dashboar
 let scheduler: RefreshScheduler | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
+  const outputChannel = vscode.window.createOutputChannel('PromptFuel');
   const statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     10,
@@ -14,7 +15,11 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.command = 'promptFuel.openDashboard';
   statusBarItem.show();
 
-  scheduler = new RefreshScheduler(statusBarItem, context, onRefreshed);
+  scheduler = new RefreshScheduler(statusBarItem, context, onRefreshed, {
+    info(message: string): void {
+      outputChannel.appendLine(`[live-quota] ${message}`);
+    },
+  });
   scheduler.start();
 
   const openDashboard = vscode.commands.registerCommand(
@@ -43,7 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
-  context.subscriptions.push(statusBarItem, openDashboard, refresh, openDataFolder);
+  context.subscriptions.push(statusBarItem, outputChannel, openDashboard, refresh, openDataFolder);
 }
 
 function onRefreshed() {

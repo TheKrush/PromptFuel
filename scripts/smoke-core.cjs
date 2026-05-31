@@ -716,6 +716,27 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   assert.ok(html.includes('Local history tokens'), `expected local history to remain separated`);
 });
 
+test('dashboard: stale live quota renders as stale card, not unavailable', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyLiveQuotaResults(createInitialStatus(['claude']), [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 92, remainingPercentage: 8 },
+        { windowId: '7d', usedPercentage: 72, remainingPercentage: 28 },
+      ],
+      freshness: 'stale',
+      lastUpdatedEpochMs: Date.now(),
+    },
+  ]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('badge stale'), `expected stale badge in dashboard`);
+  assert.ok(html.includes('Cached:'), `expected cached footer in dashboard`);
+  assert.ok(!html.includes('Claude: Live quota unavailable'), `stale quota should not render unavailable`);
+});
+
 // === Live quota: formatLiveQuota integration ===
 
 const {
@@ -854,6 +875,30 @@ test('formatStatusBarText: stale quota keeps quota display with stale marker', (
   assert.strictEqual(t, 'PromptFuel Claude stale 7d 72% · 5h 92%');
 });
 
+test('formatStatusBarText: mixed Claude stale and Codex live shows both providers', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 92 },
+        { windowId: '7d', usedPercentage: 72 },
+      ],
+      freshness: 'stale',
+    },
+    {
+      providerId: 'codex',
+      windows: [
+        { windowId: '5h', usedPercentage: 15 },
+        { windowId: '7d', usedPercentage: 27 },
+      ],
+      freshness: 'live',
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude stale 7d 72% · 5h 92% | Codex 7d 27% · 5h 15%');
+});
+
 // --- Tooltip: live quota sections ---
 
 test('formatTooltip: live quota shows provider sections', () => {
@@ -946,6 +991,10 @@ test('formatTooltip: stale freshness shown correctly', () => {
   const updated = applyLiveQuotaResults(status, [staleLiveQuota]);
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('stale'), `expected "stale" freshness in tooltip`);
+  assert.ok(
+    tooltip.includes('Cached from last successful live refresh.'),
+    `expected stale cached explanation in tooltip`,
+  );
 });
 
 test('formatTooltip: cached freshness shown correctly', () => {
