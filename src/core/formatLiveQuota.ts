@@ -100,7 +100,7 @@ export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
 
 function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string {
   const parts: string[] = [];
-  const includeCountdowns = status.liveQuotaStates.length === 1;
+  const includeCountdowns = status.displayMode === 'countdown';
 
   for (const liveState of status.liveQuotaStates) {
     const label = PROVIDER_LABELS[liveState.providerId as ProviderId] ?? liveState.providerId;

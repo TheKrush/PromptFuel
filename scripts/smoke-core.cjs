@@ -1434,7 +1434,7 @@ test('formatStatusBarText: live quota available shows exact compact percentages'
   assert.strictEqual(t, 'PromptFuel Claude 7d 72% · 5h 92%');
 });
 
-test('formatStatusBarText: single provider includes reset countdowns when compact', () => {
+test('formatStatusBarText: compact mode single provider does not include countdown', () => {
   const now = Date.now();
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [{
@@ -1447,7 +1447,72 @@ test('formatStatusBarText: single provider includes reset countdowns when compac
     lastUpdatedEpochMs: now,
   }]);
   const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude 7d 72% · 5h 92%');
+});
+
+test('formatStatusBarText: countdown mode single provider shows reset countdowns', () => {
+  const now = Date.now();
+  const status = createInitialStatus(['claude'], true, 'countdown');
+  const updated = applyLiveQuotaResults(status, [{
+    providerId: 'claude',
+    windows: [
+      { windowId: '5h', usedPercentage: 92, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
+      { windowId: '7d', usedPercentage: 72, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
+    ],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const t = formatStatusBarText(updated);
   assert.strictEqual(t, 'PromptFuel Claude 6d5h 72% · 4h25m 92%');
+});
+
+test('formatStatusBarText: compact mode with multiple providers stays compact (no countdown)', () => {
+  const now = Date.now();
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 45, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
+        { windowId: '7d', usedPercentage: 62, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
+      ],
+      freshness: 'live',
+      lastUpdatedEpochMs: now,
+    },
+    {
+      providerId: 'codex',
+      windows: [{ windowId: '5h', usedPercentage: 10, resetsAtEpochMs: now + 60 * 60 * 1000 }],
+      freshness: 'live',
+      lastUpdatedEpochMs: now,
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.ok(!t.includes('h ') || !t.match(/\d+h\d+m/), `compact multi-provider should not include countdown format "${t}"`);
+  assert.strictEqual(t, 'PromptFuel Claude 7d 62% · 5h 45% | Codex 10%');
+});
+
+test('formatStatusBarText: countdown mode with multiple providers shows countdowns', () => {
+  const now = Date.now();
+  const status = createInitialStatus(['claude', 'codex'], true, 'countdown');
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 45, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
+        { windowId: '7d', usedPercentage: 62, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
+      ],
+      freshness: 'live',
+      lastUpdatedEpochMs: now,
+    },
+    {
+      providerId: 'codex',
+      windows: [{ windowId: '5h', usedPercentage: 10, resetsAtEpochMs: now + 60 * 60 * 1000 }],
+      freshness: 'live',
+      lastUpdatedEpochMs: now,
+    },
+  ]);
+  const t = formatStatusBarText(updated);
+  assert.strictEqual(t, 'PromptFuel Claude 6d5h 62% · 4h25m 45% | Codex 10%');
 });
 
 test('formatStatusBarText: enabled-but-not-yet-read shows loading', () => {
