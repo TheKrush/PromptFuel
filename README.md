@@ -1,17 +1,17 @@
 # PromptFuel
 
-Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates — all locally.
+Track AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates.
 
 ## Features
 
-- **Status bar fuel display** — remaining Claude and Codex usage at a glance with aggregate token counts
-- **Usage dashboard** — webview panel with local usage history overview and per-provider cards
-- **Auto-refresh** — configurable interval to re-read local history
-- **Opt-in live quota** — fetch authenticated usage quotas from Claude API and Codex backend (`promptFuel.liveQuotaEnabled`, defaults `false`)
+- **Status bar fuel display** - live quota percentages when available, with local history kept secondary
+- **Usage dashboard** - webview panel with live quota state and local usage history overview
+- **Auto-refresh** - configurable interval to re-read quota and local history
+- **Live quota by default** - attempt authenticated quota reads from configured providers (`promptFuel.liveQuotaEnabled`, defaults `true`)
 
 ## Privacy & Data
 
-- **All data is local.** No data leaves your machine unless you opt in to live quota.
+- **Local history stays local.** Live quota reads contact provider services when enabled.
 - **No raw prompts, responses, or transcripts are collected.**
 - **No secrets, tokens, or API keys are stored or transmitted by PromptFuel.**
 - **No telemetry** is sent by default.
@@ -34,7 +34,7 @@ Track AI coding assistant usage, remaining quota, reset windows, and API-equival
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
 | `promptFuel.displayMode` | Status bar display mode | `"compact"` |
 | `promptFuel.refreshIntervalMinutes` | Auto-refresh interval (0 to disable) | `5` |
-| `promptFuel.liveQuotaEnabled` | Fetch live quota from provider APIs (opt-in; requires existing provider auth) | `false` |
+| `promptFuel.liveQuotaEnabled` | Attempt live quota from provider APIs; set to `false` to opt out | `true` |
 
 ## Development
 

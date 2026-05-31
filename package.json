@@ -99,7 +99,7 @@
         },
         "promptFuel.liveQuotaEnabled": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Fetch live 5h/7d quota from provider APIs. Requires existing Claude/Codex OAuth credentials."
         }
       }

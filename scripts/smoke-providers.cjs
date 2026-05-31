@@ -72,7 +72,13 @@ async function main() {
     assert.strictEqual(status.lastRefreshedMs, undefined);
     assert.strictEqual(status.localHistoryLastRefreshedMs, undefined);
     assert.strictEqual(status.liveQuotaLastRefreshedMs, undefined);
+    assert.strictEqual(status.liveQuotaEnabled, true);
     assert.deepStrictEqual(status.enabledProviderIds, ['claude', 'codex']);
+  });
+
+  await test('createInitialStatus: explicit opt-out disables live quota', async () => {
+    const status = createInitialStatus(['claude'], false);
+    assert.strictEqual(status.liveQuotaEnabled, false);
   });
 
   await test('createInitialStatus: empty enabledProviders yields empty states', async () => {
@@ -188,67 +194,66 @@ async function main() {
 
   // ===== formatStatusBarText: compact aggregate status bar =====
 
-  await test('formatStatusBarText: all providers no-data shows local history label', async () => {
+  await test('formatStatusBarText: all providers no-data shows live quota loading', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const text = formatStatusBarText(status);
-    assert.strictEqual(text, 'PromptFuel: local history');
+    assert.strictEqual(text, 'PromptFuel: live quota loading');
   });
 
-  await test('formatStatusBarText: one provider loaded shows aggregate with local suffix', async () => {
+  await test('formatStatusBarText: one provider loaded does not mask loading live quota', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
       { providerId: 'codex', status: 'not-found' },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('12.4K'), `expected "12.4K" in "${text}"`);
-    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
-    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
+    assert.strictEqual(text, 'PromptFuel: live quota loading');
+    assert.ok(!text.includes('12.4K'), `local history should not be primary in "${text}"`);
   });
 
-  await test('formatStatusBarText: both providers loaded shows single aggregate', async () => {
+  await test('formatStatusBarText: both providers loaded keeps live quota primary', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'ok', totalTokens: 12400, totalAssistantMessages: 5, filesFound: 3 },
       { providerId: 'codex', status: 'ok', totalTokens: 3100, totalAssistantMessages: 2, filesFound: 1 },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('15.5K'), `expected aggregate "15.5K" in "${text}"`);
-    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
-    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
+    assert.strictEqual(text, 'PromptFuel: live quota loading');
+    assert.ok(!text.includes('15.5K'), `local history should not be primary in "${text}"`);
     assert.ok(!text.includes('⛽'), `should not include emoji in "${text}"`);
   });
 
-  await test('formatStatusBarText: error state returns refresh failed', async () => {
+  await test('formatStatusBarText: local error keeps live quota primary', async () => {
     const status = createInitialStatus(['claude']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'error' },
     ]);
     const text = formatStatusBarText(updated);
-    assert.strictEqual(text, 'PromptFuel: refresh failed');
+    assert.strictEqual(text, 'PromptFuel: live quota loading');
   });
 
-  await test('formatStatusBarText: mixed loaded and no-data shows aggregate only', async () => {
+  await test('formatStatusBarText: mixed local states keep live quota primary', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'not-found' },
       { providerId: 'codex', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
     ]);
     const text = formatStatusBarText(updated);
-    assert.ok(text.includes('5.0K'), `expected "5.0K" in "${text}"`);
-    assert.ok(text.includes('local history'), `expected "local history" in "${text}"`);
-    assert.ok(!text.includes(' | '), `should not include pipe separator in "${text}"`);
+    assert.strictEqual(text, 'PromptFuel: live quota loading');
+    assert.ok(!text.includes('5.0K'), `local history should not be primary in "${text}"`);
   });
 
   // ===== formatTooltip =====
 
-  await test('formatTooltip: initial state shows local history disclaimers', async () => {
+  await test('formatTooltip: initial state shows live quota loading first', async () => {
     const status = createInitialStatus(['claude', 'codex']);
     const tooltip = formatTooltip(status);
     assert.ok(tooltip.includes('PromptFuel'), `expected "PromptFuel" in tooltip`);
-    assert.ok(tooltip.includes('Local history only'), `expected "Local history only" in tooltip`);
+    assert.ok(tooltip.includes('Live quota loading'), `expected "Live quota loading" in tooltip`);
+    assert.ok(tooltip.includes('Local history (secondary):'), `expected secondary local history section`);
+    assert.ok(!tooltip.includes('Local history only'), `should not lead with local history only`);
     assert.ok(tooltip.includes('no local data'), `expected "no local data" in tooltip`);
-    assert.ok(!tooltip.includes('Last refreshed'), 'should not show refresh time before first refresh');
+    assert.ok(!tooltip.includes('Local history refreshed'), 'should not show refresh time before first refresh');
   });
 
   await test('formatTooltip: loaded state shows tokens and messages', async () => {
@@ -261,7 +266,7 @@ async function main() {
     assert.ok(tooltip.includes('loaded'), `expected "loaded" in tooltip`);
     assert.ok(tooltip.includes('25.0K'), `expected "25.0K" in tooltip`);
     assert.ok(tooltip.includes('7 messages'), `expected "7 messages" in tooltip`);
-    assert.ok(tooltip.includes('Last refreshed'), `expected "Last refreshed" in tooltip`);
+    assert.ok(tooltip.includes('Local history refreshed'), `expected "Local history refreshed" in tooltip`);
   });
 
   await test('formatTooltip: error state shows read error', async () => {
@@ -273,14 +278,14 @@ async function main() {
     assert.ok(tooltip.includes('read error'), `expected "read error" in tooltip`);
   });
 
-  await test('formatTooltip: last refreshed shows time', async () => {
+  await test('formatTooltip: local history refreshed shows time', async () => {
     const status = createInitialStatus(['claude']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'not-found' },
     ]);
     const tooltip = formatTooltip(updated);
-    assert.ok(tooltip.includes('Last refreshed:'), `expected "Last refreshed:" in tooltip`);
-    const timeMatch = tooltip.match(/Last refreshed: (\d{2}:\d{2}:\d{2})/);
+    assert.ok(tooltip.includes('Local history refreshed:'), `expected "Local history refreshed:" in tooltip`);
+    const timeMatch = tooltip.match(/Local history refreshed: (\d{2}:\d{2}:\d{2})/);
     assert.ok(timeMatch, `expected HH:MM:SS format in tooltip`);
   });
 

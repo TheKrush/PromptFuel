@@ -32,6 +32,7 @@ export interface DashboardModel {
   totalAssistantMessages: number;
   providers: DashboardProviderCard[];
   liveQuotaCards: DashboardLiveQuotaCard[];
+  liveQuotaEnabled: boolean;
   lastRefreshedMs: number | undefined;
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
@@ -79,6 +80,7 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     totalAssistantMessages,
     providers: cards,
     liveQuotaCards,
+    liveQuotaEnabled: status.liveQuotaEnabled,
     lastRefreshedMs: status.lastRefreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,

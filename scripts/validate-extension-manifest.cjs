@@ -36,6 +36,9 @@ for (const key of Object.keys(properties)) {
     fail(`setting "${key}" does not start with "promptFuel."`);
   }
 }
+if (properties['promptFuel.liveQuotaEnabled']?.default !== true) {
+  fail('setting "promptFuel.liveQuotaEnabled" default should be true');
+}
 
 // File existence checks
 for (const file of ['README.md', 'LICENSE', 'src/extension.ts', 'CHANGELOG.md', 'SUPPORT.md']) {

@@ -92,6 +92,10 @@ test('CONFIG_DEFAULTS.refreshIntervalMinutes is number', () => {
   assert.strictEqual(typeof CONFIG_DEFAULTS.refreshIntervalMinutes, 'number');
 });
 
+test('CONFIG_DEFAULTS.liveQuotaEnabled default is true', () => {
+  assert.strictEqual(CONFIG_DEFAULTS.liveQuotaEnabled, true);
+});
+
 // === Config: interface shape ===
 
 test('CONFIG_DEFAULTS has expected keys', () => {
@@ -106,16 +110,16 @@ const { createInitialStatus, applyRefreshResults } = require(path.join(OUT, 'cor
 
 // === Status bar text: all no-data ===
 
-test('formatStatusBarText: all disabled returns local history label', () => {
-  const status = createInitialStatus([]);
+test('formatStatusBarText: explicit opt-out returns live quota disabled', () => {
+  const status = createInitialStatus([], false);
   const t = formatStatusBarText(status);
-  assert.strictEqual(t, 'PromptFuel: local history');
+  assert.strictEqual(t, 'PromptFuel: live quota disabled');
 });
 
-test('formatStatusBarText: all no-data returns local history label', () => {
+test('formatStatusBarText: default no-data returns live quota loading', () => {
   const status = createInitialStatus(['claude', 'codex']);
   const t = formatStatusBarText(status);
-  assert.strictEqual(t, 'PromptFuel: local history');
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
 });
 
 // === Status bar text: loaded states ===
@@ -129,44 +133,41 @@ test('formatStatusBarText: loaded state includes PromptFuel prefix', () => {
   assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
 });
 
-test('formatStatusBarText: loaded shows compact aggregate with local suffix', () => {
+test('formatStatusBarText: local history does not mask loading live quota', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('5.0K'), `expected "5.0K" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
-  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
+  assert.ok(!t.includes('5.0K'), `local totals should not mask live state "${t}"`);
 });
 
-test('formatStatusBarText: error/unknown returns refresh failed', () => {
+test('formatStatusBarText: local read error does not mask loading live quota', () => {
   const status = applyRefreshResults(
     createInitialStatus(['codex']),
     [{ providerId: 'codex', status: 'error' }],
   );
   const t = formatStatusBarText(status);
-  assert.strictEqual(t, 'PromptFuel: refresh failed');
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
 });
 
-test('formatStatusBarText: mixed providers shows single aggregate', () => {
+test('formatStatusBarText: explicit opt-out does not show local history as primary', () => {
   const status = applyRefreshResults(
-    createInitialStatus(['claude', 'codex']),
+    createInitialStatus(['claude', 'codex'], false),
     [
       { providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 },
       { providerId: 'codex', status: 'not-found' },
     ],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.startsWith('PromptFuel:'), `expected "PromptFuel:" prefix in "${t}"`);
-  assert.ok(t.includes('5.0K'), `expected aggregate "5.0K" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
-  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota disabled');
+  assert.ok(!t.includes('5.0K'), `local totals should not be primary when opted out "${t}"`);
 });
 
 // === Status bar text: both loaded ===
 
-test('formatStatusBarText: both loaded shows single aggregate total', () => {
+test('formatStatusBarText: local history does not mask default live quota', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
@@ -175,41 +176,37 @@ test('formatStatusBarText: both loaded shows single aggregate total', () => {
     ],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('15.5K'), `expected aggregate "15.5K" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
-  assert.ok(!t.includes(' | '), `should not include per-provider pipe separator in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
+  assert.ok(!t.includes('15.5K'), `local totals should not mask live state "${t}"`);
 });
 
 // === Status bar text: large token formatting ===
 
-test('formatStatusBarText: large token counts use M suffix', () => {
+test('formatStatusBarText: large local token counts stay secondary', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 2500000, totalAssistantMessages: 10, filesFound: 5 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('2.5M'), `expected "2.5M" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
 });
 
-test('formatStatusBarText: billion token counts use B suffix', () => {
+test('formatStatusBarText: billion local token counts stay secondary', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 6700000000, totalAssistantMessages: 10, filesFound: 5 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('6.7B'), `expected "6.7B" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
 });
 
-test('formatStatusBarText: small token counts show raw number', () => {
+test('formatStatusBarText: small local token counts stay secondary', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 500, totalAssistantMessages: 1, filesFound: 1 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('500'), `expected "500" in "${t}"`);
-  assert.ok(t.includes('local history'), `expected "local history" suffix in "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
 });
 
 // === Disabled provider omitted ===
@@ -257,16 +254,17 @@ test('formatTooltip: total tokens and messages shown for loaded providers', () =
 
 // === Tooltip: local history disclaimers ===
 
-test('formatTooltip: includes Local history only disclaimer', () => {
+test('formatTooltip: default does not lead with local history only', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Local history only'), `expected "Local history only" in tooltip`);
+  assert.ok(tooltip.includes('Live quota loading'), `expected "Live quota loading" in tooltip`);
+  assert.ok(!tooltip.includes('Local history only'), `should not lead with local history only`);
 });
 
-test('formatTooltip: includes Live quota not enabled disclaimer', () => {
-  const status = createInitialStatus(['claude']);
+test('formatTooltip: explicit opt-out shows Live quota disabled', () => {
+  const status = createInitialStatus(['claude'], false);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Live quota not enabled yet'), `expected "Live quota not enabled yet" in tooltip`);
+  assert.ok(tooltip.includes('Live quota disabled'), `expected "Live quota disabled" in tooltip`);
 });
 
 test('formatTooltip: includes Snapshots not included disclaimer', () => {
@@ -588,6 +586,7 @@ test('dashboard: provider labels match expected', () => {
   );
   const model = buildDashboardModel(status);
   const labels = model.providers.map(p => p.label);
+  assert.strictEqual(model.liveQuotaEnabled, true);
   assert.ok(labels.includes('Claude'), `expected "Claude" label`);
   assert.ok(labels.includes('Codex'), `expected "Codex" label`);
 });
@@ -682,6 +681,41 @@ test('dashboard: refresh button sends refreshDashboard command', () => {
   assert.ok(html.includes('refreshDashboard'), `expected refreshDashboard command in HTML`);
 });
 
+test('dashboard: default live quota state shows loading, not not-enabled copy', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = createInitialStatus(['claude']);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Live quota loading'), `expected "Live quota loading" in dashboard`);
+  assert.ok(!html.includes('Live quota not enabled yet'), `should not show old not-enabled copy`);
+});
+
+test('dashboard: explicit opt-out shows live quota disabled', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = createInitialStatus(['claude'], false);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Live quota disabled'), `expected "Live quota disabled" in dashboard`);
+});
+
+test('dashboard: unavailable live quota stays primary over local history', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const updated = applyLiveQuotaResults(status, [
+    { providerId: 'claude', windows: [], freshness: 'unavailable' },
+  ]);
+  const model = buildDashboardModel(updated);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Claude: Live quota unavailable'), `expected unavailable live quota in dashboard`);
+  assert.ok(html.includes('Local history tokens'), `expected local history to remain separated`);
+});
+
 // === Live quota: formatLiveQuota integration ===
 
 const {
@@ -739,13 +773,14 @@ test('formatStatusBarText: single provider includes reset countdowns when compac
   assert.strictEqual(t, 'PromptFuel Claude 6d5h 72% · 4h25m 92%');
 });
 
-test('formatStatusBarText: fallback to local history when no live quota', () => {
+test('formatStatusBarText: enabled-but-not-yet-read shows loading', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
   );
   const t = formatStatusBarText(status);
-  assert.ok(t.includes('local history'), `expected "local history" suffix "${t}"`);
+  assert.strictEqual(t, 'PromptFuel: live quota loading');
+  assert.ok(!t.includes('local history'), `local history should not mask loading live quota "${t}"`);
 });
 
 test('formatStatusBarText: live quota unavailable shows compact safe state', () => {

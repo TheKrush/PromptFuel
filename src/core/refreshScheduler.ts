@@ -4,6 +4,7 @@ import { PromptFuelStatus, createInitialStatus, applyRefreshResults, applyLiveQu
 import { formatStatusBarText, formatTooltip } from './formatQuota';
 import { ReadResult } from './providerReader';
 import { LiveQuotaStatus } from './liveQuotaTypes';
+import { getGenericQuotaUnavailableMessage } from './liveQuotaTypes';
 import { ClaudeLocalReader } from '../providers/claudeLocal';
 import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
@@ -23,7 +24,7 @@ export class RefreshScheduler {
     private readonly onRefreshed?: () => void,
   ) {
     const cfg = getConfig();
-    this.statusState = createInitialStatus(cfg.enabledProviders);
+    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
   }
 
   public get status(): PromptFuelStatus {
@@ -36,7 +37,7 @@ export class RefreshScheduler {
     }
     this.stop();
     const cfg = getConfig();
-    this.statusState = createInitialStatus(cfg.enabledProviders);
+    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
     this.updateBar();
     this.onRefreshed?.();
     void this.runRefresh();
@@ -64,7 +65,7 @@ export class RefreshScheduler {
           return;
         }
         const cfg = getConfig();
-        this.statusState = createInitialStatus(cfg.enabledProviders);
+        this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
         this.updateBar();
         this.onRefreshed?.();
         void this.runRefresh();
@@ -100,7 +101,7 @@ export class RefreshScheduler {
           providerId: id,
           status: 'error' as const,
         }));
-        liveResults = [];
+        liveResults = createUnavailableLiveQuotaResults(cfg.enabledProviders);
       }
     } else {
       try {
@@ -158,4 +159,15 @@ export class RefreshScheduler {
     this.disposed = true;
     this.stop();
   }
+}
+
+function createUnavailableLiveQuotaResults(providerIds: string[]): LiveQuotaStatus[] {
+  return providerIds.map(providerId => ({
+    providerId,
+    windows: [],
+    status: 'unavailable',
+    freshness: 'unavailable',
+    lastUpdatedEpochMs: Date.now(),
+    sanitizedMessage: getGenericQuotaUnavailableMessage(),
+  }));
 }

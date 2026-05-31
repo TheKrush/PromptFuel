@@ -13,5 +13,5 @@ export const CONFIG_DEFAULTS: PromptFuelConfig = {
   enabledProviders: ['claude', 'codex'],
   displayMode: 'compact',
   refreshIntervalMinutes: 5,
-  liveQuotaEnabled: false,
+  liveQuotaEnabled: true,
 };

@@ -87,11 +87,15 @@ export function formatWindowLine(
 // --- Status bar text with live quota preference ---
 
 export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
+  if (!status.liveQuotaEnabled) {
+    return 'PromptFuel: live quota disabled';
+  }
+
   if (status.liveQuotaStates.length > 0) {
     return formatLiveQuotaStatusBarTextFromLive(status);
   }
 
-  return fallbackStatusBarText(status);
+  return 'PromptFuel: live quota loading';
 }
 
 function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string {
@@ -184,47 +188,6 @@ function clampPercentage(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function fallbackStatusBarText(status: PromptFuelStatus): string {
-  const hasError = status.providerStates.some(s => s.status === 'unknown');
-  if (hasError) {
-    return 'PromptFuel: refresh failed';
-  }
-
-  const allNoData = status.providerStates.length > 0 &&
-    status.providerStates.every(s => s.status === 'no-data');
-  if (allNoData) {
-    return 'PromptFuel: local history';
-  }
-
-  let totalTokens = 0;
-  let anyLoaded = false;
-  for (const state of status.providerStates) {
-    if (state.status === 'loaded' && (state.totalTokens ?? 0) > 0) {
-      totalTokens += state.totalTokens ?? 0;
-      anyLoaded = true;
-    }
-  }
-
-  if (!anyLoaded) {
-    return 'PromptFuel: local history';
-  }
-
-  return `PromptFuel: ${formatTokenCountCompact(totalTokens)} local history`;
-}
-
-function formatTokenCountCompact(count: number): string {
-  if (count >= 1_000_000_000) {
-    return `${(count / 1_000_000_000).toFixed(1)}B`;
-  }
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}M`;
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}K`;
-  }
-  return `${count}`;
-}
-
 // --- Tooltip with live quota sections ---
 
 const LINE_SEPARATOR = '\n';
@@ -239,12 +202,14 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
 
   lines.push('PromptFuel');
 
-  if (hasUsableQuota) {
+  if (!status.liveQuotaEnabled) {
+    lines.push('Live quota disabled');
+  } else if (hasUsableQuota) {
     lines.push('Live quota + local history');
   } else if (hasLiveQuota) {
-    lines.push('Live quota unavailable + local history');
+    lines.push('Live quota unavailable');
   } else {
-    lines.push('Local history only');
+    lines.push('Live quota loading');
   }
 
   lines.push('Snapshots not included');
@@ -256,12 +221,15 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
       lines.push(formatLiveQuotaProviderSection(liveState));
     }
     lines.push('');
+  } else if (status.liveQuotaEnabled) {
+    lines.push('Live quota loading.');
+    lines.push('');
   } else {
-    lines.push('Live quota not enabled yet.');
+    lines.push('Live quota disabled.');
     lines.push('');
   }
 
-  lines.push('Local history:');
+  lines.push('Local history (secondary):');
 
   let totalTokens = 0;
   let totalMessages = 0;

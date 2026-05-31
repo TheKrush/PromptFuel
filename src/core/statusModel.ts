@@ -10,6 +10,7 @@ import {
 export interface PromptFuelStatus {
   providerStates: ProviderQuotaState[];
   liveQuotaStates: LiveQuotaStatus[];
+  liveQuotaEnabled: boolean;
   lastRefreshedMs: number | undefined;
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
@@ -18,6 +19,7 @@ export interface PromptFuelStatus {
 
 export function createInitialStatus(
   enabledProviderIds: string[],
+  liveQuotaEnabled = true,
 ): PromptFuelStatus {
   return {
     providerStates: enabledProviderIds.map(id => ({
@@ -25,6 +27,7 @@ export function createInitialStatus(
       status: 'no-data' as const,
     })),
     liveQuotaStates: [],
+    liveQuotaEnabled,
     lastRefreshedMs: undefined,
     localHistoryLastRefreshedMs: undefined,
     liveQuotaLastRefreshedMs: undefined,
@@ -76,6 +79,7 @@ export function applyRefreshResults(
   return {
     providerStates: [...stateMap.values()],
     liveQuotaStates: status.liveQuotaStates.slice(),
+    liveQuotaEnabled: status.liveQuotaEnabled,
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: refreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
@@ -111,6 +115,7 @@ export function applyLiveQuotaResults(
   return {
     providerStates: status.providerStates.slice(),
     liveQuotaStates: filtered,
+    liveQuotaEnabled: status.liveQuotaEnabled,
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: refreshedMs,

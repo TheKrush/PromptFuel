@@ -108,10 +108,13 @@ function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuota
 
 function renderLiveQuotaSection(model: DashboardModel): string {
   if (model.liveQuotaCards.length === 0) {
+    const stateText = model.liveQuotaEnabled
+      ? 'Live quota loading'
+      : 'Live quota disabled';
     return `
   <div class="live-quota-section">
     <div class="subtitle">Live quota</div>
-    <div class="live-quota-not-enabled">Live quota not enabled yet</div>
+    <div class="live-quota-not-enabled">${esc(stateText)}</div>
   </div>`;
   }
 
