@@ -17,8 +17,17 @@ const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'))
 if (pkg.name !== 'prompt-fuel') fail(`name is "${pkg.name}", expected "prompt-fuel"`);
 if (pkg.displayName !== 'PromptFuel') fail(`displayName is "${pkg.displayName}", expected "PromptFuel"`);
 if (pkg.publisher !== 'thekrush') fail(`publisher is "${pkg.publisher}", expected "thekrush"`);
-if (pkg.description !== 'Track AI coding assistant usage history and opt-in live quota status from the VS Code status bar.') {
-  fail(`description is "${pkg.description}", expected current release description`);
+if (!pkg.description?.includes('live quota')) {
+  fail(`description is "${pkg.description}", expected to include "live quota"`);
+}
+if (pkg.description?.includes('opt-in')) {
+  fail(`description is "${pkg.description}", should not include "opt-in"`);
+}
+if (pkg.description?.includes('displayMode')) {
+  fail(`description is "${pkg.description}", should not include "displayMode"`);
+}
+if (pkg.description?.toLowerCase().includes('api-equivalent')) {
+  fail(`description is "${pkg.description}", should not mention unimplemented API-equivalent estimates`);
 }
 
 // Command checks
