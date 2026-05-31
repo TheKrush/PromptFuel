@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0
+
+Live quota visibility is now PromptFuel's primary product path. The extension attempts live quota reads automatically, shows safe loading/unavailable states, and keeps local history clearly secondary.
+
+**Included in this release:**
+
+- `promptFuel.liveQuotaEnabled` setting added and now defaults to `true` in the manifest and runtime defaults.
+- Live quota status types, freshness labels, quota window helpers, and provider reader plumbing added.
+- Authenticated quota adapter added for attempting provider quota reads from existing provider auth state.
+- Refresh flow now runs live quota readers when enabled and preserves explicit opt-out.
+- Status bar now prioritizes live quota percentages when available.
+- Status bar now shows safe live quota loading, unavailable, and disabled states instead of silently falling back to local history as the primary experience.
+- Tooltip copy now separates live quota from local history and avoids local-history-only wording by default.
+- Dashboard now includes live quota visibility, including loading, unavailable, visible percentage, and disabled states.
+- Live quota UX copy polished for unavailable/auth-missing cases and sanitized errors.
+- Manifest and package validation updated, including a check that `promptFuel.liveQuotaEnabled` defaults to `true`.
+- `.vscodeignore` updated for package contents.
+- README and contributor docs updated for live quota behavior and current validation workflows.
+- Smoke coverage expanded for live quota status formatting, explicit opt-out, unavailable/error states, available percentages, dashboard copy, provider window parsing, and local history not masking live quota states.
+
+**Scope notes:**
+
+- PromptFuel still does not provide its own provider auth UI.
+- Live quota can remain unavailable when provider quota data, existing provider auth, or provider endpoints are not available.
+- Local history remains aggregate-only and does not expose prompts, responses, transcripts, raw JSONL, file paths, usernames, machine names, secrets, or tokens.
+
 ## 0.3.0
 
 Dashboard with local usage history overview and per-provider cards. Status bar shows aggregate token counts with tooltip. Auto-refresh scheduler polls at configurable interval.
