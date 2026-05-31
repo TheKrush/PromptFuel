@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.0
+
+PromptFuel now centers live quota remaining values, reset countdowns, provider-isolated fallback states, and aggregate-only imported history as the release-ready experience.
+
+**Included in this release:**
+
+- Live quota visibility added for Claude and Codex in the status bar, tooltip, and dashboard.
+- Live quota displays now emphasize remaining quota instead of used quota.
+- Reset countdown labels added alongside live quota remaining values when provider reset times are available.
+- Last-known-good quota caching added so prior quota data can remain visible as cached or stale when a provider is temporarily unavailable.
+- Provider isolation added so one unavailable provider does not hide quota data from providers that are still working.
+- Dashboard provider tabs added for Overview, Claude, and Codex.
+- Dashboard local-history windows added for Today, Last 5h, Last 7d, and All local history.
+- Dashboard source modes added for Local only, Snapshots only, and Combined usage views, with live quota kept independent from the selected history source.
+- Aggregate-only snapshot imports added for external Claude and Codex usage totals.
+- `PromptFuel: Open Snapshot Imports Folder` command added for discoverable snapshot import placement.
+- Snapshot validation added for known providers and sanitized source labels.
+- Tooltip and dashboard copy updated to distinguish live quota, cached/stale quota, unavailable quota, local history, and imported snapshots.
+- Local history is now presented as secondary to live quota in status, tooltip, and dashboard copy.
+- `promptFuel.displayMode` setting removed; PromptFuel now shows reset countdowns when reset timing is available.
+- Manifest validation updated to reject `promptFuel.displayMode` if it is accidentally reintroduced.
+- Package exclusions tightened so generated VSIX artifacts and local test output are not included in release packages.
+- README and package description text updated for default-on live quota behavior and provider-auth expectations.
+
+**Scope notes:**
+
+- PromptFuel continues to display aggregate usage only.
+- PromptFuel does not display prompts, responses, transcripts, raw JSONL, local paths, usernames, machine names, secrets, tokens, or raw provider responses.
+- Imported snapshots remain aggregate-only and sanitized before being used in the dashboard.
+- Live quota can be disabled with `promptFuel.liveQuotaEnabled: false`.
+
 ## 0.4.0
 
 Live quota visibility is now PromptFuel's primary product path. The extension attempts live quota reads automatically, shows safe loading/unavailable/stale states, and keeps local history clearly secondary.
