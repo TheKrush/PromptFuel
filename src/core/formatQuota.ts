@@ -23,7 +23,7 @@ export function formatRefreshSummary(results: ReadResult[]): string {
         const parseErr = r.parseErrors ?? 0;
         let text = `${label}: ${msgs} messages, ${formatTokenCount(tokens)} (local history)`;
         if (parseErr > 0) {
-          text += `, ${parseErr} parse error${parseErr !== 1 ? 's' : ''}`;
+          text += `, Parse errors: ${parseErr} line${parseErr === 1 ? '' : 's'} skipped`;
         }
         return text;
       }

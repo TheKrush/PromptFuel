@@ -226,7 +226,7 @@ test('formatTooltip: loaded state with parse errors shows count', () => {
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1, parseErrors: 3 }],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Parse errors: 3'), `expected "Parse errors: 3" in tooltip`);
+  assert.ok(tooltip.includes('Parse errors: 3 lines skipped'), `expected parse error skipped wording in tooltip`);
 });
 
 test('formatTooltip: no parse errors when clean', () => {
@@ -335,7 +335,7 @@ test('formatRefreshSummary: parse errors shown in summary', () => {
     totalTokens: 500,
     parseErrors: 3,
   }]);
-  assert.ok(s.includes('3 parse errors'), `expected "3 parse errors" in "${s}"`);
+  assert.ok(s.includes('Parse errors: 3 lines skipped'), `expected parse error skipped wording in "${s}"`);
 });
 
 test('formatRefreshSummary: single parse error uses singular', () => {
@@ -346,8 +346,8 @@ test('formatRefreshSummary: single parse error uses singular', () => {
     totalTokens: 200,
     parseErrors: 1,
   }]);
-  assert.ok(s.includes('1 parse error'), `expected "1 parse error" in "${s}"`);
-  assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
+  assert.ok(s.includes('Parse errors: 1 line skipped'), `expected singular parse error skipped wording in "${s}"`);
+  assert.ok(!s.includes('1 lines skipped'), `expected singular "line" in "${s}"`);
 });
 
 // === Live quota: quotaWindow ===
@@ -645,9 +645,9 @@ test('dashboard: includes local history disclaimer banner', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('live quota from provider APIs'), `expected live quota disclaimer in HTML`);
-  assert.ok(html.includes('local history from session files'), `expected local history disclaimer in HTML`);
-  assert.ok(html.includes('Snapshots'), `expected "Snapshots" disclaimer in HTML`);
+  assert.ok(html.includes('Live quota is shown first'), `expected live quota-first disclaimer in HTML`);
+  assert.ok(html.includes('Local history is secondary'), `expected secondary local history disclaimer in HTML`);
+  assert.ok(html.includes('Snapshots not included'), `expected snapshot disclaimer in HTML`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {
@@ -698,6 +698,7 @@ test('dashboard: explicit opt-out shows live quota disabled', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Live quota disabled'), `expected "Live quota disabled" in dashboard`);
+  assert.ok(html.includes('DISABLED'), `expected disabled badge in dashboard`);
 });
 
 test('dashboard: unavailable live quota stays primary over local history', () => {
@@ -712,7 +713,8 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   const model = buildDashboardModel(updated);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Claude: Live quota unavailable'), `expected unavailable live quota in dashboard`);
+  assert.ok(html.includes('Live quota unavailable'), `expected unavailable live quota in dashboard`);
+  assert.ok(html.includes('UNAVAILABLE'), `expected unavailable badge in dashboard`);
   assert.ok(html.includes('Local history tokens'), `expected local history to remain separated`);
 });
 
@@ -733,8 +735,47 @@ test('dashboard: stale live quota renders as stale card, not unavailable', () =>
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('badge stale'), `expected stale badge in dashboard`);
+  assert.ok(html.includes('STALE'), `expected stale badge label in dashboard`);
   assert.ok(html.includes('Cached:'), `expected cached footer in dashboard`);
+  assert.ok(html.includes('92% used / 8% left'), `expected stale quota bar value`);
   assert.ok(!html.includes('Claude: Live quota unavailable'), `stale quota should not render unavailable`);
+});
+
+test('dashboard: live provider card shows live badge and reset countdown', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const now = Date.now();
+  const status = applyLiveQuotaResults(createInitialStatus(['codex']), [
+    {
+      providerId: 'codex',
+      windows: [
+        { windowId: '5h', usedPercentage: 15, remainingPercentage: 85, resetsAtEpochMs: now + 60 * 60 * 1000 },
+        { windowId: '7d', usedPercentage: 27, remainingPercentage: 73, resetsAtEpochMs: now + 24 * 60 * 60 * 1000 },
+      ],
+      freshness: 'live',
+      lastUpdatedEpochMs: now,
+    },
+  ]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Codex'), `expected Codex live card`);
+  assert.ok(html.includes('LIVE'), `expected live badge`);
+  assert.ok(html.includes('15% used / 85% left'), `expected used and remaining text`);
+  assert.ok(html.includes('resets in'), `expected reset countdown`);
+});
+
+test('dashboard: local history secondary label and parse wording', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1, parseErrors: 1 }],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  assert.ok(html.includes('Local history (secondary)'), `expected secondary local history section`);
+  assert.ok(html.includes('Provider local history details'), `expected provider local detail heading`);
+  assert.ok(html.includes('Parse errors: 1 line skipped'), `expected non-alarming parse wording`);
 });
 
 // === Live quota: formatLiveQuota integration ===
@@ -907,8 +948,65 @@ test('formatTooltip: live quota shows provider sections', () => {
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
   assert.ok(tooltip.includes('live'), `expected "live" freshness in tooltip`);
-  assert.ok(tooltip.includes('Live quota + local history'), `expected combined mode label`);
+  assert.ok(tooltip.includes('Live quota first'), `expected live quota-first label`);
   assert.ok(!tooltip.includes('Live quota not enabled yet'), `should not show "not enabled" when live quota present`);
+});
+
+test('formatTooltip: live and unavailable mixed state is sanitized', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [
+    syntheticLiveQuota,
+    {
+      providerId: 'codex',
+      windows: [],
+      freshness: 'error',
+      error: 'raw provider failure /private/session.jsonl secret-token',
+    },
+  ]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('Claude live quota [live]'), `expected Claude live section`);
+  assert.ok(tooltip.includes('Codex live quota [unavailable]'), `expected Codex unavailable section`);
+  assert.ok(tooltip.includes('Live quota unavailable'), `expected sanitized unavailable message`);
+  assert.ok(!tooltip.includes('secret-token'), `should not leak raw provider error`);
+  assert.ok(!tooltip.includes('.jsonl'), `should not leak filenames`);
+});
+
+test('formatTooltip: stale and live mixed state shows cached note', () => {
+  const status = createInitialStatus(['claude', 'codex']);
+  const updated = applyLiveQuotaResults(status, [
+    {
+      providerId: 'claude',
+      windows: [
+        { windowId: '5h', usedPercentage: 92, remainingPercentage: 8 },
+        { windowId: '7d', usedPercentage: 72, remainingPercentage: 28 },
+      ],
+      freshness: 'stale',
+      lastUpdatedEpochMs: Date.now(),
+    },
+    {
+      providerId: 'codex',
+      windows: [
+        { windowId: '5h', usedPercentage: 15, remainingPercentage: 85 },
+        { windowId: '7d', usedPercentage: 27, remainingPercentage: 73 },
+      ],
+      freshness: 'live',
+      lastUpdatedEpochMs: Date.now(),
+    },
+  ]);
+  const tooltip = formatTooltip(updated);
+  assert.ok(tooltip.includes('Claude live quota [stale]'), `expected Claude stale section`);
+  assert.ok(tooltip.includes('Codex live quota [live]'), `expected Codex live section`);
+  assert.ok(tooltip.includes('Cached from last successful live refresh.'), `expected stale cached note`);
+  assert.ok(tooltip.includes('5h: 92% used 8% remaining'), `expected 5h used and remaining`);
+  assert.ok(tooltip.includes('7d: 27% used 73% remaining'), `expected 7d used and remaining`);
+});
+
+test('formatTooltip: disabled provider sections shown', () => {
+  const status = createInitialStatus(['claude', 'codex'], false);
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Live quota disabled'), `expected disabled top state`);
+  assert.ok(tooltip.includes('Claude live quota [disabled]'), `expected Claude disabled section`);
+  assert.ok(tooltip.includes('Codex live quota [disabled]'), `expected Codex disabled section`);
 });
 
 test('formatTooltip: live quota error shows sanitized label', () => {

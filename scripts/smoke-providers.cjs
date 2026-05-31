@@ -602,7 +602,7 @@ async function main() {
       totalTokens: 500,
       parseErrors: 3,
     }]);
-    assert.ok(s.includes('3 parse errors'), `expected "3 parse errors" in "${s}"`);
+    assert.ok(s.includes('Parse errors: 3 lines skipped'), `expected parse error skipped wording in "${s}"`);
   });
 
   await test('formatRefreshSummary: single parse error uses singular', async () => {
@@ -614,8 +614,8 @@ async function main() {
       totalTokens: 200,
       parseErrors: 1,
     }]);
-    assert.ok(s.includes('1 parse error'), `expected "1 parse error" in "${s}"`);
-    assert.ok(!s.includes('1 parse errors'), `expected no plural "1 parse errors" in "${s}"`);
+    assert.ok(s.includes('Parse errors: 1 line skipped'), `expected singular parse error skipped wording in "${s}"`);
+    assert.ok(!s.includes('1 lines skipped'), `expected singular "line" in "${s}"`);
   });
 
   await test('formatRefreshSummary: large token counts use M suffix', async () => {

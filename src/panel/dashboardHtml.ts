@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { DashboardModel } from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
-import { getFreshnessLabel, formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
+import { formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
 
 function esc(s: string): string {
   return s
@@ -24,11 +24,11 @@ function statusBadge(status: string): string {
 
 function freshnessBadge(freshness: string): string {
   const map: Record<string, string> = {
-    'live': '<span class="badge live">live</span>',
-    'cached': '<span class="badge cached">cached</span>',
-    'stale': '<span class="badge stale">stale</span>',
-    'unavailable': '<span class="badge error">unavailable</span>',
-    'error': '<span class="badge error">error</span>',
+    'live': '<span class="badge live">LIVE</span>',
+    'cached': '<span class="badge cached">STALE</span>',
+    'stale': '<span class="badge stale">STALE</span>',
+    'unavailable': '<span class="badge error">UNAVAILABLE</span>',
+    'error': '<span class="badge error">UNAVAILABLE</span>',
   };
   return map[freshness] ?? `<span class="badge">${esc(freshness)}</span>`;
 }
@@ -69,11 +69,16 @@ function renderLiveQuotaWindow(window: { windowId: string; usedPercentage?: numb
   const fillWidth = remaining !== undefined ? remaining : (used !== undefined ? 100 - used : 0);
   const clampedWidth = Math.max(0, Math.min(100, fillWidth));
   const barClass = progressBarClass(remaining);
-  const valueText = remaining !== undefined
-    ? `${Math.round(remaining)}% left`
-    : (used !== undefined ? `${Math.round(used)}% used` : '');
+  const valueParts = [];
+  if (used !== undefined) {
+    valueParts.push(`${Math.round(used)}% used`);
+  }
+  if (remaining !== undefined) {
+    valueParts.push(`${Math.round(remaining)}% left`);
+  }
+  const valueText = valueParts.join(' / ');
   const countdown = window.resetsAtEpochMs !== undefined
-    ? formatCountdownLabel(window.resetsAtEpochMs)
+    ? `resets in ${formatCountdownLabel(window.resetsAtEpochMs)}`
     : '';
 
   return `
@@ -92,6 +97,9 @@ function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuota
   const footerLabel = card.freshness === 'stale' || card.freshness === 'cached'
     ? 'Cached'
     : 'Updated';
+  const staleNote = card.freshness === 'stale' || card.freshness === 'cached'
+    ? '<div class="live-quota-note">Showing cached quota from the last successful live refresh.</div>'
+    : '';
   const footer = card.lastUpdatedMs !== undefined
     ? `<div class="live-quota-footer">${footerLabel}: ${esc(formatRefreshTime(card.lastUpdatedMs))}</div>`
     : '';
@@ -105,6 +113,7 @@ function renderLiveQuotaCard(card: import('./dashboardModel').DashboardLiveQuota
       <div class="live-quota-windows">
         ${windowsHtml}
       </div>
+      ${staleNote}
       ${footer}
     </div>`;
 }
@@ -114,30 +123,49 @@ function renderLiveQuotaSection(model: DashboardModel): string {
     const stateText = model.liveQuotaEnabled
       ? 'Live quota loading'
       : 'Live quota disabled';
+    const badge = model.liveQuotaEnabled
+      ? ''
+      : '<span class="badge disabled">DISABLED</span>';
     return `
   <div class="live-quota-section">
-    <div class="subtitle">Live quota</div>
-    <div class="live-quota-not-enabled">${esc(stateText)}</div>
+    <div class="section-title">Live quota</div>
+    <div class="live-quota-not-enabled">${esc(stateText)} ${badge}</div>
   </div>`;
   }
-
-  const hasUsable = model.liveQuotaCards.some(
-    c => c.freshness !== 'unavailable' && c.freshness !== 'error',
-  );
 
   const cardsHtml = model.liveQuotaCards.map(card => {
     if (card.freshness === 'unavailable' || card.freshness === 'error') {
       return `
-    <div class="live-quota-unavailable">${esc(card.label)}: ${esc(getSanitizedErrorLabel())}</div>`;
+    <div class="live-quota-unavailable">
+      <span class="live-quota-label">${esc(card.label)}</span>
+      ${freshnessBadge(card.freshness)}
+      <span>${esc(getSanitizedErrorLabel())}</span>
+    </div>`;
     }
     return renderLiveQuotaCard(card);
   }).join('\n');
 
   return `
   <div class="live-quota-section">
-    <div class="subtitle">Live quota</div>
+    <div class="section-title">Live quota</div>
     ${cardsHtml}
   </div>`;
+}
+
+function formatParseErrorText(count: number): string {
+  return `Parse errors: ${count} line${count === 1 ? '' : 's'} skipped`;
+}
+
+function liveQuotaRefreshSummary(model: DashboardModel): string {
+  if (!model.liveQuotaEnabled) {
+    return 'Live quota disabled';
+  }
+  if (model.liveQuotaLastRefreshedMs === undefined) {
+    return 'Live quota refreshed: Not yet refreshed';
+  }
+  const staleCount = model.liveQuotaCards.filter(c => c.freshness === 'stale' || c.freshness === 'cached').length;
+  const cacheText = staleCount > 0 ? ` (${staleCount} cached/stale)` : '';
+  return `Live quota refreshed: ${formatRefreshTime(model.liveQuotaLastRefreshedMs)}${cacheText}`;
 }
 
 export function buildDashboardHtml(
@@ -164,8 +192,8 @@ export function buildDashboardHtml(
         </div>
         ${p.parseErrors > 0 ? `
         <div class="metric">
-          <span class="metric-label">Parse errors</span>
-          <span class="metric-value errors">${esc(String(p.parseErrors))}</span>
+          <span class="metric-label">Local history parse</span>
+          <span class="metric-value errors">${esc(formatParseErrorText(p.parseErrors))}</span>
         </div>
         ` : ''}
       </div>
@@ -200,6 +228,11 @@ export function buildDashboardHtml(
   .subtitle {
     font-size: 12px;
     color: var(--vscode-descriptionForeground, #999999);
+    margin-bottom: 8px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
     margin-bottom: 8px;
   }
   .disclaimer {
@@ -300,7 +333,10 @@ export function buildDashboardHtml(
     margin-bottom: 10px;
     color: var(--vscode-descriptionForeground, #999999);
     font-size: 12px;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
   }
   .live-quota-card {
     border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
@@ -370,7 +406,7 @@ export function buildDashboardHtml(
   .live-quota-window-value {
     font-size: 12px;
     font-weight: 600;
-    min-width: 64px;
+    min-width: 128px;
     text-align: right;
     white-space: nowrap;
   }
@@ -382,6 +418,11 @@ export function buildDashboardHtml(
     white-space: nowrap;
   }
   .live-quota-footer {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999999);
+  }
+  .live-quota-note {
     margin-top: 8px;
     font-size: 11px;
     color: var(--vscode-descriptionForeground, #999999);
@@ -406,7 +447,9 @@ export function buildDashboardHtml(
     font-weight: 600;
   }
   .metric-value.errors {
-    color: #e93262;
+    color: var(--vscode-descriptionForeground, #999999);
+    font-size: 12px;
+    font-weight: 500;
   }
   .footer {
     margin-top: 20px;
@@ -440,10 +483,11 @@ export function buildDashboardHtml(
 <div class="dashboard">
   <div class="title">PromptFuel</div>
   <div class="subtitle">Usage overview</div>
-  <div class="disclaimer">Status bar and tooltip may show live quota from provider APIs when enabled. Dashboard overview shows local history from session files. Snapshots are not included.</div>
+  <div class="disclaimer">Live quota is shown first when provider APIs are available. Local history is secondary and comes from session files. Snapshots not included.</div>
 
   ${renderLiveQuotaSection(model)}
 
+  <div class="section-title">Local history (secondary)</div>
   <div class="overview">
     <div class="overview-row">
       <span class="overview-label">Local history tokens</span>
@@ -455,10 +499,14 @@ export function buildDashboardHtml(
     </div>
   </div>
 
+  <div class="section-title">Provider local history details</div>
   ${providerCards}
 
   <div class="footer">
-    <span>Local history refreshed: ${esc(formatRefreshTime(model.localHistoryLastRefreshedMs))}</span>
+    <div>
+      <div>${esc(liveQuotaRefreshSummary(model))}</div>
+      <div>Local history refreshed: ${esc(formatRefreshTime(model.localHistoryLastRefreshedMs))}</div>
+    </div>
     <button class="refresh-btn" id="refreshBtn">Refresh</button>
   </div>
 </div>
