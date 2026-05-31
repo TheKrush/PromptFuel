@@ -3,7 +3,9 @@
 .gitattributes
 .gitignore
 *.log
+*.vsix
 .vscode/**
+.vscode-test/**
 .vscodeignore
 DO_NOT_DELETE/**
 vsix-inspect/**

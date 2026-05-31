@@ -29,6 +29,9 @@ if (pkg.description?.includes('displayMode')) {
 if (pkg.description?.toLowerCase().includes('api-equivalent')) {
   fail(`description is "${pkg.description}", should not mention unimplemented API-equivalent estimates`);
 }
+if (pkg.description?.toLowerCase().includes('api estimates')) {
+  fail(`description is "${pkg.description}", should not mention unimplemented API estimates`);
+}
 
 // Command checks
 const commands = pkg.contributes?.commands || [];
@@ -66,6 +69,15 @@ for (const command of expectedCommands.keys()) {
 
 // Configuration setting key checks
 const properties = pkg.contributes?.configuration?.properties || {};
+const expectedSettings = [
+  'promptFuel.enabledProviders',
+  'promptFuel.liveQuotaEnabled',
+  'promptFuel.refreshIntervalMinutes',
+];
+const actualSettings = Object.keys(properties).sort();
+if (actualSettings.join(',') !== expectedSettings.join(',')) {
+  fail(`contributed settings should be exactly ${JSON.stringify(expectedSettings)}, got ${JSON.stringify(actualSettings)}`);
+}
 for (const key of Object.keys(properties)) {
   if (!key.startsWith('promptFuel.')) {
     fail(`setting "${key}" does not start with "promptFuel."`);
@@ -142,7 +154,7 @@ for (const keyword of requiredKeywords) {
 
 if (fs.existsSync(vscodeIgnorePath)) {
   const vscodeIgnore = fs.readFileSync(vscodeIgnorePath, 'utf8');
-  for (const exclude of ['.git/**', '.vscode/**', 'scripts/**', 'tools/**', 'src/**', 'DO_NOT_DELETE/**']) {
+  for (const exclude of ['.git/**', '.vscode/**', '.vscode-test/**', '*.vsix', 'scripts/**', 'tools/**', 'src/**', 'DO_NOT_DELETE/**']) {
     if (!vscodeIgnore.includes(exclude)) {
       fail(`.vscodeignore is missing package exclusion "${exclude}"`);
     }
