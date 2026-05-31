@@ -2,6 +2,7 @@
 .git/**
 .gitattributes
 .gitignore
+*.log
 .vscode/**
 .vscodeignore
 DO_NOT_DELETE/**
@@ -9,6 +10,7 @@ vsix-inspect/**
 .github/**
 node_modules
 scripts/**
+tools/**
 src/**
 tsconfig.json
 out/**
