@@ -8,7 +8,7 @@ export { formatLiveQuotaTooltip, hasUsableLiveQuota, hasAnyLiveQuota };
 const LINE_SEPARATOR = '\n';
 
 export function formatTooltip(status: PromptFuelStatus): string {
-  if (hasAnyLiveQuota(status)) {
+  if (status.liveQuotaStates.length > 0) {
     return formatLiveQuotaTooltip(status);
   }
 

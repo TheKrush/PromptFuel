@@ -7,7 +7,6 @@ import { LiveQuotaStatus } from './liveQuotaTypes';
 import { ClaudeLocalReader } from '../providers/claudeLocal';
 import { CodexLocalReader } from '../providers/codexLocal';
 import { runEnabledReaders } from '../providers/readProviders';
-import { createStubReader } from '../providers/liveQuotaReader';
 import { runLiveQuotaReaders } from '../providers/readLiveQuota';
 import { createAuthenticatedReader } from '../providers/authenticatedQuota';
 
@@ -84,29 +83,34 @@ export class RefreshScheduler {
     const cfg = getConfig();
     const localReaders = [new ClaudeLocalReader(), new CodexLocalReader()];
 
-    let liveReaders;
+    let localResults: ReadResult[];
+    let liveResults: LiveQuotaStatus[] = [];
+
     if (cfg.liveQuotaEnabled) {
-      liveReaders = await Promise.all(
+      const liveReaders = await Promise.all(
         cfg.enabledProviders.map(id => createAuthenticatedReader(id)),
       );
+      try {
+        [localResults, liveResults] = await Promise.all([
+          runEnabledReaders(localReaders, cfg.enabledProviders),
+          runLiveQuotaReaders(liveReaders, cfg.enabledProviders),
+        ]);
+      } catch {
+        localResults = cfg.enabledProviders.map((id) => ({
+          providerId: id,
+          status: 'error' as const,
+        }));
+        liveResults = [];
+      }
     } else {
-      liveReaders = cfg.enabledProviders.map(id => createStubReader(id));
-    }
-
-    let localResults: ReadResult[];
-    let liveResults: LiveQuotaStatus[];
-
-    try {
-      [localResults, liveResults] = await Promise.all([
-        runEnabledReaders(localReaders, cfg.enabledProviders),
-        runLiveQuotaReaders(liveReaders, cfg.enabledProviders),
-      ]);
-    } catch {
-      localResults = cfg.enabledProviders.map((id) => ({
-        providerId: id,
-        status: 'error' as const,
-      }));
-      liveResults = [];
+      try {
+        localResults = await runEnabledReaders(localReaders, cfg.enabledProviders);
+      } catch {
+        localResults = cfg.enabledProviders.map((id) => ({
+          providerId: id,
+          status: 'error' as const,
+        }));
+      }
     }
 
     try {
