@@ -617,7 +617,7 @@ test('dashboard: uses local history wording, not subscription', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Local usage history'), `expected "Local usage history" subtitle`);
+  assert.ok(html.includes('Usage overview'), `expected "Usage overview" subtitle`);
   assert.ok(html.includes('Local history tokens'), `expected "Local history tokens" overview label`);
   assert.ok(html.includes('Local history messages'), `expected "Local history messages" overview label`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
@@ -634,9 +634,9 @@ test('dashboard: includes local history disclaimer banner', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Local history only'), `expected "Local history only" disclaimer in HTML`);
-  assert.ok(html.includes('live quota'), `expected "live quota" disclaimer in HTML`);
-  assert.ok(html.includes('snapshots'), `expected "snapshots" disclaimer in HTML`);
+  assert.ok(html.includes('Live quota shows'), `expected "Live quota shows" disclaimer in HTML`);
+  assert.ok(html.includes('Local history shows'), `expected "Local history shows" disclaimer in HTML`);
+  assert.ok(html.includes('Snapshots'), `expected "Snapshots" disclaimer in HTML`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {

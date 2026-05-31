@@ -1,6 +1,7 @@
 import { PromptFuelStatus } from '../core/statusModel';
 import { ProviderQuotaState } from '../core/quotaTypes';
 import { PROVIDER_LABELS } from '../core/providers';
+import type { LiveQuotaFreshness } from '../core/liveQuotaTypes';
 
 export interface DashboardProviderCard {
   providerId: string;
@@ -11,10 +12,26 @@ export interface DashboardProviderCard {
   parseErrors: number;
 }
 
+export interface DashboardLiveQuotaWindow {
+  windowId: string;
+  usedPercentage?: number;
+  remainingPercentage?: number;
+  resetsAtEpochMs?: number;
+}
+
+export interface DashboardLiveQuotaCard {
+  providerId: string;
+  label: string;
+  freshness: LiveQuotaFreshness;
+  windows: DashboardLiveQuotaWindow[];
+  lastUpdatedMs: number | undefined;
+}
+
 export interface DashboardModel {
   totalTokens: number;
   totalAssistantMessages: number;
   providers: DashboardProviderCard[];
+  liveQuotaCards: DashboardLiveQuotaCard[];
   lastRefreshedMs: number | undefined;
 }
 
@@ -42,10 +59,24 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
     };
   });
 
+  const liveQuotaCards: DashboardLiveQuotaCard[] = status.liveQuotaStates.map(s => ({
+    providerId: s.providerId,
+    label: PROVIDER_LABELS[s.providerId as keyof typeof PROVIDER_LABELS] ?? s.providerId,
+    freshness: s.freshness,
+    windows: s.windows.map(w => ({
+      windowId: w.windowId,
+      usedPercentage: w.usedPercentage,
+      remainingPercentage: w.remainingPercentage,
+      resetsAtEpochMs: w.resetsAtEpochMs,
+    })),
+    lastUpdatedMs: s.lastUpdatedEpochMs,
+  }));
+
   return {
     totalTokens,
     totalAssistantMessages,
     providers: cards,
+    liveQuotaCards,
     lastRefreshedMs: status.lastRefreshedMs,
   };
 }
