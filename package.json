@@ -85,15 +85,6 @@
           ],
           "description": "AI coding assistant providers to track and display in PromptFuel."
         },
-        "promptFuel.displayMode": {
-          "type": "string",
-          "enum": [
-            "compact",
-            "countdown"
-          ],
-          "default": "compact",
-          "description": "Status bar display mode for usage information."
-        },
         "promptFuel.refreshIntervalMinutes": {
           "type": "number",
           "default": 5,

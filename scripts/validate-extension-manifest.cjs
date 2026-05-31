@@ -65,8 +65,8 @@ for (const key of Object.keys(properties)) {
 if (properties['promptFuel.liveQuotaEnabled']?.default !== true) {
   fail('setting "promptFuel.liveQuotaEnabled" default should be true');
 }
-if (properties['promptFuel.displayMode']?.default !== 'compact') {
-  fail('setting "promptFuel.displayMode" default should be "compact"');
+if (Object.hasOwn(properties, 'promptFuel.displayMode')) {
+  fail('setting "promptFuel.displayMode" should not be contributed');
 }
 if (properties['promptFuel.refreshIntervalMinutes']?.default !== 5) {
   fail('setting "promptFuel.refreshIntervalMinutes" default should be 5');

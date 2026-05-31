@@ -10,11 +10,11 @@ Live quota visibility is now PromptFuel's primary product path. The extension at
 - Live quota status types, freshness labels, quota window helpers, and provider reader plumbing added.
 - Authenticated quota adapter added for attempting provider quota reads from existing provider auth state.
 - Refresh flow now runs live quota readers when enabled and preserves explicit opt-out.
-- Status bar now prioritizes live quota percentages when available.
+- Status bar now prioritizes live quota remaining percentages and reset countdown labels when available.
 - Status bar now shows safe live quota loading, unavailable, and disabled states instead of silently falling back to local history as the primary experience.
-- Tooltip copy now separates live quota from local history and avoids local-history-only wording by default.
+- Tooltip copy now separates live quota from local history, shows remaining quota only, and avoids local-history-only wording by default.
 - Tooltip copy now reports snapshot import state instead of using stale fixed snapshot wording.
-- Dashboard now includes live quota visibility, including loading, unavailable, cached/stale, visible percentage, and disabled states.
+- Dashboard now includes live quota visibility, including loading, unavailable, cached/stale, remaining percentage, reset countdown, and disabled states.
 - Dashboard now includes Overview, Claude, and Codex tabs.
 - Dashboard local-history windows now include Today, Last 5h, Last 7d, and All local history.
 - Dashboard source modes now include Local only, Snapshots only, and Combined, with live quota kept independent from the selected usage-history source.
@@ -24,7 +24,7 @@ Live quota visibility is now PromptFuel's primary product path. The extension at
 - Manifest and package validation updated, including a check that `promptFuel.liveQuotaEnabled` defaults to `true`.
 - `.vscodeignore` updated for package contents.
 - README and contributor docs updated for live quota behavior, snapshot imports, source modes, privacy boundaries, and current validation workflows.
-- Smoke coverage expanded for live quota status formatting, explicit opt-out, unavailable/error/stale states, available percentages, display modes, dashboard tabs, local-history windows, source modes, snapshot imports, CSP nonce checks, provider window parsing, and local history not masking live quota states.
+- Smoke coverage expanded for live quota status formatting, explicit opt-out, unavailable/error/stale states, remaining percentages, reset countdown labels, dashboard tabs, local-history windows, source modes, snapshot imports, CSP nonce checks, provider window parsing, and local history not masking live quota states.
 
 **Scope notes:**
 
@@ -93,7 +93,7 @@ Initial skeleton. Marketplace identity reserved; extension is unpublished pendin
 
 - Extension scaffolding and TypeScript compilation pipeline
 - Three registered commands (registered, placeholder output): `promptFuel.openDashboard`, `promptFuel.refresh`, `promptFuel.openDataFolder`
-- Two settings: `promptFuel.enabledProviders`, `promptFuel.displayMode`
+- Initial `promptFuel.enabledProviders` setting
 - Marketplace metadata: icon, categories, gallery banner, keywords, repository/bugs/homepage links
 - Manifest validation script (`npm run validate:manifest`)
 - CI workflow: compile, lint, validate manifest, package VSIX

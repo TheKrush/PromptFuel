@@ -66,19 +66,14 @@ export function formatWindowLine(
 ): string {
   const parts: string[] = [`${window.windowId}:`];
 
-  const used = formatPercentage(getUsedPercentage(window));
-  if (used !== undefined) {
-    parts.push(`${used} used`);
-  }
-
-  const remaining = formatPercentage(window.remainingPercentage);
+  const remaining = formatPercentage(getRemainingPercentage(window));
   if (remaining !== undefined) {
     parts.push(`${remaining} remaining`);
   }
 
   if (window.resetsAtEpochMs !== undefined) {
     const countdown = formatCountdownLabel(window.resetsAtEpochMs, nowMs);
-    parts.push(`reset ${countdown}`);
+    parts.push(`· resets in ${countdown}`);
   }
 
   return parts.join(' ');
@@ -100,7 +95,6 @@ export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
 
 function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string {
   const parts: string[] = [];
-  const includeCountdowns = status.displayMode === 'countdown';
 
   for (const liveState of status.liveQuotaStates) {
     const label = PROVIDER_LABELS[liveState.providerId as ProviderId] ?? liveState.providerId;
@@ -112,7 +106,6 @@ function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string 
 
     const windowLabels = getStatusBarWindows(liveState)
       .map(w => formatStatusBarWindow(w, {
-        includeCountdowns,
         includeWindowId: liveState.windows.length > 1,
       }))
       .filter((part): part is string => part !== undefined);
@@ -135,7 +128,7 @@ function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string 
 
 function getStatusBarWindows(liveState: LiveQuotaStatus): LiveQuotaWindow[] {
   return liveState.windows
-    .filter(w => getUsedPercentage(w) !== undefined)
+    .filter(w => getRemainingPercentage(w) !== undefined)
     .slice()
     .sort((a, b) => {
       const left = STATUS_WINDOW_ORDER[a.windowId] ?? 99;
@@ -146,22 +139,22 @@ function getStatusBarWindows(liveState: LiveQuotaStatus): LiveQuotaWindow[] {
 
 function formatStatusBarWindow(
   window: LiveQuotaWindow,
-  options: { includeCountdowns: boolean; includeWindowId: boolean },
+  options: { includeWindowId: boolean },
 ): string | undefined {
-  const used = formatPercentage(getUsedPercentage(window));
-  if (used === undefined) {
+  const remaining = formatPercentage(getRemainingPercentage(window));
+  if (remaining === undefined) {
     return undefined;
   }
 
-  if (!options.includeWindowId) {
-    return used;
+  if (!options.includeWindowId && window.resetsAtEpochMs === undefined) {
+    return remaining;
   }
 
-  const label = options.includeCountdowns && window.resetsAtEpochMs !== undefined
+  const label = window.resetsAtEpochMs !== undefined
     ? formatCountdownLabel(window.resetsAtEpochMs)
     : window.windowId;
 
-  return `${label} ${used}`;
+  return `${label} ${remaining}`;
 }
 
 function formatNoWindowLiveState(label: string, freshness: LiveQuotaFreshness): string {
@@ -174,12 +167,12 @@ function formatNoWindowLiveState(label: string, freshness: LiveQuotaFreshness): 
   return `${label} unavailable`;
 }
 
-function getUsedPercentage(window: LiveQuotaWindow): number | undefined {
-  if (window.usedPercentage !== undefined && Number.isFinite(window.usedPercentage)) {
-    return clampPercentage(window.usedPercentage);
-  }
+export function getRemainingPercentage(window: { usedPercentage?: number; remainingPercentage?: number }): number | undefined {
   if (window.remainingPercentage !== undefined && Number.isFinite(window.remainingPercentage)) {
-    return clampPercentage(100 - window.remainingPercentage);
+    return clampPercentage(window.remainingPercentage);
+  }
+  if (window.usedPercentage !== undefined && Number.isFinite(window.usedPercentage)) {
+    return clampPercentage(100 - window.usedPercentage);
   }
   return undefined;
 }

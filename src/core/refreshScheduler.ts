@@ -29,7 +29,7 @@ export class RefreshScheduler {
     private readonly diagnostics?: LiveQuotaDiagnostics & SnapshotDiagnostics,
   ) {
     const cfg = getConfig();
-    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled, cfg.displayMode);
+    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
   }
 
   public get status(): PromptFuelStatus {
@@ -42,7 +42,7 @@ export class RefreshScheduler {
     }
     this.stop();
     const cfg = getConfig();
-    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled, cfg.displayMode);
+    this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
     this.updateBar();
     this.onRefreshed?.();
     void this.runRefresh();
@@ -70,7 +70,7 @@ export class RefreshScheduler {
           return;
         }
         const cfg = getConfig();
-        this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled, cfg.displayMode);
+        this.statusState = createInitialStatus(cfg.enabledProviders, cfg.liveQuotaEnabled);
         this.updateBar();
         this.onRefreshed?.();
         void this.runRefresh();

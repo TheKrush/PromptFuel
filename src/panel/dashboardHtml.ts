@@ -8,7 +8,7 @@ import {
   DashboardSourceModeTotals,
 } from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
-import { formatCountdownLabel, getSanitizedErrorLabel } from '../core/formatLiveQuota';
+import { formatCountdownLabel, getRemainingPercentage, getSanitizedErrorLabel } from '../core/formatLiveQuota';
 
 function esc(s: string): string {
   return s
@@ -60,22 +60,16 @@ function progressBarClass(remainingPercentage: number | undefined): string {
 }
 
 function renderLiveQuotaWindow(window: { windowId: string; usedPercentage?: number; remainingPercentage?: number; resetsAtEpochMs?: number }): string {
-  const used = window.usedPercentage;
-  const remaining = window.remainingPercentage;
-  const fillWidth = remaining !== undefined ? remaining : (used !== undefined ? 100 - used : 0);
+  const remaining = getRemainingPercentage(window);
+  const fillWidth = remaining ?? 0;
   const clampedWidth = Math.max(0, Math.min(100, fillWidth));
-  const barClass = progressBarClass(remaining);
-  const valueParts = [];
-  if (used !== undefined) {
-    valueParts.push(`${Math.round(used)}% used`);
-  }
-  if (remaining !== undefined) {
-    valueParts.push(`${Math.round(remaining)}% left`);
-  }
-  const valueText = valueParts.join(' / ');
+  const barClass = progressBarClass(clampedWidth);
   const countdown = window.resetsAtEpochMs !== undefined
     ? `resets in ${formatCountdownLabel(window.resetsAtEpochMs)}`
     : '';
+  const valueText = remaining !== undefined
+    ? `${Math.round(remaining)}% remaining${countdown ? ` · ${countdown}` : ''}`
+    : countdown;
 
   return `
       <div class="live-quota-window">
@@ -84,7 +78,6 @@ function renderLiveQuotaWindow(window: { windowId: string; usedPercentage?: numb
           <div class="live-quota-window-fill ${barClass}" style="width: ${clampedWidth}%"></div>
         </div>
         <span class="live-quota-window-value">${esc(valueText)}</span>
-        ${countdown ? `<span class="live-quota-window-countdown">${esc(countdown)}</span>` : ''}
       </div>`;
 }
 

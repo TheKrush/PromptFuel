@@ -12,13 +12,11 @@ import {
   createEmptySnapshotState,
   type PromptFuelSnapshotState,
 } from './snapshotTypes';
-import { CONFIG_DEFAULTS, type DisplayMode } from './configDefaults';
 
 export interface PromptFuelStatus {
   providerStates: ProviderQuotaState[];
   liveQuotaStates: LiveQuotaStatus[];
   liveQuotaEnabled: boolean;
-  displayMode: DisplayMode;
   lastRefreshedMs: number | undefined;
   localHistoryLastRefreshedMs: number | undefined;
   liveQuotaLastRefreshedMs: number | undefined;
@@ -30,7 +28,6 @@ export interface PromptFuelStatus {
 export function createInitialStatus(
   enabledProviderIds: string[],
   liveQuotaEnabled = true,
-  displayMode: DisplayMode = CONFIG_DEFAULTS.displayMode,
 ): PromptFuelStatus {
   return {
     providerStates: enabledProviderIds.map(id => ({
@@ -39,7 +36,6 @@ export function createInitialStatus(
     })),
     liveQuotaStates: [],
     liveQuotaEnabled,
-    displayMode,
     lastRefreshedMs: undefined,
     localHistoryLastRefreshedMs: undefined,
     liveQuotaLastRefreshedMs: undefined,
@@ -110,7 +106,6 @@ export function applyRefreshResults(
     providerStates: [...stateMap.values()],
     liveQuotaStates: status.liveQuotaStates.slice(),
     liveQuotaEnabled: status.liveQuotaEnabled,
-    displayMode: status.displayMode,
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: refreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,
@@ -149,7 +144,6 @@ export function applyLiveQuotaResults(
     providerStates: status.providerStates.slice(),
     liveQuotaStates: filtered,
     liveQuotaEnabled: status.liveQuotaEnabled,
-    displayMode: status.displayMode,
     lastRefreshedMs: refreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: refreshedMs,
@@ -168,7 +162,6 @@ export function applySnapshotReadResults(
     providerStates: status.providerStates.slice(),
     liveQuotaStates: status.liveQuotaStates.slice(),
     liveQuotaEnabled: status.liveQuotaEnabled,
-    displayMode: status.displayMode,
     lastRefreshedMs: status.lastRefreshedMs,
     localHistoryLastRefreshedMs: status.localHistoryLastRefreshedMs,
     liveQuotaLastRefreshedMs: status.liveQuotaLastRefreshedMs,

@@ -608,7 +608,7 @@ async function main() {
     assert.strictEqual(hasAnyError(updated), false);
   });
 
-  // ===== formatStatusBarText: compact aggregate status bar =====
+  // ===== formatStatusBarText: live quota status bar =====
 
   await test('formatStatusBarText: all providers no-data shows live quota loading', async () => {
     const status = createInitialStatus(['claude', 'codex']);

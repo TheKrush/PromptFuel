@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { isKnownProvider, ProviderId } from './core/providers';
-import { CONFIG_DEFAULTS, DisplayMode, PromptFuelConfig } from './core/configDefaults';
+import { CONFIG_DEFAULTS, PromptFuelConfig } from './core/configDefaults';
 
-export type { PromptFuelConfig, DisplayMode };
+export type { PromptFuelConfig };
 export { CONFIG_DEFAULTS };
 
 export function getConfig(): PromptFuelConfig {
@@ -12,10 +12,6 @@ export function getConfig(): PromptFuelConfig {
   const enabledProviders: ProviderId[] = Array.isArray(rawProviders)
     ? rawProviders.filter(isKnownProvider)
     : CONFIG_DEFAULTS.enabledProviders.slice();
-
-  const rawMode = cfg.get<string>('displayMode', CONFIG_DEFAULTS.displayMode);
-  const displayMode: DisplayMode =
-    rawMode === 'compact' || rawMode === 'countdown' ? rawMode : CONFIG_DEFAULTS.displayMode;
 
   const rawInterval = cfg.get<number>(
     'refreshIntervalMinutes',
@@ -33,5 +29,5 @@ export function getConfig(): PromptFuelConfig {
     ? rawLiveQuota
     : CONFIG_DEFAULTS.liveQuotaEnabled;
 
-  return { enabledProviders, displayMode, refreshIntervalMinutes, liveQuotaEnabled };
+  return { enabledProviders, refreshIntervalMinutes, liveQuotaEnabled };
 }

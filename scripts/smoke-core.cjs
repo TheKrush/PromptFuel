@@ -85,10 +85,6 @@ test('CONFIG_DEFAULTS.enabledProviders default', () => {
   assert.deepStrictEqual(CONFIG_DEFAULTS.enabledProviders, ['claude', 'codex']);
 });
 
-test('CONFIG_DEFAULTS.displayMode default', () => {
-  assert.strictEqual(CONFIG_DEFAULTS.displayMode, 'compact');
-});
-
 test('CONFIG_DEFAULTS.refreshIntervalMinutes default', () => {
   assert.strictEqual(CONFIG_DEFAULTS.refreshIntervalMinutes, 5);
 });
@@ -105,7 +101,7 @@ test('CONFIG_DEFAULTS.liveQuotaEnabled default is true', () => {
 
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
-  assert.deepStrictEqual(keys, ['displayMode', 'enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes']);
+  assert.deepStrictEqual(keys, ['enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes']);
 });
 
 // --- manifest and docs ---
@@ -116,6 +112,11 @@ test('package.json contributes snapshot imports folder command', () => {
     cmd.command === 'promptFuel.openSnapshotImportsFolder'
     && cmd.title === 'PromptFuel: Open Snapshot Imports Folder',
   ));
+});
+
+test('package.json does not contribute promptFuel.displayMode', () => {
+  const properties = packageJson.contributes.configuration.properties;
+  assert.ok(!Object.hasOwn(properties, 'promptFuel.displayMode'), 'displayMode setting should be removed');
 });
 
 test('README documents snapshot import command and dashboard source modes', () => {
@@ -1292,8 +1293,10 @@ test('dashboard: live quota values are not filtered by local history selector', 
   const html = buildDashboardHtml(mockWebview, model);
 
   assert.strictEqual(model.liveQuotaCards[0].windows[0].usedPercentage, 92);
-  assert.ok(html.includes('92% used / 8% left'), `expected live quota 5h value`);
-  assert.ok(html.includes('72% used / 28% left'), `expected live quota 7d value`);
+  assert.ok(html.includes('8% remaining'), `expected live quota 5h remaining value`);
+  assert.ok(html.includes('28% remaining'), `expected live quota 7d remaining value`);
+  assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
+  assert.ok(!html.includes('% left'), `dashboard should not use left wording`);
   assert.ok(html.includes('data-local-window="all"'), `expected local selector to include all-history without affecting live quota`);
 });
 
@@ -1326,10 +1329,11 @@ test('dashboard: stale provider card renders inside provider tab only for that p
 
   assert.ok(claudePanel.includes('Claude live quota'), `expected Claude live quota section`);
   assert.ok(claudePanel.includes('STALE'), `expected stale badge in Claude tab`);
-  assert.ok(claudePanel.includes('92% used / 8% left'), `expected Claude stale value`);
-  assert.ok(!claudePanel.includes('15% used / 85% left'), `Claude tab should not include Codex live value`);
+  assert.ok(claudePanel.includes('8% remaining'), `expected Claude stale remaining value`);
+  assert.ok(!claudePanel.includes('85% remaining'), `Claude tab should not include Codex live value`);
   assert.ok(codexPanel.includes('LIVE'), `expected Codex live badge`);
-  assert.ok(!codexPanel.includes('92% used / 8% left'), `Codex tab should not include Claude stale value`);
+  assert.ok(!codexPanel.includes('8% remaining'), `Codex tab should not include Claude stale value`);
+  assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
 });
 
 test('dashboard: unavailable provider state renders inside provider tab', () => {
@@ -1381,7 +1385,8 @@ test('dashboard: stale live quota renders as stale card, not unavailable', () =>
   assert.ok(html.includes('badge stale'), `expected stale badge in dashboard`);
   assert.ok(html.includes('STALE'), `expected stale badge label in dashboard`);
   assert.ok(html.includes('Cached:'), `expected cached footer in dashboard`);
-  assert.ok(html.includes('92% used / 8% left'), `expected stale quota bar value`);
+  assert.ok(html.includes('8% remaining'), `expected stale quota bar value`);
+  assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
   assert.ok(!html.includes('Claude: Live quota unavailable'), `stale quota should not render unavailable`);
 });
 
@@ -1404,8 +1409,9 @@ test('dashboard: live provider card shows live badge and reset countdown', () =>
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Codex'), `expected Codex live card`);
   assert.ok(html.includes('LIVE'), `expected live badge`);
-  assert.ok(html.includes('15% used / 85% left'), `expected used and remaining text`);
-  assert.ok(html.includes('resets in'), `expected reset countdown`);
+  assert.ok(html.includes('85% remaining'), `expected remaining text`);
+  assert.ok(html.includes('85% remaining · resets in'), `expected remaining text with reset countdown`);
+  assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
 });
 
 test('dashboard: local history secondary label and parse wording', () => {
@@ -1463,7 +1469,7 @@ test('formatStatusBarText: live quota preferred over local history', () => {
   assert.ok(!t.includes('local'), `should not show "local" suffix when live quota available "${t}"`);
 });
 
-test('formatStatusBarText: live quota available shows exact compact percentages', () => {
+test('formatStatusBarText: live quota available shows remaining percentages', () => {
   const now = Date.now();
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [{
@@ -1476,10 +1482,10 @@ test('formatStatusBarText: live quota available shows exact compact percentages'
     lastUpdatedEpochMs: now,
   }]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude 7d 72% · 5h 92%');
+  assert.strictEqual(t, 'PromptFuel Claude 7d 28% · 5h 8%');
 });
 
-test('formatStatusBarText: compact mode single provider does not include countdown', () => {
+test('formatStatusBarText: single provider shows reset countdown labels when resets exist', () => {
   const now = Date.now();
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [{
@@ -1492,26 +1498,10 @@ test('formatStatusBarText: compact mode single provider does not include countdo
     lastUpdatedEpochMs: now,
   }]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude 7d 72% · 5h 92%');
+  assert.strictEqual(t, 'PromptFuel Claude 6d5h 28% · 4h25m 8%');
 });
 
-test('formatStatusBarText: countdown mode single provider shows reset countdowns', () => {
-  const now = Date.now();
-  const status = createInitialStatus(['claude'], true, 'countdown');
-  const updated = applyLiveQuotaResults(status, [{
-    providerId: 'claude',
-    windows: [
-      { windowId: '5h', usedPercentage: 92, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
-      { windowId: '7d', usedPercentage: 72, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
-    ],
-    freshness: 'live',
-    lastUpdatedEpochMs: now,
-  }]);
-  const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude 6d5h 72% · 4h25m 92%');
-});
-
-test('formatStatusBarText: compact mode with multiple providers stays compact (no countdown)', () => {
+test('formatStatusBarText: multiple providers always show countdowns when resets exist', () => {
   const now = Date.now();
   const status = createInitialStatus(['claude', 'codex']);
   const updated = applyLiveQuotaResults(status, [
@@ -1532,32 +1522,7 @@ test('formatStatusBarText: compact mode with multiple providers stays compact (n
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.ok(!t.includes('h ') || !t.match(/\d+h\d+m/), `compact multi-provider should not include countdown format "${t}"`);
-  assert.strictEqual(t, 'PromptFuel Claude 7d 62% · 5h 45% | Codex 10%');
-});
-
-test('formatStatusBarText: countdown mode with multiple providers shows countdowns', () => {
-  const now = Date.now();
-  const status = createInitialStatus(['claude', 'codex'], true, 'countdown');
-  const updated = applyLiveQuotaResults(status, [
-    {
-      providerId: 'claude',
-      windows: [
-        { windowId: '5h', usedPercentage: 45, resetsAtEpochMs: now + (4 * 60 + 25) * 60 * 1000 },
-        { windowId: '7d', usedPercentage: 62, resetsAtEpochMs: now + (6 * 24 + 5) * 60 * 60 * 1000 },
-      ],
-      freshness: 'live',
-      lastUpdatedEpochMs: now,
-    },
-    {
-      providerId: 'codex',
-      windows: [{ windowId: '5h', usedPercentage: 10, resetsAtEpochMs: now + 60 * 60 * 1000 }],
-      freshness: 'live',
-      lastUpdatedEpochMs: now,
-    },
-  ]);
-  const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude 6d5h 62% · 4h25m 45% | Codex 10%');
+  assert.strictEqual(t, 'PromptFuel Claude 6d5h 38% · 4h25m 55% | Codex 1h00m 90%');
 });
 
 test('formatStatusBarText: enabled-but-not-yet-read shows loading', () => {
@@ -1570,7 +1535,7 @@ test('formatStatusBarText: enabled-but-not-yet-read shows loading', () => {
   assert.ok(!t.includes('local history'), `local history should not mask loading live quota "${t}"`);
 });
 
-test('formatStatusBarText: live quota unavailable shows compact safe state', () => {
+test('formatStatusBarText: live quota unavailable shows safe state', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
@@ -1587,7 +1552,7 @@ test('formatStatusBarText: live quota unavailable shows compact safe state', () 
   assert.ok(!t.includes('local history'), `should prefer live quota state over local fallback "${t}"`);
 });
 
-test('formatStatusBarText: live quota error shows compact safe state', () => {
+test('formatStatusBarText: live quota error shows safe state', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
@@ -1606,7 +1571,7 @@ test('formatStatusBarText: live quota error shows compact safe state', () => {
   assert.ok(!t.includes('.jsonl'), `should not leak file paths "${t}"`);
 });
 
-test('formatStatusBarText: multiple providers with live quota show both compactly', () => {
+test('formatStatusBarText: multiple providers with live quota show remaining values', () => {
   const codexLiveQuota = {
     providerId: 'codex',
     windows: [
@@ -1624,7 +1589,7 @@ test('formatStatusBarText: multiple providers with live quota show both compactl
   const t = formatStatusBarText(updated);
   assert.ok(t.includes('Claude'), `expected "Claude" "${t}"`);
   assert.ok(t.includes('Codex'), `expected "Codex" "${t}"`);
-  assert.strictEqual(t, 'PromptFuel Claude 7d 62% · 5h 45% | Codex 0%');
+  assert.strictEqual(t, 'PromptFuel Claude 7d0h 38% · 5h00m 55% | Codex 5h00m 100%');
 });
 
 test('formatStatusBarText: stale quota keeps quota display with stale marker', () => {
@@ -1638,7 +1603,7 @@ test('formatStatusBarText: stale quota keeps quota display with stale marker', (
     freshness: 'stale',
   }]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude stale 7d 72% · 5h 92%');
+  assert.strictEqual(t, 'PromptFuel Claude stale 7d 28% · 5h 8%');
 });
 
 test('formatStatusBarText: mixed Claude stale and Codex live shows both providers', () => {
@@ -1662,7 +1627,7 @@ test('formatStatusBarText: mixed Claude stale and Codex live shows both provider
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude stale 7d 72% · 5h 92% | Codex 7d 27% · 5h 15%');
+  assert.strictEqual(t, 'PromptFuel Claude stale 7d 28% · 5h 8% | Codex 7d 73% · 5h 85%');
 });
 
 // --- Tooltip: live quota sections ---
@@ -1722,8 +1687,9 @@ test('formatTooltip: stale and live mixed state shows cached note', () => {
   assert.ok(tooltip.includes('Claude live quota [stale]'), `expected Claude stale section`);
   assert.ok(tooltip.includes('Codex live quota [live]'), `expected Codex live section`);
   assert.ok(tooltip.includes('Cached from last successful live refresh.'), `expected stale cached note`);
-  assert.ok(tooltip.includes('5h: 92% used 8% remaining'), `expected 5h used and remaining`);
-  assert.ok(tooltip.includes('7d: 27% used 73% remaining'), `expected 7d used and remaining`);
+  assert.ok(tooltip.includes('5h: 8% remaining'), `expected 5h remaining`);
+  assert.ok(tooltip.includes('7d: 73% remaining'), `expected 7d remaining`);
+  assert.ok(!tooltip.includes('used'), `tooltip should not show used quota`);
 });
 
 test('formatTooltip: disabled provider sections shown', () => {
@@ -1871,20 +1837,20 @@ test('formatWindowLine: includes window ID and remaining percentage', () => {
   };
   const line = formatWindowLine(window, Date.now());
   assert.ok(line.includes('5h'), `expected "5h" in "${line}"`);
-  assert.ok(line.includes('45%'), `expected derived used "45%" in "${line}"`);
-  assert.ok(line.includes('used'), `expected "used" in "${line}"`);
   assert.ok(line.includes('55%'), `expected "55%" in "${line}"`);
   assert.ok(line.includes('remaining'), `expected "remaining" in "${line}"`);
+  assert.ok(line.includes('resets in'), `expected reset countdown in "${line}"`);
+  assert.ok(!line.includes('used'), `should not show used quota in "${line}"`);
 });
 
-test('formatWindowLine: used percentage when no remaining', () => {
+test('formatWindowLine: derives remaining percentage when only used is available', () => {
   const window = {
     windowId: '7d',
     usedPercentage: 40,
   };
   const line = formatWindowLine(window, Date.now());
-  assert.ok(line.includes('40%'), `expected "40%" in "${line}"`);
-  assert.ok(line.includes('used'), `expected "used" in "${line}"`);
+  assert.ok(line.includes('60% remaining'), `expected derived remaining in "${line}"`);
+  assert.ok(!line.includes('used'), `should not show used quota in "${line}"`);
 });
 
 // --- Helper: percentage formatting ---

@@ -100,7 +100,6 @@ Malformed snapshot files, unsupported schema versions, unknown providers, and pr
 | Setting | Description | Default |
 | --- | --- | --- |
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
-| `promptFuel.displayMode` | Status bar display mode | `"compact"` |
 | `promptFuel.refreshIntervalMinutes` | Auto-refresh interval (0 to disable) | `5` |
 | `promptFuel.liveQuotaEnabled` | Attempt live quota from provider APIs; set to `false` to opt out | `true` |
 
