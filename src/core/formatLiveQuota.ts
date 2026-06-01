@@ -6,6 +6,7 @@ import {
   sortModelUsageAggregates,
   type ModelUsageAggregate,
 } from './modelUsage';
+import { formatSnapshotSourceLabels } from './snapshotTypes';
 
 const STATUS_PROVIDER_SEPARATOR = ' | ';
 const STATUS_WINDOW_JOINER = ' \u00B7 ';
@@ -472,7 +473,10 @@ function formatSnapshotTooltipLine(status: PromptFuelStatus): string {
   const providerCount = status.snapshotState.providers.length;
 
   if (snapshotCount > 0 && providerCount > 0) {
-    return 'Snapshots: available';
+    const sourceSummary = formatSnapshotSourceLabels(
+      status.snapshotState.providers.map(provider => provider.sourceLabel),
+    );
+    return sourceSummary ? `Snapshots: ${sourceSummary}` : 'Snapshots: available';
   }
 
   if (status.snapshotLastReadMs !== undefined) {

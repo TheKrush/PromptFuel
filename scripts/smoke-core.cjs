@@ -146,8 +146,10 @@ test('product command text does not include private/internal labels', () => {
   }
 });
 
-test('README does not include private machine labels or local paths', () => {
-  for (const forbidden of ['PHOENIX', 'WATCHER', 'CEREBRO', 'X-23', 'D:\\', 'keith']) {
+test('README documents safe source labels without local paths or private labels', () => {
+  assert.ok(readme.includes('safe source labels'), 'expected safe source label behavior in README');
+  assert.ok(readme.includes('unsafe labels are replaced'), 'expected unsafe label fallback in README');
+  for (const forbidden of ['CEREBRO', 'X-23', 'D:\\', 'keith']) {
     assert.ok(!readme.includes(forbidden), `README should not include ${forbidden}`);
   }
 });
@@ -345,6 +347,25 @@ test('formatTooltip: reports imported aggregate snapshot state', () => {
   }]));
   const tooltip = formatTooltip(status);
   assert.ok(tooltip.includes('Snapshots: available'), `expected imported snapshot state in tooltip`);
+});
+
+test('formatTooltip: reports safe imported snapshot source labels compactly', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude', 'codex']), snapshotStateFixture([
+    {
+      providerId: 'claude',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(500, 5),
+      sourceLabel: 'PHOENIX',
+    },
+    {
+      providerId: 'codex',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(400, 4),
+      sourceLabel: 'WATCHER',
+    },
+  ]));
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('Snapshots: PHOENIX, WATCHER'), `expected safe snapshot source labels in tooltip`);
 });
 
 test('formatTooltip: model breakdown appears below quota/details without API estimates', () => {
@@ -1276,6 +1297,45 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
   assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);
   assert.ok(html.includes('snapshot import'), `expected safe source label`);
+});
+
+test('dashboard source modes: safe snapshot source labels appear in summary, contribution, and model sections', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['codex']),
+    [{
+      providerId: 'codex',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 3,
+      filesFound: 1,
+      modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 1000, totalAssistantMessages: 3 }],
+      localHistoryModelWindows: {
+        today: [],
+        last5h: [],
+        last7d: [],
+        all: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 1000, totalAssistantMessages: 3 }],
+      },
+    }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'codex',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 2),
+    sourceLabel: 'WATCHER',
+    modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 500, totalAssistantMessages: 2, source: 'snapshot', sourceLabels: ['WATCHER'] }],
+    modelWindowTotals: {
+      all: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 500, totalAssistantMessages: 2, source: 'snapshot', sourceLabels: ['WATCHER'] }],
+    },
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('Snapshot sources'), `expected snapshot source summary label`);
+  assert.ok(html.includes('WATCHER'), `expected safe source label in dashboard html`);
+  assert.ok(html.includes('Imported snapshots (WATCHER)'), `expected source contribution to name snapshot source`);
+  assert.ok(html.includes('Codex + Codex (WATCHER)'), `expected combined model row source context`);
 });
 
 test('dashboard visuals: overview provider distribution renders for selected aggregate window', () => {

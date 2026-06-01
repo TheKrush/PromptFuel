@@ -3,6 +3,10 @@ import { ProviderQuotaState } from '../core/quotaTypes';
 import { KNOWN_PROVIDERS, PROVIDER_LABELS, isKnownProvider, type ProviderId } from '../core/providers';
 import type { LiveQuotaFreshness } from '../core/liveQuotaTypes';
 import {
+  sanitizeSnapshotSourceLabel,
+  uniqueSnapshotSourceLabels,
+} from '../core/snapshotTypes';
+import {
   DEFAULT_LOCAL_HISTORY_WINDOW_ID,
   LOCAL_HISTORY_WINDOW_IDS,
   LOCAL_HISTORY_WINDOW_LABELS,
@@ -35,13 +39,6 @@ export const DASHBOARD_SOURCE_MODE_LABELS: Record<DashboardSourceMode, string> =
   combined: 'Combined',
 };
 
-const SAFE_SNAPSHOT_SOURCE_LABELS = new Set([
-  'imported',
-  'manual import',
-  'snapshot',
-  'snapshot import',
-]);
-
 export interface DashboardLocalHistoryWindow {
   windowId: LocalHistoryWindowId;
   label: string;
@@ -56,6 +53,7 @@ export interface DashboardModelUsageAggregate {
   totalTokens: number;
   totalAssistantMessages: number;
   sourceMode: DashboardSourceMode;
+  sourceLabels: string[];
   windowId: LocalHistoryWindowId;
 }
 
@@ -74,6 +72,7 @@ export interface DashboardSourceModeProviderCard {
   totalTokens: number;
   totalAssistantMessages: number;
   parseErrors: number;
+  sourceLabels: string[];
   windows: DashboardLocalHistoryWindow[];
   modelWindows: DashboardModelUsageWindowMap;
 }
@@ -86,6 +85,7 @@ export interface DashboardSourceModeTotals {
   providers: DashboardSourceModeProviderCard[];
   windows: DashboardLocalHistoryWindow[];
   modelWindows: DashboardModelUsageWindowMap;
+  sourceLabels: string[];
   missingSnapshotWindowIds: LocalHistoryWindowId[];
 }
 
@@ -133,6 +133,7 @@ export interface DashboardSnapshotAggregate {
   totalTokens: number;
   totalAssistantMessages: number;
   providers: DashboardSnapshotProviderCard[];
+  sourceLabels: string[];
   snapshotCount: number;
   lastReadMs: number | undefined;
 }
@@ -287,6 +288,7 @@ function buildDashboardSnapshotAggregate(
     totalTokens,
     totalAssistantMessages,
     providers: cards,
+    sourceLabels: uniqueSnapshotSourceLabels(cards.map(card => card.sourceLabel)),
     snapshotCount,
     lastReadMs,
   };
@@ -311,11 +313,7 @@ function buildDashboardSnapshotProviderCard(
 }
 
 function safeSnapshotSourceLabel(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
-  return SAFE_SNAPSHOT_SOURCE_LABELS.has(normalized) ? normalized : undefined;
+  return sanitizeSnapshotSourceLabel(value);
 }
 
 function buildSnapshotWindowCards(
@@ -387,6 +385,7 @@ function toDashboardModelUsage(
     totalTokens: model.totalTokens,
     totalAssistantMessages: model.totalAssistantMessages,
     sourceMode,
+    sourceLabels: uniqueSnapshotSourceLabels(model.sourceLabels ?? []),
     windowId,
   };
 }
@@ -471,6 +470,7 @@ function buildSourceTotals(
     providers,
     windows,
     modelWindows: buildModelWindowTotalsForProviders(sourceMode, providers),
+    sourceLabels: uniqueSnapshotSourceLabels(providers.flatMap(provider => provider.sourceLabels)),
     missingSnapshotWindowIds,
   };
 }
@@ -487,6 +487,7 @@ function buildLocalSourceProviders(
       totalTokens: provider.totalTokens,
       totalAssistantMessages: provider.totalAssistantMessages,
       parseErrors: provider.parseErrors,
+      sourceLabels: [],
       windows: provider.localHistoryWindows,
       modelWindows: toDashboardModelWindows('local', provider.localHistoryModelWindows),
     }));
@@ -509,6 +510,7 @@ function buildSnapshotSourceProviders(
 
     aggregateWindows.all.totalTokens = totalTokens;
     aggregateWindows.all.totalAssistantMessages = totalAssistantMessages;
+    const sourceLabels = uniqueSnapshotSourceLabels(matching.map(provider => provider.sourceLabel));
 
     return {
       providerId,
@@ -517,6 +519,7 @@ function buildSnapshotSourceProviders(
       totalTokens,
       totalAssistantMessages,
       parseErrors: 0,
+      sourceLabels,
       windows: buildLocalHistoryWindowCards(aggregateWindows, totalTokens, totalAssistantMessages),
       modelWindows: combineProviderModelWindows('snapshots', matching.map(provider => provider.modelWindows)),
     };
@@ -581,6 +584,7 @@ function combineSourceProviderCards(
     totalTokens,
     totalAssistantMessages,
     parseErrors: local?.parseErrors ?? 0,
+    sourceLabels: uniqueSnapshotSourceLabels(snapshot?.sourceLabels ?? []),
     windows,
     modelWindows,
   };
@@ -624,6 +628,7 @@ function combineProviderModelWindows(
           totalTokens: model.totalTokens,
           totalAssistantMessages: model.totalAssistantMessages,
           source: sourceMode === 'snapshots' ? 'snapshot' : sourceMode,
+          sourceLabels: model.sourceLabels,
           windowId,
         });
       }

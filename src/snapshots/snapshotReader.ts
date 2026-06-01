@@ -3,7 +3,10 @@ import * as path from 'path';
 import { isKnownProvider, type ProviderId } from '../core/providers';
 import {
   PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+  IMPORTED_SNAPSHOT_SOURCE_LABEL,
   createEmptySnapshotState,
+  safeSnapshotSourceLabel,
+  sanitizeSnapshotSourceLabel,
   type PromptFuelSnapshotProviderAggregate,
   type PromptFuelSnapshotState,
 } from '../core/snapshotTypes';
@@ -50,12 +53,6 @@ const MAX_SNAPSHOT_FILES = 50;
 const MAX_ARCHIVE_FILES = 240;
 const AGENTBRIDGE_SNAPSHOT_SCHEMA_VERSION = 2;
 const AGENTBRIDGE_HISTORY_ARCHIVE_SCHEMA_VERSION = 1;
-const GENERIC_SOURCE_LABELS = new Set([
-  'imported',
-  'manual import',
-  'snapshot',
-  'snapshot import',
-]);
 
 export async function readPromptFuelSnapshots(
   options: ReadPromptFuelSnapshotsOptions,
@@ -295,7 +292,15 @@ function validateAgentBridgeSnapshotPayload(
     return { malformed: true, unsupportedSchemaVersion: false, unknownProviders: 0 };
   }
 
-  return validateAgentBridgeProviders(value.providerUsage ?? [], generatedAtEpochMs, enabledProviderIds, nowMs);
+  const sourceLabel = safeSnapshotSourceLabel(value.machine.label, IMPORTED_SNAPSHOT_SOURCE_LABEL);
+
+  return validateAgentBridgeProviders(
+    value.providerUsage ?? [],
+    generatedAtEpochMs,
+    enabledProviderIds,
+    nowMs,
+    sourceLabel,
+  );
 }
 
 function validateAgentBridgeArchiveSnapshotPayload(
@@ -328,7 +333,17 @@ function validateAgentBridgeArchiveSnapshotPayload(
     return { malformed: true, unsupportedSchemaVersion: false, unknownProviders: 0 };
   }
 
-  return validateAgentBridgeProviders(value.providers, generatedAtEpochMs, enabledProviderIds, nowMs);
+  const sourceLabel = isRecord(value.machine)
+    ? safeSnapshotSourceLabel(value.machine.label, IMPORTED_SNAPSHOT_SOURCE_LABEL)
+    : IMPORTED_SNAPSHOT_SOURCE_LABEL;
+
+  return validateAgentBridgeProviders(
+    value.providers,
+    generatedAtEpochMs,
+    enabledProviderIds,
+    nowMs,
+    sourceLabel,
+  );
 }
 
 function validateAgentBridgeProviders(
@@ -336,6 +351,7 @@ function validateAgentBridgeProviders(
   generatedAtEpochMs: number,
   enabledProviderIds: ReadonlySet<ProviderId> | undefined,
   nowMs: number,
+  sourceLabel: string,
 ): {
   snapshot?: ValidatedPromptFuelSnapshot;
   malformed: boolean;
@@ -347,7 +363,7 @@ function validateAgentBridgeProviders(
   let malformedProvider = false;
 
   for (const rawProvider of rawProviders) {
-    const provider = validateAgentBridgeProvider(rawProvider, generatedAtEpochMs, nowMs);
+    const provider = validateAgentBridgeProvider(rawProvider, generatedAtEpochMs, nowMs, sourceLabel);
     if (provider === 'unknown-provider') {
       unknownProviders++;
       continue;
@@ -378,6 +394,7 @@ function validateAgentBridgeProvider(
   value: unknown,
   generatedAtEpochMs: number,
   nowMs: number,
+  sourceLabel: string,
 ): PromptFuelSnapshotProviderAggregate | 'unknown-provider' | undefined {
   if (!isRecord(value) || typeof value.provider !== 'string') {
     return undefined;
@@ -408,6 +425,7 @@ function validateAgentBridgeProvider(
     value.provider,
     value.historyBuckets ?? [],
     nowMs,
+    sourceLabel,
   );
   if (!normalized) {
     return undefined;
@@ -420,7 +438,7 @@ function validateAgentBridgeProvider(
     windowTotals: normalized.windowTotals,
     modelAggregates: normalized.modelAggregates,
     modelWindowTotals: normalized.modelWindowTotals,
-    sourceLabel: 'snapshot',
+    sourceLabel,
   };
 }
 
@@ -428,6 +446,7 @@ function normalizeAgentBridgeHistoryBuckets(
   providerId: ProviderId,
   buckets: unknown[],
   nowMs: number,
+  sourceLabel: string,
 ): {
   aggregate: AggregateUsage;
   windowTotals: Partial<LocalHistoryWindowAggregateMap>;
@@ -454,8 +473,8 @@ function normalizeAgentBridgeHistoryBuckets(
     validBucketCount++;
     addAggregate(aggregate, bucket.aggregate);
     addAggregate(windowTotals.all!, bucket.aggregate);
-    mergeBucketModels(modelAggregates, providerId, bucket.models);
-    mergeBucketModels(modelWindowTotals.all!, providerId, bucket.models, 'all');
+    mergeBucketModels(modelAggregates, providerId, bucket.models, sourceLabel);
+    mergeBucketModels(modelWindowTotals.all!, providerId, bucket.models, sourceLabel, 'all');
 
     if (bucket.dateKey === todayKey) {
       if (!windowTotals.today) {
@@ -465,7 +484,7 @@ function normalizeAgentBridgeHistoryBuckets(
         modelWindowTotals.today = [];
       }
       addAggregate(windowTotals.today, bucket.aggregate);
-      mergeBucketModels(modelWindowTotals.today, providerId, bucket.models, 'today');
+      mergeBucketModels(modelWindowTotals.today, providerId, bucket.models, sourceLabel, 'today');
     }
     if (bucket.dateKey >= last7dStartKey && bucket.dateKey <= todayKey) {
       if (!windowTotals.last7d) {
@@ -475,7 +494,7 @@ function normalizeAgentBridgeHistoryBuckets(
         modelWindowTotals.last7d = [];
       }
       addAggregate(windowTotals.last7d, bucket.aggregate);
-      mergeBucketModels(modelWindowTotals.last7d, providerId, bucket.models, 'last7d');
+      mergeBucketModels(modelWindowTotals.last7d, providerId, bucket.models, sourceLabel, 'last7d');
     }
   }
 
@@ -596,6 +615,7 @@ function mergeBucketModels(
   target: ModelUsageAggregate[],
   providerId: ProviderId,
   models: Array<{ modelLabel: string; totalTokens: number; totalAssistantMessages: number }>,
+  sourceLabel: string,
   windowId?: LocalHistoryWindowId,
 ): void {
   for (const model of models) {
@@ -605,6 +625,7 @@ function mergeBucketModels(
       totalTokens: model.totalTokens,
       totalAssistantMessages: model.totalAssistantMessages,
       source: 'snapshot',
+      sourceLabels: [sourceLabel],
       ...(windowId ? { windowId } : {}),
     });
   }
@@ -637,9 +658,9 @@ function validateSnapshotProvider(
   }
 
   const windowTotals = readWindowTotals(value.windowTotals);
-  const modelAggregates = readModelTotals(value.modelTotals ?? value.modelAggregates, value.providerId);
-  const modelWindowTotals = readModelWindowTotals(value.modelWindowTotals, value.providerId);
-  const sourceLabel = sanitizeSourceLabel(value.sourceLabel);
+  const sourceLabel = sanitizeSnapshotSourceLabel(value.sourceLabel);
+  const modelAggregates = readModelTotals(value.modelTotals ?? value.modelAggregates, value.providerId, undefined, sourceLabel);
+  const modelWindowTotals = readModelWindowTotals(value.modelWindowTotals, value.providerId, sourceLabel);
 
   return {
     providerId: value.providerId,
@@ -671,6 +692,7 @@ function readWindowTotals(value: unknown): Partial<LocalHistoryWindowAggregateMa
 function readModelWindowTotals(
   value: unknown,
   providerId: ProviderId,
+  sourceLabel: string | undefined,
 ): Partial<ModelUsageWindowAggregateMap> | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -678,7 +700,7 @@ function readModelWindowTotals(
 
   const windows: Partial<ModelUsageWindowAggregateMap> = {};
   for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
-    const models = readModelTotals(value[windowId], providerId, windowId);
+    const models = readModelTotals(value[windowId], providerId, windowId, sourceLabel);
     if (models.length > 0) {
       windows[windowId as LocalHistoryWindowId] = models;
     }
@@ -691,6 +713,7 @@ function readModelTotals(
   value: unknown,
   providerId: ProviderId,
   windowId?: LocalHistoryWindowId,
+  sourceLabel?: string,
 ): ModelUsageAggregate[] {
   if (!Array.isArray(value)) {
     return [];
@@ -698,7 +721,7 @@ function readModelTotals(
 
   const models: ModelUsageAggregate[] = [];
   for (const entry of value) {
-    const model = readModelTotal(entry, providerId, windowId);
+    const model = readModelTotal(entry, providerId, windowId, sourceLabel);
     if (model) {
       models.push(model);
     }
@@ -711,6 +734,7 @@ function readModelTotal(
   value: unknown,
   providerId: ProviderId,
   windowId?: LocalHistoryWindowId,
+  sourceLabel?: string,
 ): ModelUsageAggregate | undefined {
   if (!isRecord(value) || hasUnexpectedModelTotalFields(value)) {
     return undefined;
@@ -736,6 +760,7 @@ function readModelTotal(
     totalTokens,
     totalAssistantMessages,
     source: 'snapshot',
+    ...(sourceLabel ? { sourceLabels: [sourceLabel] } : {}),
     ...(windowId ? { windowId } : {}),
   };
 }
@@ -790,17 +815,6 @@ function readNonNegativeInteger(value: unknown): number | undefined {
     return undefined;
   }
   return Math.floor(value);
-}
-
-function sanitizeSourceLabel(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim().toLowerCase().replace(/\s+/g, ' ');
-  if (!GENERIC_SOURCE_LABELS.has(trimmed)) {
-    return undefined;
-  }
-  return trimmed;
 }
 
 const FORBIDDEN_FIELD_NAMES = new Set([

@@ -16,6 +16,7 @@ export interface ModelUsageAggregate {
   totalTokens: number;
   totalAssistantMessages: number;
   source?: ModelUsageSource;
+  sourceLabels?: string[];
   windowId?: LocalHistoryWindowId;
 }
 
@@ -72,6 +73,7 @@ export function cloneModelUsageAggregate(model: ModelUsageAggregate): ModelUsage
     totalTokens: model.totalTokens,
     totalAssistantMessages: model.totalAssistantMessages,
     ...(model.source ? { source: model.source } : {}),
+    ...(model.sourceLabels && model.sourceLabels.length > 0 ? { sourceLabels: uniqueLabels(model.sourceLabels) } : {}),
     ...(model.windowId ? { windowId: model.windowId } : {}),
   };
 }
@@ -158,6 +160,13 @@ export function mergeModelUsageAggregate(
   if (existing) {
     existing.totalTokens += model.totalTokens;
     existing.totalAssistantMessages += model.totalAssistantMessages;
+    existing.sourceLabels = uniqueLabels([
+      ...(existing.sourceLabels ?? []),
+      ...(model.sourceLabels ?? []),
+    ]);
+    if (existing.sourceLabels.length === 0) {
+      delete existing.sourceLabels;
+    }
     return;
   }
 
@@ -200,4 +209,22 @@ export function sortModelUsageAggregates(
 function startOfLocalDayMs(nowMs: number): number {
   const d = new Date(nowMs);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function uniqueLabels(labels: ReadonlyArray<string>): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const label of labels) {
+    const trimmed = label.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(trimmed);
+  }
+  return unique;
 }

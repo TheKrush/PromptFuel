@@ -559,7 +559,8 @@ async function main() {
     assert.strictEqual(provider.modelAggregates[0].modelLabel, 'gpt-5.4-codex');
     assert.strictEqual(provider.modelAggregates[0].totalTokens, 900);
     assert.strictEqual(provider.modelWindowTotals.today[0].totalTokens, 900);
-    assert.strictEqual(provider.sourceLabel, 'snapshot');
+    assert.strictEqual(provider.sourceLabel, 'WATCHER');
+    assert.deepStrictEqual(provider.modelAggregates[0].sourceLabels, ['WATCHER']);
   });
 
   await test('readPromptFuelSnapshots: versioned imports accept PromptFuel v1 and compatible v2 together', async () => {
@@ -770,15 +771,63 @@ async function main() {
     assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, undefined);
   });
 
-  await test('snapshots: compatible machine/source labels do not appear in dashboard/status/tooltip output', async () => {
+  await test('snapshots: schema 2 machine labels appear safely in dashboard and tooltip output', async () => {
     const dir = path.join(snapshotDir, 'label-sanitization');
+    await writeFile(dir, 'PHOENIX-latest.json', JSON.stringify({
+      schemaVersion: 2,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'PHOENIX' },
+      providerUsage: [{
+        provider: 'claude',
+        laneLabel: 'Claude',
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        historyBuckets: [{ dateKey: '2026-05-31', inputTokens: 200, outputTokens: 50, messages: 1, models: [{ model: 'claude-sonnet-4-20250514', inputTokens: 200, outputTokens: 50, messages: 1 }] }],
+      }],
+      exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
+    }));
     await writeFile(dir, 'WATCHER-latest.json', JSON.stringify({
       schemaVersion: 2,
       generatedAtEpochMs: snapshotNow,
       machine: { label: 'WATCHER' },
       providerUsage: [{
         provider: 'codex',
-        laneLabel: 'WATCHER Codex',
+        laneLabel: 'Codex',
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        historyBuckets: [{ dateKey: '2026-05-31', inputTokens: 100, outputTokens: 50, turns: 1, models: [{ model: 'gpt-5.4-codex', inputTokens: 100, outputTokens: 50, turns: 1 }] }],
+      }],
+      exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude', 'codex'], nowMs: snapshotNow });
+    const status = applySnapshotReadResults(createInitialStatus(['claude', 'codex']), result.state);
+    const dashboard = buildDashboardModel(status);
+    const combinedUiStrings = [
+      formatStatusBarText(status),
+      formatTooltip(status),
+      JSON.stringify(dashboard),
+    ].join('\n');
+    assert.ok(combinedUiStrings.includes('PHOENIX'), 'safe schema 2 machine label should be emitted');
+    assert.ok(combinedUiStrings.includes('WATCHER'), 'safe schema 2 machine label should be emitted');
+    assert.ok(!combinedUiStrings.includes('WATCHER-latest.json'), 'snapshot filenames should not be emitted');
+    assert.ok(!combinedUiStrings.includes(`${dir}`), 'snapshot paths should not be emitted');
+    assert.deepStrictEqual(dashboard.snapshotAggregate.sourceLabels, ['PHOENIX', 'WATCHER']);
+    assert.ok(dashboard.sourceModeTotals.find(t => t.sourceMode === 'snapshots').sourceLabels.includes('WATCHER'));
+    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'claude').sourceLabel, 'PHOENIX');
+    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'codex').sourceLabel, 'WATCHER');
+  });
+
+  await test('snapshots: unsafe schema 2 machine labels fall back to generic imported snapshot labels', async () => {
+    const dir = path.join(snapshotDir, 'unsafe-label-fallback');
+    await writeFile(dir, 'unsafe-latest.json', JSON.stringify({
+      schemaVersion: 2,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'keith@example.com' },
+      providerUsage: [{
+        provider: 'codex',
+        laneLabel: 'Codex',
         stale: false,
         source: 'snapshot',
         sourceConfidence: 'snapshotOnly',
@@ -790,13 +839,11 @@ async function main() {
     const status = applySnapshotReadResults(createInitialStatus(['codex']), result.state);
     const dashboard = buildDashboardModel(status);
     const combinedUiStrings = [
-      formatStatusBarText(status),
       formatTooltip(status),
       JSON.stringify(dashboard),
     ].join('\n');
-    assert.ok(!combinedUiStrings.includes('WATCHER'), 'private machine label should not be emitted');
-    assert.ok(!combinedUiStrings.includes('WATCHER Codex'), 'private lane label should not be emitted');
-    assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, 'snapshot');
+    assert.ok(!combinedUiStrings.includes('keith@example.com'), 'email-like machine label should not be emitted');
+    assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, 'Imported snapshot');
   });
 
   await test('snapshot export: writes latest compatible aggregate-only schema to configured folder', async () => {

@@ -12,7 +12,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **Local-history windows** - switch usage history between Today, Last 5h, Last 7d, and All local history.
 - **Source modes** - switch dashboard usage history between Local only, Snapshots only, and Combined when imported snapshots are available.
 - **Snapshot imports and exports** - open an import folder, drop in aggregate-only snapshot JSON, or export a compatible aggregate snapshot for another install.
-- **AgentBridge-compatible imports** - read compatible aggregate snapshot files directly while keeping product UI labels generic.
+- **AgentBridge-compatible imports** - read compatible aggregate snapshot files directly, including safe source labels such as machine/source names.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
 ## Privacy & Data
@@ -22,7 +22,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
 - **No telemetry** is sent by PromptFuel.
 - Local history parsing uses aggregate metadata only.
-- Snapshot imports are aggregate-only JSON; private labels, local paths, filenames, usernames, machine names, and raw provider payloads are not product data.
+- Snapshot imports are aggregate-only JSON; safe source labels may be displayed, while private labels, local paths, filenames, usernames, and raw provider payloads are not product data.
 - Live quota reads use existing provider OAuth state when available; PromptFuel does not provide its own auth UI.
 - You can inspect PromptFuel's extension storage via **PromptFuel: Open Data Folder**.
 
@@ -42,7 +42,7 @@ Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to ope
 
 By default, PromptFuel uses an import folder under its extension storage. Set `promptFuel.snapshotImportPath` to a local folder to read snapshots from that folder instead. Empty string means use the default storage folder. The command opens the effective import folder.
 
-Snapshots are aggregate-only JSON files. They should contain provider totals for `claude` and/or `codex`; do not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, machine names, or source filenames.
+Snapshots are aggregate-only JSON files. They should contain provider totals for `claude` and/or `codex`; do not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, or source filenames.
 
 Imported snapshots appear in the dashboard source modes:
 
@@ -54,7 +54,7 @@ Imported snapshots appear in the dashboard source modes:
 
 Live quota remains separate and is not affected by the selected dashboard source mode.
 
-PromptFuel imports supported versioned snapshot shapes automatically. It preserves existing PromptFuel schema v1 aggregate snapshots and also accepts the current AgentBridge-compatible aggregate schema, including safe daily history buckets and model breakdowns when present. Snapshot source and machine labels are normalized to generic public labels in the product UI.
+PromptFuel imports supported versioned snapshot shapes automatically. It preserves existing PromptFuel schema v1 aggregate snapshots and also accepts the current AgentBridge-compatible schema 2 shape, including safe daily history buckets, model breakdowns, and source/machine labels when present. Safe labels such as `PHOENIX`, `WATCHER`, `DESKTOP-123`, `Laptop`, or `Workstation` may appear in the dashboard and tooltip; unsafe labels are replaced with a generic imported-snapshot label. Local paths, filenames, usernames, raw payloads, secrets, and tokens are never displayed.
 
 Minimal generic snapshot example:
 

@@ -10,6 +10,7 @@ import {
 } from './dashboardModel';
 import { formatTokenCount } from '../core/formatQuota';
 import { formatCountdownLabel, getRemainingPercentage, getSanitizedErrorLabel } from '../core/formatLiveQuota';
+import { formatSnapshotSourceLabels } from '../core/snapshotTypes';
 
 function esc(s: string): string {
   return s
@@ -304,6 +305,7 @@ function findSourceModeTotals(
       providers: [],
       windows: [],
       modelWindows: { today: [], last5h: [], last7d: [], all: [] },
+      sourceLabels: [],
       missingSnapshotWindowIds: [],
     };
 }
@@ -320,6 +322,7 @@ function findSourceProvider(
       totalTokens: 0,
       totalAssistantMessages: 0,
       parseErrors: 0,
+      sourceLabels: [],
       windows: [],
       modelWindows: { today: [], last5h: [], last7d: [], all: [] },
     };
@@ -691,7 +694,7 @@ function renderSourceContributionVisual(
   const total = sourceContributionTotal(model, model.defaultSourceMode, defaultWindowId, provider?.providerId);
   const rows: Array<{ kind: 'local' | 'snapshots'; label: string }> = [
     { kind: 'local', label: 'Local history' },
-    { kind: 'snapshots', label: 'Imported snapshots' },
+    { kind: 'snapshots', label: snapshotContributionLabel(model, provider?.providerId) },
   ];
   const renderedRows = rows.map(row => {
     const value = sourceContributionValue(model, model.defaultSourceMode, defaultWindowId, row.kind, provider?.providerId);
@@ -733,6 +736,31 @@ function renderSourceContributionVisual(
         ${renderedRows}
       </div>
     </div>`;
+}
+
+function snapshotContributionLabel(model: DashboardModel, providerId?: string): string {
+  const snapshotTotals = findSourceModeTotals(model.sourceModeTotals, 'snapshots');
+  const labels = providerId
+    ? findSourceProvider(snapshotTotals, providerId).sourceLabels
+    : snapshotTotals.sourceLabels;
+  const formatted = formatSnapshotSourceLabels(labels, 2);
+  return formatted ? `Imported snapshots (${formatted})` : 'Imported snapshots';
+}
+
+function formatModelProviderLabel(row: DashboardModelUsageAggregate): string {
+  const sourceSummary = formatSnapshotSourceLabels(row.sourceLabels, 2);
+  if (!sourceSummary) {
+    return row.providerLabel;
+  }
+  if (row.sourceMode === 'combined') {
+    return `${row.providerLabel} + ${row.providerLabel} (${sourceSummary})`;
+  }
+  return `${row.providerLabel} (${sourceSummary})`;
+}
+
+function formatModelRowTitle(base: string, row: DashboardModelUsageAggregate): string {
+  const sourceSummary = formatSnapshotSourceLabels(row.sourceLabels, 3);
+  return sourceSummary ? `${base} - Snapshots: ${sourceSummary}` : base;
 }
 
 function providerColorVar(providerId: string): string {
@@ -856,12 +884,16 @@ function modelDistributionRowAttributes(
     const key = `${sourceTotals.sourceMode}-${window.windowId}`;
     const tokens = row?.totalTokens ?? 0;
     const messages = row?.totalAssistantMessages ?? 0;
+    const providerLabel = row ? formatModelProviderLabel(row) : '';
+    const title = row ? formatModelRowTitle(formatMessageCount(messages), row) : formatMessageCount(messages);
     return [
       `data-model-visible-${esc(key)}="${row && tokens > 0 && rank <= 8 ? 'true' : 'false'}"`,
       `data-model-rank-${esc(key)}="${esc(String(rank))}"`,
       `data-model-tokens-${esc(key)}="${esc(String(tokens))}"`,
       `data-model-value-${esc(key)}="${esc(formatTokenCount(tokens))}"`,
       `data-model-messages-${esc(key)}="${esc(formatMessageCount(messages))}"`,
+      `data-model-provider-label-${esc(key)}="${esc(providerLabel)}"`,
+      `data-model-title-${esc(key)}="${esc(title)}"`,
       `data-model-percent-${esc(key)}="${esc(formatDistributionPercent(tokens, total.totalTokens))}"`,
       `data-model-width-${esc(key)}="${esc(distributionWidth(tokens, total.totalTokens))}"`,
     ].join(' ');
@@ -887,10 +919,12 @@ function renderModelBreakdownDistribution(
     const width = distributionWidth(tokens, selectedTotal.totalTokens);
     const rank = selectedRows.findIndex(candidate => modelRowKey(candidate) === key) + 1;
     const visible = tokens > 0 && rank > 0 && rank <= 8;
+    const providerLabel = formatModelProviderLabel(selectedRow ?? row);
+    const title = formatModelRowTitle(formatMessageCount(messages), selectedRow ?? row);
     return `
-      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-row="${esc(key)}" ${modelDistributionRowAttributes(model, key, provider?.providerId)} ${visible ? '' : 'hidden'} style="order: ${esc(String(rank > 0 ? rank : 999))}" title="${esc(formatMessageCount(messages))}">
+      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-row="${esc(key)}" ${modelDistributionRowAttributes(model, key, provider?.providerId)} ${visible ? '' : 'hidden'} style="order: ${esc(String(rank > 0 ? rank : 999))}" title="${esc(title)}">
         <span class="usage-model-swatch"></span>
-        <span class="usage-model-provider">${esc(row.providerLabel)}</span>
+        <span class="usage-model-provider">${esc(providerLabel)}</span>
         <span class="usage-model-name">${esc(row.modelLabel)}</span>
         <span class="usage-model-bar" aria-hidden="true"><span class="usage-model-bar-fill" style="width: ${esc(width)}%"></span></span>
         <span class="usage-model-value">${esc(formatTokenCount(tokens))}</span>
@@ -1041,7 +1075,10 @@ function renderSourceModeCopy(model: DashboardModel): string {
   if (model.snapshotAggregate.snapshotCount === 0 || model.snapshotAggregate.providers.length === 0) {
     return 'No imported snapshots found. Showing local history only.';
   }
-  return 'Imported snapshots available. Choose Local only, Snapshots only, or Combined.';
+  const sourceSummary = formatSnapshotSourceLabels(model.snapshotAggregate.sourceLabels);
+  return sourceSummary
+    ? `Imported snapshots available from ${sourceSummary}. Choose Local only, Snapshots only, or Combined.`
+    : 'Imported snapshots available. Choose Local only, Snapshots only, or Combined.';
 }
 
 function renderSnapshotSummary(model: DashboardModel): string {
@@ -1058,6 +1095,7 @@ function renderSnapshotSummary(model: DashboardModel): string {
   }
 
   const providerCoverage = Array.from(new Set(aggregate.providers.map(p => p.label))).sort().join(', ');
+  const sourceSummary = formatSnapshotSourceLabels(aggregate.sourceLabels);
   const latestGeneratedMs = aggregate.providers.reduce<number | undefined>((latest, provider) => {
     if (latest === undefined || provider.generatedAtMs > latest) {
       return provider.generatedAtMs;
@@ -1117,6 +1155,11 @@ function renderSnapshotSummary(model: DashboardModel): string {
         <span class="overview-label">Provider coverage</span>
         <span class="overview-value">${esc(providerCoverage)}</span>
       </div>
+      ${sourceSummary ? `
+      <div class="overview-row">
+        <span class="overview-label">Snapshot sources</span>
+        <span class="overview-value">${esc(sourceSummary)}</span>
+      </div>` : ''}
       <div class="overview-row">
         <span class="overview-label">Latest generated</span>
         <span class="overview-value">${esc(generated)}</span>
@@ -2338,15 +2381,21 @@ export function buildDashboardHtml(
           var rank = row.getAttribute('data-model-rank-' + key) || '999';
           var value = row.getAttribute('data-model-value-' + key) || '0 tokens';
           var messages = row.getAttribute('data-model-messages-' + key) || '0 messages';
+          var providerLabel = row.getAttribute('data-model-provider-label-' + key);
+          var title = row.getAttribute('data-model-title-' + key) || messages;
           var percent = row.getAttribute('data-model-percent-' + key) || '0%';
           var width = row.getAttribute('data-model-width-' + key) || '0';
+          var providerEl = row.querySelector('.usage-model-provider');
           var valueEl = row.querySelector('.usage-model-value');
           var countEl = row.querySelector('.usage-model-count');
           var percentEl = row.querySelector('.usage-model-percent');
           var fillEl = row.querySelector('.usage-model-bar-fill');
           row.hidden = !visible;
           row.style.order = rank;
-          row.setAttribute('title', messages);
+          row.setAttribute('title', title);
+          if (providerEl && providerLabel !== null) {
+            providerEl.textContent = providerLabel;
+          }
           if (valueEl) {
             valueEl.textContent = value;
           }
