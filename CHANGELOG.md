@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.0
+
+PromptFuel now adds configurable cross-machine snapshot imports/exports, model-level usage breakdowns, imported quota visibility, and a more range-driven dashboard experience.
+
+**Included in this release:**
+
+- `PromptFuel: Export Usage Snapshot` command added for writing aggregate-only snapshot files from local usage history.
+- `promptFuel.snapshotImportPath` setting added for choosing a custom aggregate snapshot import folder.
+- `promptFuel.snapshotExportPath` setting added for choosing a custom aggregate snapshot export folder.
+- `promptFuel.localMachineLabel` setting added for stable exported machine labels and local-import deduplication.
+- `promptFuel.snapshotImportLabels` setting added for allowlisting imported machine/source labels.
+- Snapshot import support expanded for AgentBridge-compatible schema 2 snapshots, including archive files, daily history buckets, model breakdowns, safe machine/source labels, and imported quota windows.
+- Snapshot import deduplication now skips snapshots from the local machine label and respects the configured import allowlist.
+- Snapshot source labels are sanitized, preserved, combined, and surfaced in dashboard and tooltip views when safe.
+- Imported snapshot quota windows can now appear in the status bar, tooltip, and dashboard alongside live quota state.
+- Dashboard usage source defaults to Combined, with Local only and Snapshots only modes still available.
+- Dashboard history now uses range controls for 1W, 1M, 1Y, and ALL views, driving history bars, summary totals, usage distribution, and model distribution together.
+- Dashboard charts now use model-stacked history bars, improved empty-bin handling, larger donut visuals, cleaner center labels, and clearer provider labels.
+- Provider usage tabs now appear only when the selected source has data for that provider.
+- Model usage aggregation added for Claude, Codex, imported snapshots, local-history windows, dashboard rows, and tooltip summaries.
+- Claude local history parsing now tracks per-model aggregates and daily history buckets while ignoring incomplete malformed tail lines safely.
+- Codex local history parsing now uses completed-turn deltas, turn/model context, timestamps, per-model aggregates, and daily history buckets.
+- JSONL parsing now trims boundary NUL characters and shares line-break tail handling helpers.
+- Live quota status bar and tooltip formatting polished with quota indicators, reset countdown alignment, snapshot quota rows, model summaries, and clearer parse-error wording.
+- Snapshot validation hardened against forbidden content, unexpected fields, unsafe labels, unsupported schemas, unknown providers, and excessive imported file counts.
+- Manifest validation expanded for the new command, settings, configured snapshot paths, package exclusions, and copy that avoids unimplemented API-estimate claims.
+- README and contribution notes updated for combined dashboard usage, snapshot imports/exports, cross-machine labels, live quota defaults, and current privacy boundaries.
+
+**Scope notes:**
+
+- PromptFuel continues to display aggregate usage only.
+- PromptFuel does not display prompts, responses, transcripts, raw JSONL, local paths, usernames, secrets, tokens, raw provider responses, or raw provider payloads.
+- Snapshot imports and exports remain aggregate-only, with safe source labels permitted only after sanitization.
+- Live quota remains independent from the selected dashboard usage source.
+- `promptFuel.snapshotImportLabels` can restrict imported snapshots by machine/source label, and local-machine snapshots are skipped to avoid double-counting.
+- Live quota can still be disabled with `promptFuel.liveQuotaEnabled: false`.
+
 ## 0.5.0
 
 PromptFuel now centers live quota remaining values, reset countdowns, provider-isolated fallback states, and aggregate-only imported history as the release-ready experience.
