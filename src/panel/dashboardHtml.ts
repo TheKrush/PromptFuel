@@ -540,6 +540,7 @@ function buildHistoryRangeView(
   const binned = bins.map(bin => {
     const matching = points.filter(point => pointInBin(point, bin.start, bin.end));
     const providerSegments: DashboardHistoryProviderSegment[] = [];
+    const binModelRows: DashboardModelUsageAggregate[] = [];
     let totalTokens = 0;
     let totalAssistantMessages = 0;
     let totalCacheTokens = 0;
@@ -549,6 +550,7 @@ function buildHistoryRangeView(
       totalCacheTokens += point.totalCacheTokens ?? 0;
       mergeHistoryProviderSegments(providerSegments, point.providerSegments);
       mergeDashboardModelRows(modelRows, point.modelAggregates);
+      mergeDashboardModelRows(binModelRows, point.modelAggregates);
     }
     return {
       dateKey: formatDateKey(bin.start),
@@ -557,7 +559,7 @@ function buildHistoryRangeView(
       totalAssistantMessages,
       totalCacheTokens,
       providerSegments,
-      modelAggregates: [],
+      modelAggregates: sortDashboardModelRows(filterDominatedUnknownModels(binModelRows)),
     };
   });
   const totalTokens = binned.reduce((sum, point) => sum + point.totalTokens, 0);
@@ -704,7 +706,7 @@ function renderUsageHistoryChart(
       const bars = view.points.map(point => {
         const height = historyWindowBarHeight(point.totalTokens, view.maxTotalTokens);
         const isEmpty = point.totalTokens <= 0 && point.totalAssistantMessages <= 0;
-        const providerSegmentsHtml = renderHistoryProviderSegments(point.providerSegments, point.totalTokens);
+        const modelSegmentsHtml = renderHistoryModelSegments(point.modelAggregates, point.totalTokens);
         const tipData = esc(JSON.stringify({
           kind: 'history',
           title: point.label,
@@ -712,22 +714,25 @@ function renderUsageHistoryChart(
           messages: formatMessageCount(point.totalAssistantMessages),
           cache: point.totalCacheTokens ? formatTokenCount(point.totalCacheTokens) : '',
           source: groupKey.split('-')[0],
-          segments: point.providerSegments.filter(s => s.totalTokens > 0).map(s => ({
-            label: s.label,
-            provider: s.providerId,
-            tokens: formatTokenCount(s.totalTokens),
+          models: point.modelAggregates.filter(m => m.totalTokens > 0).slice(0, 5).map(m => ({
+            label: m.modelLabel,
+            color: modelColorIndex(m.modelLabel),
+            tokens: formatTokenCount(m.totalTokens),
           })),
         }));
         return `
       <div class="usage-history-bin">
         <div class="usage-history-bar${isEmpty ? ' empty' : ''}" data-history-bin-bar="${esc(point.dateKey)}" tabindex="0" data-pf-tip="${tipData}" role="meter" aria-label="${esc(`${point.label}: ${formatTokenCount(point.totalTokens)}, ${formatMessageCount(point.totalAssistantMessages)}`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(height)}">
           <div class="usage-history-bar-fill stacked" style="height: ${esc(height)}%">
-            ${providerSegmentsHtml}
+            ${modelSegmentsHtml}
           </div>
         </div>
         <div class="usage-history-bin-label">${esc(point.label)}</div>
       </div>`;
       }).join('\n');
+      const legendItems = view.modelRows.slice(0, 8).map(row =>
+        `<span><span class="usage-history-legend-swatch" style="background: ${modelColorVar(row.modelLabel)}; border-radius: 2px"></span>${esc(row.modelLabel)}</span>`
+      ).join('\n');
 
       return `
       <div class="usage-history-range-group" data-history-range-group="${esc(groupKey)}"${isVisible ? '' : ' hidden'}>
@@ -744,6 +749,7 @@ function renderUsageHistoryChart(
           <div class="history-summary-card"><span>Activity</span><strong>${esc(formatMessageCount(view.totalAssistantMessages))}</strong></div>
           ${view.totalCacheTokens > 0 ? `<div class="history-summary-card"><span>Cache</span><strong>${esc(formatTokenCount(view.totalCacheTokens))}</strong></div>` : ''}
         </div>
+        ${legendItems ? `<div class="usage-history-legend" aria-label="Model color legend">${legendItems}</div>` : ''}
       </div>`;
     })).join('\n');
 
@@ -763,26 +769,23 @@ function renderUsageHistoryChart(
         ${rangeButtons}
       </div>
       ${groups}
-      <div class="usage-history-legend" aria-label="Provider color legend">
-        <span><span class="usage-history-legend-swatch claude"></span>Claude</span>
-        <span><span class="usage-history-legend-swatch codex"></span>Codex</span>
-      </div>
       <div class="usage-history-chart-copy">${esc(chartCopy)}</div>
     </div>`;
 }
 
-function renderHistoryProviderSegments(
-  segments: Array<{ providerId: string; label: string; totalTokens: number }>,
+function renderHistoryModelSegments(
+  models: ReadonlyArray<DashboardModelUsageAggregate>,
   totalTokens: number,
 ): string {
-  if (totalTokens <= 0) {
+  if (totalTokens <= 0 || !models || models.length === 0) {
     return '';
   }
-  return segments
-    .filter(segment => segment.totalTokens > 0)
-    .map(segment => {
-      const height = distributionWidth(segment.totalTokens, totalTokens);
-      return `<div class="usage-history-bar-segment ${esc(segment.providerId)}" style="height: ${esc(height)}%" title="${esc(`${segment.label}: ${formatTokenCount(segment.totalTokens)}`)}"></div>`;
+  return models
+    .filter(model => model.totalTokens > 0)
+    .slice(0, 8)
+    .map(model => {
+      const height = distributionWidth(model.totalTokens, totalTokens);
+      return `<div class="usage-history-bar-segment" style="height: ${esc(height)}%; background: ${modelColorVar(model.modelLabel)}"></div>`;
     }).join('');
 }
 
@@ -984,7 +987,6 @@ function renderModelBreakdownDistribution(
         <span class="usage-model-swatch" aria-hidden="true"></span>
         <span class="usage-model-provider">${esc(providerLabel)}</span>
         <span class="usage-model-name">${esc(row.modelLabel)}</span>
-        <span class="usage-model-bar" aria-hidden="true"><span class="usage-model-bar-fill" style="width: ${esc(width)}%"></span></span>
         <span class="usage-model-value">${esc(formatTokenCount(tokens))}</span>
         <span class="usage-model-count">${esc(formatMessageCount(messages))}</span>
         <span class="usage-model-percent">${esc(percent)}</span>
@@ -1823,7 +1825,7 @@ export function buildDashboardHtml(
   .usage-history-bar-fill {
     width: 100%;
     min-height: 2px;
-    background: var(--pf-provider-claude);
+    background: rgba(127,127,127,0.22);
     border-radius: 3px 3px 0 0;
     display: flex;
     flex-direction: column-reverse;
@@ -1833,13 +1835,6 @@ export function buildDashboardHtml(
   .usage-history-bar-segment {
     width: 100%;
     min-height: 1px;
-  }
-  .usage-history-bar-segment.claude {
-    background: var(--pf-provider-claude);
-  }
-  .usage-history-bar-segment.codex {
-    background-color: var(--pf-provider-codex);
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.38) 0, rgba(255,255,255,0.38) 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px);
   }
   .usage-history-bar.empty {
     background: rgba(127,127,127,0.07);
@@ -1879,17 +1874,11 @@ export function buildDashboardHtml(
     gap: 5px;
   }
   .usage-history-legend-swatch {
-    width: 18px;
+    width: 12px;
     height: 8px;
     border-radius: 2px;
     border: 1px solid var(--pf-keyline);
-  }
-  .usage-history-legend-swatch.claude {
-    background: var(--pf-provider-claude);
-  }
-  .usage-history-legend-swatch.codex {
-    background-color: var(--pf-provider-codex);
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.38) 0, rgba(255,255,255,0.38) 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px);
+    flex: 0 0 auto;
   }
   .usage-history-empty,
   .usage-model-empty {
@@ -1959,7 +1948,7 @@ export function buildDashboardHtml(
   }
   .usage-model-row {
     display: grid;
-    grid-template-columns: 10px 52px minmax(60px, 1fr) 72px 64px 84px 36px;
+    grid-template-columns: 10px 52px minmax(60px, 1fr) 64px 84px 36px;
     gap: 8px;
     align-items: center;
     font-size: 11px;
@@ -1987,19 +1976,6 @@ export function buildDashboardHtml(
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .usage-model-bar {
-    height: 6px;
-    border-radius: 3px;
-    background: rgba(127,127,127,0.16);
-    overflow: hidden;
-  }
-  .usage-model-bar-fill {
-    display: block;
-    height: 100%;
-    border-radius: 3px;
-    background: var(--model-color, var(--vscode-focusBorder, #007acc));
-    transition: width 0.25s;
   }
   .usage-model-value,
   .usage-model-count,
@@ -2451,9 +2427,8 @@ export function buildDashboardHtml(
       gap: 2px;
     }
     .usage-model-row {
-      grid-template-columns: 10px 44px minmax(0, 1fr) auto;
+      grid-template-columns: 10px 44px minmax(0, 1fr) auto auto;
     }
-    .usage-model-bar,
     .usage-model-count,
     .usage-model-percent {
       grid-column: 3 / -1;
@@ -2664,7 +2639,6 @@ export function buildDashboardHtml(
           var valueEl = row.querySelector('.usage-model-value');
           var countEl = row.querySelector('.usage-model-count');
           var percentEl = row.querySelector('.usage-model-percent');
-          var fillEl = row.querySelector('.usage-model-bar-fill');
           row.hidden = !visible;
           row.style.order = rank;
           row.setAttribute('title', title);
@@ -2679,9 +2653,6 @@ export function buildDashboardHtml(
           }
           if (percentEl) {
             percentEl.textContent = percent;
-          }
-          if (fillEl) {
-            fillEl.style.width = width + '%';
           }
         });
       });
@@ -2749,14 +2720,18 @@ export function buildDashboardHtml(
       buildPfTipStat(stats, 'Activity', payload.messages || '0 messages');
       if (payload.cache) { buildPfTipStat(stats, 'Cache', payload.cache); }
       tip.appendChild(stats);
-      if (payload.segments && payload.segments.length > 1) {
+      if (payload.models && payload.models.length > 0) {
         var list = document.createElement('div'); list.className = 'pf-tip-list';
-        buildPfTipListTitle(list, 'Providers');
-        payload.segments.forEach(function(seg) {
-          var row = document.createElement('div'); row.className = 'pf-tip-provider-row ' + (seg.provider || '');
-          var lbl = document.createElement('span'); lbl.textContent = seg.label || '';
-          var val = document.createElement('span'); val.textContent = seg.tokens || '';
-          row.appendChild(lbl); row.appendChild(val); list.appendChild(row);
+        buildPfTipListTitle(list, 'Top models');
+        payload.models.forEach(function(m) {
+          var row = document.createElement('div'); row.className = 'pf-tip-model-row';
+          var labelWrap = document.createElement('span'); labelWrap.className = 'pf-tip-model-label';
+          var swatch = document.createElement('span'); swatch.className = 'pf-tip-swatch';
+          swatch.style.background = 'var(--pf-model-' + (m.color || 0) + ')';
+          var lbl = document.createElement('span'); lbl.textContent = m.label || '';
+          labelWrap.appendChild(swatch); labelWrap.appendChild(lbl);
+          var val = document.createElement('span'); val.textContent = m.tokens || '';
+          row.appendChild(labelWrap); row.appendChild(val); list.appendChild(row);
         });
         tip.appendChild(list);
       }

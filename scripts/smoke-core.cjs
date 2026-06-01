@@ -1161,6 +1161,11 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
         totalTokens: 1000,
         totalAssistantMessages: 10,
         filesFound: 1,
+        modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 10 }],
+        localHistoryModelWindows: {
+          today: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 400, totalAssistantMessages: 4 }],
+          last5h: [], last7d: [], all: [],
+        },
         localHistoryWindows: localHistoryWindowsFixture({
           today: { tokens: 400, messages: 4 },
           last5h: { tokens: 150, messages: 2 },
@@ -1174,6 +1179,11 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
         totalTokens: 2000,
         totalAssistantMessages: 20,
         filesFound: 1,
+        modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 2000, totalAssistantMessages: 20 }],
+        localHistoryModelWindows: {
+          today: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 600, totalAssistantMessages: 6 }],
+          last5h: [], last7d: [], all: [],
+        },
         localHistoryWindows: localHistoryWindowsFixture({
           today: { tokens: 600, messages: 6 },
           last5h: { tokens: 300, messages: 3 },
@@ -1194,11 +1204,12 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
   assert.ok(html.includes('data-history-range="1Y"'), `expected 1Y history range control`);
   assert.ok(html.includes('data-history-range="ALL"'), `expected ALL history range control`);
   assert.ok(html.includes('data-history-range-group="local-1M"'), `expected daily history range bins`);
-  assert.ok(html.includes('usage-history-bar-segment claude'), `expected Claude chart segment`);
-  assert.ok(html.includes('usage-history-bar-segment codex'), `expected Codex chart segment`);
+  assert.ok(html.includes('class="usage-history-bar-segment"'), `expected model-stacked chart segments`);
+  assert.ok(!html.includes('usage-history-bar-segment claude'), `provider-class segments should be replaced by model-color segments`);
+  assert.ok(!html.includes('usage-history-bar-segment codex'), `provider-class segments should be replaced by model-color segments`);
   assert.ok(html.includes('--pf-provider-claude: var(--vscode-charts-blue'), `expected AgentBridge Claude blue`);
   assert.ok(html.includes('--pf-provider-codex: var(--vscode-charts-purple'), `expected AgentBridge Codex purple`);
-  assert.ok(html.includes('repeating-linear-gradient'), `expected Codex hatched visual treatment`);
+  assert.ok(html.includes('--pf-model-0:'), `expected model color palette variables`);
   assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected source/window changes to update charts`);
 });
 
@@ -2146,8 +2157,9 @@ test('dashboard: model breakdown progress bars use fixed column alignment', () =
   assert.ok(html.includes('10px 52px'), `expected fixed-width swatch and provider columns for bar alignment`);
   const modelRowCss = html.match(/\.usage-model-row\s*\{[^}]+\}/);
   assert.ok(modelRowCss, `expected .usage-model-row CSS rule`);
-  assert.ok(modelRowCss[0].includes('72px'), `expected fixed-width bar column in model row grid`);
-  assert.ok(!modelRowCss[0].includes('minmax(80px, 1fr)'), `variable-width bar column should be replaced with fixed-width`);
+  assert.ok(!modelRowCss[0].includes('minmax(80px, 1fr)'), `variable-width bar column should not appear in model row grid`);
+  assert.ok(!html.includes('class="usage-model-bar"'), `progress bar element should not render in model rows`);
+  assert.ok(!html.includes('.usage-model-bar-fill'), `bar fill CSS should be removed`);
 });
 
 // === Live quota: formatLiveQuota integration ===
