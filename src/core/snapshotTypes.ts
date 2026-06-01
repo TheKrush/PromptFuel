@@ -54,6 +54,12 @@ export interface PromptFuelSnapshotProviderAggregate {
   modelAggregates?: ModelUsageAggregate[];
   modelWindowTotals?: Partial<ModelUsageWindowAggregateMap>;
   sourceLabel?: string;
+  fiveHourUsedPercent?: number;
+  sevenDayUsedPercent?: number;
+  fiveHourResetAtEpochSeconds?: number;
+  sevenDayResetAtEpochSeconds?: number;
+  snapshotStale?: boolean;
+  snapshotLaneLabel?: string;
 }
 
 export interface PromptFuelSnapshotHistoryBucket {
@@ -87,6 +93,12 @@ export function cloneSnapshotState(state: PromptFuelSnapshotState): PromptFuelSn
       ...(provider.modelAggregates ? { modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) } : {}),
       ...(provider.modelWindowTotals ? { modelWindowTotals: cloneModelUsageWindowAggregates(provider.modelWindowTotals) } : {}),
       ...(provider.sourceLabel ? { sourceLabel: provider.sourceLabel } : {}),
+      ...(provider.fiveHourUsedPercent !== undefined ? { fiveHourUsedPercent: provider.fiveHourUsedPercent } : {}),
+      ...(provider.sevenDayUsedPercent !== undefined ? { sevenDayUsedPercent: provider.sevenDayUsedPercent } : {}),
+      ...(provider.fiveHourResetAtEpochSeconds !== undefined ? { fiveHourResetAtEpochSeconds: provider.fiveHourResetAtEpochSeconds } : {}),
+      ...(provider.sevenDayResetAtEpochSeconds !== undefined ? { sevenDayResetAtEpochSeconds: provider.sevenDayResetAtEpochSeconds } : {}),
+      ...(provider.snapshotStale !== undefined ? { snapshotStale: provider.snapshotStale } : {}),
+      ...(provider.snapshotLaneLabel ? { snapshotLaneLabel: provider.snapshotLaneLabel } : {}),
     })),
     snapshotCount: state.snapshotCount,
     lastReadEpochMs: state.lastReadEpochMs,

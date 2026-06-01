@@ -84,8 +84,10 @@ const expectedSettings = [
   'promptFuel.dashboardUsageSource',
   'promptFuel.enabledProviders',
   'promptFuel.liveQuotaEnabled',
+  'promptFuel.localMachineLabel',
   'promptFuel.refreshIntervalMinutes',
   'promptFuel.snapshotExportPath',
+  'promptFuel.snapshotImportLabels',
   'promptFuel.snapshotImportPath',
 ];
 const actualSettings = Object.keys(properties).sort();
@@ -121,6 +123,13 @@ if (properties['promptFuel.snapshotImportPath']?.default !== '') {
 }
 if (properties['promptFuel.snapshotExportPath']?.default !== '') {
   fail('setting "promptFuel.snapshotExportPath" default should be empty');
+}
+if (properties['promptFuel.localMachineLabel']?.default !== '') {
+  fail('setting "promptFuel.localMachineLabel" default should be empty');
+}
+const snapshotImportLabels = properties['promptFuel.snapshotImportLabels']?.default;
+if (!Array.isArray(snapshotImportLabels) || snapshotImportLabels.length !== 0) {
+  fail('setting "promptFuel.snapshotImportLabels" default should be []');
 }
 const defaultProviders = properties['promptFuel.enabledProviders']?.default;
 if (!Array.isArray(defaultProviders) || defaultProviders.join(',') !== 'claude,codex') {

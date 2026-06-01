@@ -456,6 +456,12 @@ function validateImportedProvider(
   if (!normalized) {
     return undefined;
   }
+  const fiveHourUsedPercent = readBoundedPercent(value.fiveHourUsedPercent);
+  const sevenDayUsedPercent = readBoundedPercent(value.sevenDayUsedPercent);
+  const fiveHourResetAtEpochSeconds = readEpochSeconds(value.fiveHourResetAtEpochSeconds);
+  const sevenDayResetAtEpochSeconds = readEpochSeconds(value.sevenDayResetAtEpochSeconds);
+  const snapshotStale = value.stale === true;
+  const snapshotLaneLabel = sanitizeSnapshotSourceLabel(value.laneLabel);
 
   return {
     providerId: value.provider,
@@ -466,6 +472,12 @@ function validateImportedProvider(
     modelAggregates: normalized.modelAggregates,
     modelWindowTotals: normalized.modelWindowTotals,
     sourceLabel,
+    ...(fiveHourUsedPercent !== undefined ? { fiveHourUsedPercent } : {}),
+    ...(sevenDayUsedPercent !== undefined ? { sevenDayUsedPercent } : {}),
+    ...(fiveHourResetAtEpochSeconds !== undefined ? { fiveHourResetAtEpochSeconds } : {}),
+    ...(sevenDayResetAtEpochSeconds !== undefined ? { sevenDayResetAtEpochSeconds } : {}),
+    ...(snapshotStale ? { snapshotStale } : {}),
+    ...(snapshotLaneLabel ? { snapshotLaneLabel } : {}),
   };
 }
 
@@ -850,6 +862,20 @@ function readEpochMs(value: unknown): number | undefined {
     return readNonNegativeInteger(parsed);
   }
   return undefined;
+}
+
+function readBoundedPercent(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+    return undefined;
+  }
+  return value;
+}
+
+function readEpochSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
+    return undefined;
+  }
+  return value;
 }
 
 function readNonNegativeInteger(value: unknown): number | undefined {

@@ -6,7 +6,7 @@ import {
   sortModelUsageAggregates,
   type ModelUsageAggregate,
 } from './modelUsage';
-import { formatSnapshotSourceLabels } from './snapshotTypes';
+import { formatSnapshotSourceLabels, type PromptFuelSnapshotProviderAggregate } from './snapshotTypes';
 
 const STATUS_PROVIDER_SEPARATOR = ' | ';
 const STATUS_WINDOW_JOINER = ' \u00B7 ';
@@ -107,14 +107,18 @@ export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
     return 'PromptFuel: live quota disabled';
   }
 
-  if (status.liveQuotaStates.length > 0) {
-    return formatLiveQuotaStatusBarTextFromLive(status);
+  const parts = formatLiveQuotaStatusBarParts(status);
+  const liveProviderIds = new Set(status.liveQuotaStates.map(state => state.providerId));
+  parts.push(...formatSnapshotQuotaStatusBarParts(status, liveProviderIds));
+
+  if (parts.length > 0) {
+    return parts.join(STATUS_PROVIDER_SEPARATOR);
   }
 
   return 'PromptFuel: live quota loading';
 }
 
-function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string {
+function formatLiveQuotaStatusBarParts(status: PromptFuelStatus): string[] {
   const parts: string[] = [];
 
   for (const liveState of status.liveQuotaStates) {
@@ -142,11 +146,7 @@ function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string 
     parts.push(`${label} ${freshnessPrefix}${windowLabels.join(STATUS_WINDOW_JOINER)}`);
   }
 
-  if (parts.length === 0) {
-    return 'PromptFuel: live quota unavailable';
-  }
-
-  return parts.join(STATUS_PROVIDER_SEPARATOR);
+  return parts;
 }
 
 function getStatusBarWindows(liveState: LiveQuotaStatus): LiveQuotaWindow[] {
@@ -179,6 +179,31 @@ function formatStatusBarWindow(
     : window.windowId;
 
   return `${label} ${indicator} ${remaining}`;
+}
+
+function formatSnapshotQuotaStatusBarParts(
+  status: PromptFuelStatus,
+  liveProviderIds: ReadonlySet<string>,
+): string[] {
+  return status.snapshotState.providers
+    .filter(provider => !liveProviderIds.has(provider.providerId))
+    .map(formatSnapshotQuotaStatusBarPart)
+    .filter((part): part is string => part !== undefined);
+}
+
+function formatSnapshotQuotaStatusBarPart(
+  provider: PromptFuelSnapshotProviderAggregate,
+): string | undefined {
+  const windows = getSnapshotQuotaWindows(provider);
+  if (windows.length === 0) {
+    return undefined;
+  }
+
+  const labels = windows.map(window => {
+    const remaining = Math.round(window.remainingPercentage);
+    return `${formatQuotaIndicator(window.remainingPercentage)}${remaining}%`;
+  });
+  return `${getSnapshotQuotaLabel(provider)} ${labels.join(STATUS_WINDOW_JOINER)}`;
 }
 
 function formatNoWindowLiveState(label: string, freshness: LiveQuotaFreshness): string {
@@ -304,6 +329,7 @@ function formatQuotaRows(
     const liveState = status.liveQuotaStates.find(s => s.providerId === providerId);
     rows.push(...formatQuotaProviderRows(providerId, liveState, status.liveQuotaEnabled, hasLiveQuota));
   }
+  rows.push(...formatSnapshotQuotaRows(status));
 
   return rows;
 }
@@ -356,6 +382,81 @@ function formatQuotaProviderRows(
   ));
 }
 
+function formatSnapshotQuotaRows(status: PromptFuelStatus): string[] {
+  const rows: string[] = [];
+  for (const provider of status.snapshotState.providers) {
+    const windows = getSnapshotQuotaWindows(provider);
+    if (windows.length === 0) {
+      continue;
+    }
+
+    const note = provider.snapshotStale
+      ? 'snap \u26A0 stale'
+      : `snap ${formatSnapshotAgeLabel(provider.generatedAtEpochMs)}`;
+    for (const window of windows) {
+      rows.push(formatQuotaTableRow(
+        getSnapshotQuotaLabel(provider),
+        window.windowId,
+        formatQuotaIndicator(window.remainingPercentage),
+        `**${formatPercentage(window.remainingPercentage)}**`,
+        formatQuotaBar(window),
+        window.resetAtEpochSeconds !== undefined
+          ? formatCountdownLabel(window.resetAtEpochSeconds * 1000)
+          : '-',
+        note,
+      ));
+    }
+  }
+  return rows;
+}
+
+function getSnapshotQuotaWindows(
+  provider: PromptFuelSnapshotProviderAggregate,
+): Array<{ windowId: '7d' | '5h'; remainingPercentage: number; resetAtEpochSeconds?: number }> {
+  const windows: Array<{ windowId: '7d' | '5h'; remainingPercentage: number; resetAtEpochSeconds?: number }> = [];
+  if (provider.sevenDayUsedPercent !== undefined) {
+    windows.push({
+      windowId: '7d',
+      remainingPercentage: clampPercentage(100 - provider.sevenDayUsedPercent),
+      ...(provider.sevenDayResetAtEpochSeconds !== undefined
+        ? { resetAtEpochSeconds: provider.sevenDayResetAtEpochSeconds }
+        : {}),
+    });
+  }
+  if (provider.fiveHourUsedPercent !== undefined) {
+    windows.push({
+      windowId: '5h',
+      remainingPercentage: clampPercentage(100 - provider.fiveHourUsedPercent),
+      ...(provider.fiveHourResetAtEpochSeconds !== undefined
+        ? { resetAtEpochSeconds: provider.fiveHourResetAtEpochSeconds }
+        : {}),
+    });
+  }
+  return windows;
+}
+
+function getSnapshotQuotaLabel(provider: PromptFuelSnapshotProviderAggregate): string {
+  return provider.snapshotLaneLabel
+    ?? PROVIDER_LABELS[provider.providerId as ProviderId]
+    ?? provider.providerId;
+}
+
+function formatSnapshotAgeLabel(generatedAtEpochMs: number, nowMs: number = Date.now()): string {
+  const elapsedMs = Math.max(0, nowMs - generatedAtEpochMs);
+  const minutes = Math.floor(elapsedMs / 60000);
+  if (minutes < 1) {
+    return '<1m ago';
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 function formatQuotaTableRow(
   provider: string,
   window: string,
@@ -377,7 +478,7 @@ function formatRemainingLabel(window: LiveQuotaWindow): string {
   return `**${percentage}**`;
 }
 
-function formatQuotaBar(window: LiveQuotaWindow): string {
+function formatQuotaBar(window: { usedPercentage?: number; remainingPercentage?: number }): string {
   const remaining = getRemainingPercentage(window);
   if (remaining === undefined) {
     return '';

@@ -746,6 +746,15 @@ function snapshotStateFixture(providers, snapshotCount = 1) {
   };
 }
 
+function snapshotQuotaProvider(overrides = {}) {
+  return {
+    providerId: overrides.providerId ?? 'codex',
+    generatedAtEpochMs: overrides.generatedAtEpochMs ?? Date.now(),
+    aggregate: aggregateFixture(100, 1),
+    ...overrides,
+  };
+}
+
 function dashboardTabPanel(html, tabId) {
   const marker = `data-dashboard-tab-panel="${tabId}"`;
   const markerIndex = html.indexOf(marker);
@@ -2554,6 +2563,105 @@ test('formatTooltip: cached freshness shown correctly', () => {
   const updated = applyLiveQuotaResults(status, [cachedLiveQuota]);
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('CACHED'), `expected "CACHED" freshness in tooltip`);
+});
+
+test('formatTooltip: snapshot quota shows 7d and 5h rows with age note', () => {
+  const generatedAtEpochMs = Date.now() - 5 * 60 * 1000;
+  const status = applySnapshotReadResults(createInitialStatus(['codex']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'codex',
+      generatedAtEpochMs,
+      snapshotLaneLabel: 'Remote Codex',
+      sevenDayUsedPercent: 27,
+      fiveHourUsedPercent: 92,
+      sevenDayResetAtEpochSeconds: Math.floor((Date.now() + 7 * 24 * 60 * 60 * 1000) / 1000),
+      fiveHourResetAtEpochSeconds: Math.floor((Date.now() + 5 * 60 * 60 * 1000) / 1000),
+    }),
+  ]));
+  const tooltip = formatTooltip(status);
+  const sevenDayIndex = tooltip.indexOf('| Remote Codex | 7d | \uD83D\uDFE2 | **73%**');
+  const fiveHourIndex = tooltip.indexOf('| Remote Codex | 5h | \uD83D\uDD34 | **8%**');
+  assert.ok(sevenDayIndex >= 0, `expected snapshot 7d row in tooltip`);
+  assert.ok(fiveHourIndex >= 0, `expected snapshot 5h row in tooltip`);
+  assert.ok(sevenDayIndex < fiveHourIndex, `expected snapshot 7d row before 5h row`);
+  assert.ok(tooltip.includes('snap 5m ago'), `expected snapshot age note in tooltip`);
+});
+
+test('formatTooltip: snapshot quota with one window shows one row', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'claude',
+      generatedAtEpochMs: Date.now() - 60 * 1000,
+      snapshotLaneLabel: 'Remote Claude',
+      sevenDayUsedPercent: 10,
+    }),
+  ]));
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('| Remote Claude | 7d | \uD83D\uDD35 | **90%**'), `expected one snapshot 7d row`);
+  assert.ok(!tooltip.includes('| Remote Claude | 5h |'), `should not invent missing snapshot 5h row`);
+});
+
+test('formatTooltip: stale snapshot quota shows stale note', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['codex']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'codex',
+      generatedAtEpochMs: Date.now() - 60 * 60 * 1000,
+      snapshotLaneLabel: 'Remote Codex',
+      sevenDayUsedPercent: 55,
+      snapshotStale: true,
+    }),
+  ]));
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('snap \u26A0 stale'), `expected stale snapshot note`);
+});
+
+test('formatStatusBarText: snapshot quota is appended after live quota', () => {
+  const withSnapshot = applySnapshotReadResults(createInitialStatus(['claude', 'codex']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'codex',
+      generatedAtEpochMs: Date.now() - 2 * 60 * 1000,
+      snapshotLaneLabel: 'Remote Codex',
+      sevenDayUsedPercent: 10,
+    }),
+  ]));
+  const status = applyLiveQuotaResults(withSnapshot, [syntheticLiveQuota]);
+  const text = formatStatusBarText(status);
+  const liveIndex = text.indexOf('Claude');
+  const snapshotIndex = text.indexOf('Remote Codex \uD83D\uDD3590%');
+  assert.ok(liveIndex >= 0, `expected live quota in status bar "${text}"`);
+  assert.ok(snapshotIndex > liveIndex, `expected snapshot quota after live quota "${text}"`);
+  assert.ok(text.includes(' | '), `expected provider separator in "${text}"`);
+});
+
+test('formatStatusBarText: live provider takes precedence over matching snapshot quota', () => {
+  const withSnapshot = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'claude',
+      generatedAtEpochMs: Date.now() - 2 * 60 * 1000,
+      snapshotLaneLabel: 'Remote Claude',
+      sevenDayUsedPercent: 10,
+    }),
+  ]));
+  const status = applyLiveQuotaResults(withSnapshot, [syntheticLiveQuota]);
+  const text = formatStatusBarText(status);
+  assert.ok(text.includes('Claude'), `expected live Claude quota in "${text}"`);
+  assert.ok(!text.includes('Remote Claude'), `matching snapshot provider should be excluded from "${text}"`);
+  assert.ok(!text.includes('\uD83D\uDD3590%'), `matching snapshot percentage should be excluded from "${text}"`);
+});
+
+test('formatTooltip and status bar omit snapshots without quota windows', () => {
+  const status = applySnapshotReadResults(createInitialStatus(['codex']), snapshotStateFixture([
+    snapshotQuotaProvider({
+      providerId: 'codex',
+      generatedAtEpochMs: Date.now() - 2 * 60 * 1000,
+      snapshotLaneLabel: 'Remote Codex',
+    }),
+  ]));
+  const tooltip = formatTooltip(status);
+  const text = formatStatusBarText(status);
+  assert.ok(!tooltip.includes('| Remote Codex | 7d |'), `should not render missing snapshot 7d row`);
+  assert.ok(!tooltip.includes('| Remote Codex | 5h |'), `should not render missing snapshot 5h row`);
+  assert.strictEqual(text, 'PromptFuel: live quota loading');
 });
 
 // --- Helper: freshness labels ---
