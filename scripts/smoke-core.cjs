@@ -258,7 +258,7 @@ test('formatTooltip: loaded state with parse errors shows count', () => {
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1, parseErrors: 3 }],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Parse errors: 3 lines skipped'), `expected parse error skipped wording in tooltip`);
+  assert.ok(tooltip.includes('Skipped local-history lines: 3'), `expected skipped-line count in tooltip`);
 });
 
 test('formatTooltip: no parse errors when clean', () => {
@@ -267,10 +267,10 @@ test('formatTooltip: no parse errors when clean', () => {
     [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1 }],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(!tooltip.includes('Parse errors'), `should not show parse errors when 0`);
+  assert.ok(!tooltip.includes('Skipped local-history lines'), `should not show skipped-line count when 0`);
 });
 
-test('formatTooltip: total tokens and messages shown for loaded providers', () => {
+test('formatTooltip: usage history totals are omitted', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
@@ -279,9 +279,10 @@ test('formatTooltip: total tokens and messages shown for loaded providers', () =
     ],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Total local history:'), `expected "Total local history:" in tooltip`);
-  assert.ok(tooltip.includes('15.0K'), `expected "15.0K" total in tooltip`);
-  assert.ok(tooltip.includes('5 messages'), `expected "5 messages" total in tooltip`);
+  assert.ok(!tooltip.includes('## Usage history'), `usage history section should be omitted`);
+  assert.ok(!tooltip.includes('Total:'), `usage history totals should be omitted`);
+  assert.ok(!tooltip.includes('15.0K'), `token totals should be omitted`);
+  assert.ok(!tooltip.includes('5 messages'), `message totals should be omitted`);
 });
 
 // === Tooltip: local history disclaimers ===
@@ -289,8 +290,16 @@ test('formatTooltip: total tokens and messages shown for loaded providers', () =
 test('formatTooltip: default does not lead with local history only', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('State: LOADING'), `expected LOADING state in tooltip`);
   assert.ok(tooltip.includes('Live quota loading'), `expected "Live quota loading" in tooltip`);
   assert.ok(!tooltip.includes('Local history only'), `should not lead with local history only`);
+});
+
+test('formatTooltip: no enabled providers shows no live quota data', () => {
+  const status = createInitialStatus([]);
+  const tooltip = formatTooltip(status);
+  assert.ok(tooltip.includes('State: NO DATA'), `expected NO DATA state in tooltip`);
+  assert.ok(tooltip.includes('No live quota data.'), `expected calm no-data state in tooltip`);
 });
 
 test('formatTooltip: explicit opt-out shows Live quota disabled', () => {
@@ -302,13 +311,13 @@ test('formatTooltip: explicit opt-out shows Live quota disabled', () => {
 test('formatTooltip: reports snapshot state before first snapshot read', () => {
   const status = createInitialStatus(['claude']);
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Imported snapshots: not checked yet.'), `expected not-checked snapshot state in tooltip`);
+  assert.ok(tooltip.includes('Snapshots: not checked'), `expected not-checked snapshot state in tooltip`);
 });
 
 test('formatTooltip: reports no imported snapshots after snapshot read', () => {
   const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([], 0));
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Imported snapshots: none found.'), `expected empty snapshot state in tooltip`);
+  assert.ok(tooltip.includes('Snapshots: none'), `expected empty snapshot state in tooltip`);
 });
 
 test('formatTooltip: reports imported aggregate snapshot state', () => {
@@ -318,12 +327,12 @@ test('formatTooltip: reports imported aggregate snapshot state', () => {
     aggregate: aggregateFixture(500, 5),
   }]));
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Imported snapshots: 1 aggregate snapshot, 1 provider aggregate.'), `expected imported snapshot state in tooltip`);
+  assert.ok(tooltip.includes('Snapshots: available'), `expected imported snapshot state in tooltip`);
 });
 
-// === Tooltip: provider splits still exist ===
+// === Tooltip: local usage details omitted ===
 
-test('formatTooltip: provider token splits still present', () => {
+test('formatTooltip: provider token splits omitted', () => {
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
@@ -332,10 +341,10 @@ test('formatTooltip: provider token splits still present', () => {
     ],
   );
   const tooltip = formatTooltip(status);
-  assert.ok(tooltip.includes('Claude'), `expected "Claude" provider line in tooltip`);
-  assert.ok(tooltip.includes('Codex'), `expected "Codex" provider line in tooltip`);
-  assert.ok(tooltip.includes('10.0K'), `expected "10.0K" for Claude in tooltip`);
-  assert.ok(tooltip.includes('5.0K'), `expected "5.0K" for Codex in tooltip`);
+  assert.ok(tooltip.includes('Claude'), `expected "Claude" quota row in tooltip`);
+  assert.ok(tooltip.includes('Codex'), `expected "Codex" quota row in tooltip`);
+  assert.ok(!tooltip.includes('10.0K'), `should omit "10.0K" local usage from tooltip`);
+  assert.ok(!tooltip.includes('5.0K'), `should omit "5.0K" local usage from tooltip`);
 });
 
 // === formatTokenCount ===
@@ -1496,7 +1505,7 @@ test('formatStatusBarText: live quota available shows remaining percentages', ()
     lastUpdatedEpochMs: now,
   }]);
   const t = formatStatusBarText(updated);
-  assert.ok(t.startsWith('PromptFuel'), `expected PromptFuel prefix in "${t}"`);
+  assert.ok(!t.startsWith('PromptFuel'), `live quota status should omit PromptFuel prefix in "${t}"`);
   assert.ok(t.includes('Claude'), `expected provider label in "${t}"`);
   assert.ok(t.includes('7d'), `expected 7d window in "${t}"`);
   assert.ok(t.includes('28%'), `expected 7d remaining percentage in "${t}"`);
@@ -1582,7 +1591,7 @@ test('formatStatusBarText: live quota unavailable shows safe state', () => {
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude unavailable');
+  assert.strictEqual(t, 'Claude unavailable');
   assert.ok(!t.includes('local history'), `should prefer live quota state over local fallback "${t}"`);
 });
 
@@ -1600,7 +1609,7 @@ test('formatStatusBarText: live quota error shows safe state', () => {
     },
   ]);
   const t = formatStatusBarText(updated);
-  assert.strictEqual(t, 'PromptFuel Claude unavailable');
+  assert.strictEqual(t, 'Claude unavailable');
   assert.ok(!t.includes('secret'), `should not leak secrets "${t}"`);
   assert.ok(!t.includes('.jsonl'), `should not leak file paths "${t}"`);
 });
@@ -1630,7 +1639,7 @@ test('formatStatusBarText: multiple providers with live quota show remaining val
   assert.ok(!t.includes('used'), `status bar should not show used quota "${t}"`);
 });
 
-test('formatStatusBarText: stale quota keeps quota display with stale marker', () => {
+test('formatStatusBarText: stale quota keeps quota display without stale marker', () => {
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [{
     providerId: 'claude',
@@ -1642,7 +1651,7 @@ test('formatStatusBarText: stale quota keeps quota display with stale marker', (
   }]);
   const t = formatStatusBarText(updated);
   assert.ok(t.includes('Claude'), `expected provider label in "${t}"`);
-  assert.ok(t.includes('stale'), `expected stale marker in "${t}"`);
+  assert.ok(!t.includes('stale'), `status bar should not show stale marker in "${t}"`);
   assert.ok(t.includes('28%'), `expected 7d remaining percentage in "${t}"`);
   assert.ok(t.includes('8%'), `expected 5h remaining percentage in "${t}"`);
   assert.ok(!t.includes('used'), `status bar should not show used quota "${t}"`);
@@ -1671,7 +1680,7 @@ test('formatStatusBarText: mixed Claude stale and Codex live shows both provider
   const t = formatStatusBarText(updated);
   assert.ok(t.includes('Claude'), `expected Claude in "${t}"`);
   assert.ok(t.includes('Codex'), `expected Codex in "${t}"`);
-  assert.ok(t.includes('stale'), `expected stale marker in "${t}"`);
+  assert.ok(!t.includes('stale'), `status bar should not show stale marker in "${t}"`);
   for (const expected of ['28%', '8%', '73%', '85%']) {
     assert.ok(t.includes(expected), `expected remaining percentage ${expected} in "${t}"`);
   }
@@ -1685,8 +1694,14 @@ test('formatTooltip: live quota shows provider sections', () => {
   const updated = applyLiveQuotaResults(status, [syntheticLiveQuota]);
   const tooltip = formatTooltip(updated);
   assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
-  assert.ok(tooltip.includes('live'), `expected "live" freshness in tooltip`);
-  assert.ok(tooltip.includes('live quota [live]'), `expected live quota provider section`);
+  assert.ok(tooltip.includes('# PromptFuel'), `expected PromptFuel title`);
+  assert.ok(!tooltip.includes('# PromptFuel Quota'), `tooltip title should not repeat Quota`);
+  assert.ok(tooltip.includes('## Quota'), `expected quota section`);
+  assert.ok(!tooltip.includes('| Provider | Window |'), `quota table header should not show text labels`);
+  assert.ok(tooltip.includes('| Claude | 7d |'), `expected Claude 7d quota row`);
+  assert.ok(tooltip.includes('| LIVE |'), `expected LIVE state marker`);
+  assert.ok(tooltip.includes('<span style="color:'), `expected colored quota bar in tooltip`);
+  assert.ok(/\u25B0/.test(tooltip), `expected filled quota bar segments in tooltip`);
   assert.ok(!tooltip.includes('Live quota not enabled yet'), `should not show "not enabled" when live quota present`);
   assert.ok(!tooltip.includes('displayMode'), `tooltip should not mention displayMode`);
 });
@@ -1703,8 +1718,9 @@ test('formatTooltip: live and unavailable mixed state is sanitized', () => {
     },
   ]);
   const tooltip = formatTooltip(updated);
-  assert.ok(tooltip.includes('Claude live quota [live]'), `expected Claude live section`);
-  assert.ok(tooltip.includes('Codex live quota [unavailable]'), `expected Codex unavailable section`);
+  assert.ok(tooltip.includes('| Claude | 7d |'), `expected Claude quota row`);
+  assert.ok(tooltip.includes('| LIVE |'), `expected Claude live state`);
+  assert.ok(tooltip.includes('| Codex | - | \u26AB | Live quota unavailable |  | - | UNAVAILABLE |'), `expected Codex unavailable row`);
   assert.ok(tooltip.includes('Live quota unavailable'), `expected sanitized unavailable message`);
   assert.ok(!tooltip.includes('secret-token'), `should not leak raw provider error`);
   assert.ok(!tooltip.includes('.jsonl'), `should not leak filenames`);
@@ -1733,11 +1749,12 @@ test('formatTooltip: stale and live mixed state shows cached note', () => {
     },
   ]);
   const tooltip = formatTooltip(updated);
-  assert.ok(tooltip.includes('Claude live quota [stale]'), `expected Claude stale section`);
-  assert.ok(tooltip.includes('Codex live quota [live]'), `expected Codex live section`);
-  assert.ok(tooltip.includes('cached') || tooltip.includes('Cached'), `expected cached/stale state represented safely`);
-  assert.ok(tooltip.includes('5h: 8% remaining'), `expected 5h remaining`);
-  assert.ok(tooltip.includes('7d: 73% remaining'), `expected 7d remaining`);
+  assert.ok(tooltip.includes('| Claude | 7d | \uD83D\uDFE0 | **28%**'), `expected Claude stale 7d row`);
+  assert.ok(tooltip.includes('| STALE |'), `expected STALE state marker`);
+  assert.ok(tooltip.includes('| Codex | 7d | \uD83D\uDFE2 | **73%**'), `expected Codex live 7d row`);
+  assert.ok(tooltip.includes('| LIVE |'), `expected LIVE state marker`);
+  assert.ok(tooltip.includes('| Claude | 5h | \uD83D\uDD34 | **8%**'), `expected 5h remaining`);
+  assert.ok(tooltip.includes('| Codex | 7d | \uD83D\uDFE2 | **73%**'), `expected 7d remaining`);
   assert.ok(!tooltip.includes('used'), `tooltip should not show used quota`);
 });
 
@@ -1745,8 +1762,8 @@ test('formatTooltip: disabled provider sections shown', () => {
   const status = createInitialStatus(['claude', 'codex'], false);
   const tooltip = formatTooltip(status);
   assert.ok(tooltip.includes('Live quota disabled'), `expected disabled top state`);
-  assert.ok(tooltip.includes('Claude live quota [disabled]'), `expected Claude disabled section`);
-  assert.ok(tooltip.includes('Codex live quota [disabled]'), `expected Codex disabled section`);
+  assert.ok(tooltip.includes('| Claude | - | \u26AB | Live quota disabled |  | - | DISABLED |'), `expected Claude disabled row`);
+  assert.ok(tooltip.includes('| Codex | - | \u26AB | Live quota disabled |  | - | DISABLED |'), `expected Codex disabled row`);
 });
 
 test('formatTooltip: live quota error shows sanitized label', () => {
@@ -1828,8 +1845,8 @@ test('formatTooltip: stale freshness shown correctly', () => {
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [staleLiveQuota]);
   const tooltip = formatTooltip(updated);
-  assert.ok(tooltip.includes('stale'), `expected "stale" freshness in tooltip`);
-  assert.ok(tooltip.includes('Claude live quota [stale]'), `expected stale provider section`);
+  assert.ok(tooltip.includes('STALE'), `expected "STALE" freshness in tooltip`);
+  assert.ok(tooltip.includes('| STALE |'), `expected stale quota row`);
   assert.ok(!tooltip.includes('used'), `tooltip should not show used quota`);
 });
 
@@ -1841,7 +1858,7 @@ test('formatTooltip: cached freshness shown correctly', () => {
   const status = createInitialStatus(['claude']);
   const updated = applyLiveQuotaResults(status, [cachedLiveQuota]);
   const tooltip = formatTooltip(updated);
-  assert.ok(tooltip.includes('cached'), `expected "cached" freshness in tooltip`);
+  assert.ok(tooltip.includes('CACHED'), `expected "CACHED" freshness in tooltip`);
 });
 
 // --- Helper: freshness labels ---

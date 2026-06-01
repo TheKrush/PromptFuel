@@ -164,7 +164,9 @@ export class RefreshScheduler {
 
   private updateBar(): void {
     this.statusBarItem.text = formatStatusBarText(this.statusState);
-    this.statusBarItem.tooltip = formatTooltip(this.statusState);
+    const tooltip = new vscode.MarkdownString(formatTooltip(this.statusState), true);
+    tooltip.supportHtml = true;
+    this.statusBarItem.tooltip = tooltip;
   }
 
   private scheduleNext(intervalMinutes: number): void {

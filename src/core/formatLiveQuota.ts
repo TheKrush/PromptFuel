@@ -2,11 +2,24 @@ import { PROVIDER_LABELS, ProviderId } from './providers';
 import type { LiveQuotaFreshness, LiveQuotaStatus, LiveQuotaWindow } from './liveQuotaTypes';
 import { PromptFuelStatus } from './statusModel';
 
-const STATUS_WINDOW_SEPARATOR = ' · ';
 const STATUS_PROVIDER_SEPARATOR = ' | ';
+const STATUS_WINDOW_JOINER = ' \u00B7 ';
 const STATUS_WINDOW_ORDER: Record<string, number> = {
   '7d': 0,
   '5h': 1,
+};
+const QUOTA_BAR_WIDTH = 10;
+const PROGRESS_FILLED = '\u25B0';
+const PROGRESS_EMPTY = '\u25B1';
+
+type QuotaLevel = 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'unavailable';
+
+const QUOTA_LEVEL_COLORS: Record<Exclude<QuotaLevel, 'unavailable'>, string> = {
+  blue: '#2196F3',
+  green: '#4CAF50',
+  yellow: '#FFC107',
+  orange: '#FF9800',
+  red: '#F44336',
 };
 
 // --- Freshness labels ---
@@ -64,19 +77,21 @@ export function formatWindowLine(
   window: LiveQuotaWindow,
   nowMs: number = Date.now(),
 ): string {
-  const parts: string[] = [`${window.windowId}:`];
+  const parts: string[] = [window.windowId];
 
   const remaining = formatPercentage(getRemainingPercentage(window));
   if (remaining !== undefined) {
     parts.push(`${remaining} remaining`);
+  } else {
+    parts.push('remaining unavailable');
   }
 
   if (window.resetsAtEpochMs !== undefined) {
     const countdown = formatCountdownLabel(window.resetsAtEpochMs, nowMs);
-    parts.push(`· resets in ${countdown}`);
+    parts.push(`resets in ${countdown}`);
   }
 
-  return parts.join(' ');
+  return parts.join(' | ');
 }
 
 // --- Status bar text with live quota preference ---
@@ -115,15 +130,17 @@ function formatLiveQuotaStatusBarTextFromLive(status: PromptFuelStatus): string 
       continue;
     }
 
-    const freshnessPrefix = liveState.freshness === 'stale' ? 'stale ' : '';
-    parts.push(`${label} ${freshnessPrefix}${windowLabels.join(STATUS_WINDOW_SEPARATOR)}`);
+    const freshnessPrefix = liveState.freshness === 'cached'
+      ? `${liveState.freshness} `
+      : '';
+    parts.push(`${label} ${freshnessPrefix}${windowLabels.join(STATUS_WINDOW_JOINER)}`);
   }
 
   if (parts.length === 0) {
     return 'PromptFuel: live quota unavailable';
   }
 
-  return `PromptFuel ${parts.join(STATUS_PROVIDER_SEPARATOR)}`;
+  return parts.join(STATUS_PROVIDER_SEPARATOR);
 }
 
 function getStatusBarWindows(liveState: LiveQuotaStatus): LiveQuotaWindow[] {
@@ -145,21 +162,22 @@ function formatStatusBarWindow(
   if (remaining === undefined) {
     return undefined;
   }
+  const indicator = formatQuotaIndicator(getRemainingPercentage(window));
 
   if (!options.includeWindowId && window.resetsAtEpochMs === undefined) {
-    return remaining;
+    return `${indicator} ${remaining}`;
   }
 
   const label = window.resetsAtEpochMs !== undefined
     ? formatCountdownLabel(window.resetsAtEpochMs)
     : window.windowId;
 
-  return `${label} ${remaining}`;
+  return `${label} ${indicator} ${remaining}`;
 }
 
 function formatNoWindowLiveState(label: string, freshness: LiveQuotaFreshness): string {
   if (freshness === 'stale') {
-    return `${label} stale`;
+    return `${label} unavailable`;
   }
   if (freshness === 'cached') {
     return `${label} cached`;
@@ -189,71 +207,221 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
   const lines: string[] = [];
 
   const hasLiveQuota = status.liveQuotaStates.length > 0;
-  const hasUsableQuota = status.liveQuotaStates.some(
-    s => s.freshness !== 'unavailable' && s.freshness !== 'error',
+  const providerIds = getTooltipProviderIds(status);
+  const overallState = getTooltipOverallStateLabel(status, hasLiveQuota, providerIds.length);
+  const quotaRows = formatQuotaRows(status, providerIds, hasLiveQuota);
+
+  lines.push('# PromptFuel');
+  lines.push('');
+  lines.push('## Quota');
+  lines.push('');
+
+  if (quotaRows.length === 0) {
+    lines.push('No live quota data.');
+  } else {
+    lines.push('|  |  |  |  |  |  |  |');
+    lines.push('| --- | ---: | --- | ---: | --- | ---: | --- |');
+    lines.push(...quotaRows);
+  }
+
+  const totalParseErrors = status.providerStates.reduce(
+    (sum, state) => sum + (state.parseErrors ?? 0),
+    0,
   );
 
-  lines.push('PromptFuel');
-
-  if (!status.liveQuotaEnabled) {
-    lines.push('Live quota disabled');
-  } else if (hasUsableQuota) {
-    lines.push('Live quota first');
-  } else if (hasLiveQuota) {
-    lines.push('Live quota unavailable');
-  } else {
-    lines.push('Live quota loading');
-  }
-
-  lines.push(formatSnapshotTooltipLine(status));
+  lines.push('');
+  lines.push('## Details');
   lines.push('');
 
-  // Live quota sections render unavailable/error states with sanitized labels.
-  for (const providerId of getTooltipProviderIds(status)) {
-    const liveState = status.liveQuotaStates.find(s => s.providerId === providerId);
-    lines.push(formatLiveQuotaProviderSection(providerId, liveState, status.liveQuotaEnabled));
-  }
-  lines.push('');
-
-  lines.push('Local history (secondary):');
-
-  let totalTokens = 0;
-  let totalMessages = 0;
-  let totalParseErrors = 0;
-
-  for (const state of status.providerStates) {
-    const label = PROVIDER_LABELS[state.providerId as ProviderId] ?? state.providerId;
-    lines.push(formatProviderTooltipLine(label, state));
-    if (state.status === 'loaded') {
-      totalTokens += state.totalTokens ?? 0;
-      totalMessages += state.totalAssistantMessages ?? 0;
+  if (overallState !== undefined) {
+    lines.push(`* State: ${overallState}`);
+    const stateSummary = formatOverallStateSummary(overallState);
+    if (stateSummary !== undefined) {
+      lines.push(`* Status: ${stateSummary}`);
     }
-    totalParseErrors += state.parseErrors ?? 0;
   }
-
-  if (totalTokens > 0) {
-    lines.push('');
-    lines.push(`Total local history: ${formatTokenCount(totalTokens)} (${totalMessages} messages)`);
-  }
-
-  if (totalParseErrors > 0) {
-    lines.push(formatParseErrorLine(totalParseErrors));
-  }
-
-  lines.push('');
-
+  lines.push(`* ${formatSnapshotTooltipLine(status)}`);
   if (hasLiveQuota) {
     const liveTimestamp = getLatestLiveQuotaTimestamp(status) ?? status.liveQuotaLastRefreshedMs;
     if (liveTimestamp) {
-      lines.push(formatLiveQuotaRefreshedAt(liveTimestamp));
+      lines.push(`* ${formatLiveQuotaRefreshedAt(liveTimestamp)}`);
     }
   }
 
   if (status.localHistoryLastRefreshedMs) {
-    lines.push(formatLocalHistoryRefreshedAt(status.localHistoryLastRefreshedMs));
+    lines.push(`* ${formatLocalHistoryRefreshedAt(status.localHistoryLastRefreshedMs)}`);
+  }
+
+  if (totalParseErrors > 0) {
+    lines.push(`* ${formatParseErrorLine(totalParseErrors)}`);
   }
 
   return lines.join(LINE_SEPARATOR);
+}
+
+function formatQuotaRows(
+  status: PromptFuelStatus,
+  providerIds: string[],
+  hasLiveQuota: boolean,
+): string[] {
+  const rows: string[] = [];
+
+  for (const providerId of providerIds) {
+    const liveState = status.liveQuotaStates.find(s => s.providerId === providerId);
+    rows.push(...formatQuotaProviderRows(providerId, liveState, status.liveQuotaEnabled, hasLiveQuota));
+  }
+
+  return rows;
+}
+
+function formatQuotaProviderRows(
+  providerId: string,
+  liveState: LiveQuotaStatus | undefined,
+  liveQuotaEnabled: boolean,
+  hasLiveQuota: boolean,
+): string[] {
+  const label = PROVIDER_LABELS[providerId as ProviderId] ?? providerId;
+
+  if (!liveQuotaEnabled) {
+    return [formatQuotaTableRow(label, '-', formatQuotaIndicator(undefined, true), 'Live quota disabled', '', '-', 'DISABLED')];
+  }
+
+  if (liveState === undefined) {
+    const state = hasLiveQuota ? 'UNAVAILABLE' : 'LOADING';
+    const remaining = state === 'LOADING' ? 'Live quota loading' : getSanitizedErrorLabel();
+    return [formatQuotaTableRow(label, '-', formatQuotaIndicator(undefined, true), remaining, '', '-', state)];
+  }
+
+  const state = getTooltipStateLabel(liveState.freshness);
+
+  if (liveState.freshness === 'unavailable' || liveState.freshness === 'error') {
+    return [formatQuotaTableRow(
+      label,
+      '-',
+      formatQuotaIndicator(undefined, true),
+      liveState.sanitizedMessage ?? getSanitizedErrorLabel(),
+      '',
+      '-',
+      'UNAVAILABLE',
+    )];
+  }
+
+  const windows = liveState.windows.slice().sort(compareTooltipWindows);
+  if (windows.length === 0) {
+    return [formatQuotaTableRow(label, '-', formatQuotaIndicator(undefined, true), 'remaining unavailable', '', '-', state)];
+  }
+
+  return windows.map(window => formatQuotaTableRow(
+    label,
+    window.windowId,
+    formatQuotaIndicator(getRemainingPercentage(window)),
+    formatRemainingLabel(window),
+    formatQuotaBar(window),
+    formatTooltipResetLabel(window),
+    state,
+  ));
+}
+
+function formatQuotaTableRow(
+  provider: string,
+  window: string,
+  indicator: string,
+  remaining: string,
+  bar: string,
+  reset: string,
+  state: string,
+): string {
+  return `| ${provider} | ${window} | ${indicator} | ${remaining} | ${bar} | ${reset} | ${state} |`;
+}
+
+function formatRemainingLabel(window: LiveQuotaWindow): string {
+  const remaining = getRemainingPercentage(window);
+  const percentage = formatPercentage(remaining);
+  if (percentage === undefined || remaining === undefined) {
+    return 'remaining unavailable';
+  }
+  return `**${percentage}**`;
+}
+
+function formatQuotaBar(window: LiveQuotaWindow): string {
+  const remaining = getRemainingPercentage(window);
+  if (remaining === undefined) {
+    return '';
+  }
+  const filled = Math.round(clampPercentage(remaining) / 100 * QUOTA_BAR_WIDTH);
+  const safeFilled = remaining > 0 && filled < 1 ? 1 : Math.max(0, filled);
+  const empty = QUOTA_BAR_WIDTH - safeFilled;
+  const filledBlocks = PROGRESS_FILLED.repeat(safeFilled);
+  const emptyBlocks = PROGRESS_EMPTY.repeat(Math.max(0, empty));
+  if (safeFilled === 0) {
+    return emptyBlocks;
+  }
+
+  return `<span style="color:${getQuotaLevelColor(getQuotaLevel(remaining))}">${filledBlocks}</span>${emptyBlocks}`;
+}
+
+function formatQuotaIndicator(remaining: number | undefined, unavailable = false): string {
+  switch (getQuotaLevel(remaining, unavailable)) {
+    case 'blue':
+      return '\uD83D\uDD35';
+    case 'green':
+      return '\uD83D\uDFE2';
+    case 'yellow':
+      return '\uD83D\uDFE1';
+    case 'orange':
+      return '\uD83D\uDFE0';
+    case 'red':
+      return '\uD83D\uDD34';
+    default:
+      return '\u26AB';
+  }
+}
+
+function getQuotaLevel(remaining: number | undefined, unavailable = false): QuotaLevel {
+  if (unavailable || remaining === undefined) {
+    return 'unavailable';
+  }
+  const clamped = clampPercentage(remaining);
+  if (clamped >= 80) {
+    return 'blue';
+  }
+  if (clamped >= 50) {
+    return 'green';
+  }
+  if (clamped >= 30) {
+    return 'yellow';
+  }
+  if (clamped >= 10) {
+    return 'orange';
+  }
+  return 'red';
+}
+
+function getQuotaLevelColor(level: QuotaLevel): string {
+  if (level === 'unavailable') {
+    return '#808080';
+  }
+  return QUOTA_LEVEL_COLORS[level];
+}
+
+function formatTooltipResetLabel(window: LiveQuotaWindow): string {
+  if (window.resetsAtEpochMs === undefined) {
+    return '-';
+  }
+  return formatCountdownLabel(window.resetsAtEpochMs);
+}
+
+function formatOverallStateSummary(state: string): string | undefined {
+  switch (state) {
+    case 'DISABLED':
+      return 'Live quota disabled';
+    case 'LOADING':
+      return 'Live quota loading';
+    case 'NO DATA':
+      return 'No live quota data.';
+    default:
+      return undefined;
+  }
 }
 
 function getLatestLiveQuotaTimestamp(status: PromptFuelStatus): number | undefined {
@@ -271,14 +439,14 @@ function formatSnapshotTooltipLine(status: PromptFuelStatus): string {
   const providerCount = status.snapshotState.providers.length;
 
   if (snapshotCount > 0 && providerCount > 0) {
-    return `Imported snapshots: ${snapshotCount} aggregate snapshot${snapshotCount === 1 ? '' : 's'}, ${providerCount} provider aggregate${providerCount === 1 ? '' : 's'}.`;
+    return 'Snapshots: available';
   }
 
   if (status.snapshotLastReadMs !== undefined) {
-    return 'Imported snapshots: none found.';
+    return 'Snapshots: none';
   }
 
-  return 'Imported snapshots: not checked yet.';
+  return 'Snapshots: not checked';
 }
 
 function getTooltipProviderIds(status: PromptFuelStatus): string[] {
@@ -295,87 +463,44 @@ function getTooltipProviderIds(status: PromptFuelStatus): string[] {
   return [...ids];
 }
 
-function formatLiveQuotaProviderSection(
-  providerId: string,
-  liveState: LiveQuotaStatus | undefined,
-  liveQuotaEnabled: boolean,
-): string {
-  const label = PROVIDER_LABELS[providerId as ProviderId] ?? providerId;
-  const sectionLines: string[] = [];
+function getTooltipStateLabel(freshness: LiveQuotaFreshness): string {
+  if (freshness === 'error') {
+    return 'UNAVAILABLE';
+  }
+  return getFreshnessLabel(freshness).toUpperCase();
+}
 
-  if (!liveQuotaEnabled) {
-    sectionLines.push(`${label} live quota [disabled]`);
-    return sectionLines.join(LINE_SEPARATOR);
+function getTooltipOverallStateLabel(
+  status: PromptFuelStatus,
+  hasLiveQuota: boolean,
+  providerCount: number,
+): string | undefined {
+  if (!status.liveQuotaEnabled) {
+    return 'DISABLED';
+  }
+  if (!hasLiveQuota && providerCount === 0) {
+    return 'NO DATA';
+  }
+  if (!hasLiveQuota) {
+    return 'LOADING';
   }
 
-  if (liveState === undefined) {
-    sectionLines.push(`${label} live quota [unavailable]`);
-    sectionLines.push(`  ${getSanitizedErrorLabel()}`);
-    return sectionLines.join(LINE_SEPARATOR);
+  const states = status.liveQuotaStates.map(liveState => getTooltipStateLabel(liveState.freshness));
+  const first = states[0];
+  if (first !== undefined && states.every(state => state === first)) {
+    return first;
   }
+  return undefined;
+}
 
-  const freshness = getFreshnessLabel(liveState.freshness);
-
-  if (liveState.freshness === 'unavailable' || liveState.freshness === 'error') {
-    sectionLines.push(`${label} live quota [unavailable]`);
-    sectionLines.push(`  ${liveState.sanitizedMessage ?? getSanitizedErrorLabel()}`);
-    return sectionLines.join(LINE_SEPARATOR);
-  }
-
-  sectionLines.push(`${label} live quota [${freshness}]`);
-
-  if (liveState.freshness === 'stale') {
-    sectionLines.push('  Cached from last successful live refresh.');
-  } else if (liveState.freshness === 'cached') {
-    sectionLines.push('  Cached live quota.');
-  }
-
-  for (const window of liveState.windows) {
-    sectionLines.push(`  ${formatWindowLine(window)}`);
-  }
-
-  return sectionLines.join(LINE_SEPARATOR);
+function compareTooltipWindows(a: LiveQuotaWindow, b: LiveQuotaWindow): number {
+  const left = STATUS_WINDOW_ORDER[a.windowId] ?? 99;
+  const right = STATUS_WINDOW_ORDER[b.windowId] ?? 99;
+  return left - right;
 }
 
 function formatParseErrorLine(count: number): string {
-  return `Parse errors: ${count} line${count === 1 ? '' : 's'} skipped`;
-}
-
-function formatProviderTooltipLine(
-  label: string,
-  state: {
-    status: string;
-    totalTokens?: number;
-    totalAssistantMessages?: number;
-  },
-): string {
-  const parts: string[] = [label];
-
-  switch (state.status) {
-    case 'loaded':
-      parts.push('loaded');
-      if (state.totalTokens !== undefined && state.totalTokens > 0) {
-        parts.push(`${formatTokenCount(state.totalTokens)}`);
-      }
-      if (state.totalAssistantMessages !== undefined && state.totalAssistantMessages > 0) {
-        parts.push(`${state.totalAssistantMessages} messages`);
-      }
-      break;
-
-    case 'no-data':
-      parts.push('no local data');
-      break;
-
-    case 'unknown':
-      parts.push('read error');
-      break;
-
-    case 'disabled':
-      parts.push('disabled');
-      break;
-  }
-
-  return parts.join(' · ');
+  return `Skipped local-history lines: ${count}`;
 }
 
 function formatLiveQuotaRefreshedAt(timestampMs: number): string {

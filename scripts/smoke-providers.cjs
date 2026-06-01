@@ -666,32 +666,32 @@ async function main() {
     const tooltip = formatTooltip(status);
     assert.ok(tooltip.includes('PromptFuel'), `expected "PromptFuel" in tooltip`);
     assert.ok(tooltip.includes('Live quota loading'), `expected "Live quota loading" in tooltip`);
-    assert.ok(tooltip.includes('Local history (secondary):'), `expected secondary local history section`);
+    assert.ok(!tooltip.includes('## Usage history'), `usage history section should be omitted`);
     assert.ok(!tooltip.includes('Local history only'), `should not lead with local history only`);
-    assert.ok(tooltip.includes('no local data'), `expected "no local data" in tooltip`);
+    assert.ok(!tooltip.includes('no local data'), `local usage details should be omitted`);
     assert.ok(!tooltip.includes('Local history refreshed'), 'should not show refresh time before first refresh');
   });
 
-  await test('formatTooltip: loaded state shows tokens and messages', async () => {
+  await test('formatTooltip: loaded state omits local usage but keeps refresh time', async () => {
     const status = createInitialStatus(['claude']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'ok', totalTokens: 25000, totalAssistantMessages: 7, filesFound: 4 },
     ]);
     const tooltip = formatTooltip(updated);
     assert.ok(tooltip.includes('Claude'), `expected "Claude" in tooltip`);
-    assert.ok(tooltip.includes('loaded'), `expected "loaded" in tooltip`);
-    assert.ok(tooltip.includes('25.0K'), `expected "25.0K" in tooltip`);
-    assert.ok(tooltip.includes('7 messages'), `expected "7 messages" in tooltip`);
+    assert.ok(!tooltip.includes('loaded'), `local usage status should be omitted from tooltip`);
+    assert.ok(!tooltip.includes('25.0K'), `local token total should be omitted from tooltip`);
+    assert.ok(!tooltip.includes('7 messages'), `local message total should be omitted from tooltip`);
     assert.ok(tooltip.includes('Local history refreshed'), `expected "Local history refreshed" in tooltip`);
   });
 
-  await test('formatTooltip: error state shows read error', async () => {
+  await test('formatTooltip: error state omits local read error', async () => {
     const status = createInitialStatus(['claude']);
     const updated = applyRefreshResults(status, [
       { providerId: 'claude', status: 'error' },
     ]);
     const tooltip = formatTooltip(updated);
-    assert.ok(tooltip.includes('read error'), `expected "read error" in tooltip`);
+    assert.ok(!tooltip.includes('read error'), `local read error should be omitted from tooltip`);
   });
 
   await test('formatTooltip: local history refreshed shows time', async () => {
@@ -970,6 +970,29 @@ async function main() {
     assert.ok(result.parseErrors >= 2, `expected parseErrors >= 2, got ${result.parseErrors}`);
   });
 
+  // Claude parser: NUL-padded line recovered
+  const claudeNulPadded = path.join(FIXTURE_DIR, 'claude-nul-padded');
+  const nul = String.fromCharCode(0);
+  await writeFile(claudeNulPadded, 'session.jsonl', nul + JSON.stringify({
+    type: 'assistant',
+    timestamp: Date.now(),
+    message: {
+      usage: {
+        input_tokens: 700,
+        output_tokens: 300,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+    },
+  }) + nul + '\n');
+
+  await test('parseClaudeUsage: recovers boundary NUL-padded records without parse errors', async () => {
+    const result = await parseClaudeUsage(claudeNulPadded);
+    assert.strictEqual(result.stats.parseErrors, 0);
+    assert.strictEqual(result.stats.recordsMatched, 1);
+    assert.strictEqual(result.aggregate.totalTokens, 1000);
+  });
+
   // Claude parser: no assistant records
   const claudeNoMatch = path.join(FIXTURE_DIR, 'claude-no-match');
   await createClaudeFixture(claudeNoMatch, [
@@ -1100,6 +1123,41 @@ async function main() {
     assert.strictEqual(result.status, 'ok');
     assert.strictEqual(result.totalAssistantMessages, 1);
     assert.ok(result.parseErrors >= 1, `expected parseErrors >= 1, got ${result.parseErrors}`);
+  });
+
+  // Codex parser: active-file tail artifacts
+  const codexTailArtifacts = path.join(FIXTURE_DIR, 'codex-tail-artifacts');
+  const codexTailRecord = {
+    type: 'tool_use',
+    timestamp: Date.now(),
+    payload: {
+      info: {
+        last_token_usage: {
+          input_tokens: 400,
+          output_tokens: 100,
+          cached_input_tokens: 0,
+        },
+      },
+    },
+  };
+
+  await writeFile(
+    codexTailArtifacts,
+    'nul-tail.jsonl',
+    JSON.stringify(codexTailRecord) + '\n' + String.fromCharCode(0).repeat(16),
+  );
+
+  await writeFile(
+    codexTailArtifacts,
+    'partial-tail.jsonl',
+    JSON.stringify(codexTailRecord) + '\n{"type":"tool_use"',
+  );
+
+  await test('parseCodexUsage: ignores NUL-only and unfinished final tails without parse errors', async () => {
+    const result = await parseCodexUsage(codexTailArtifacts);
+    assert.strictEqual(result.stats.parseErrors, 0);
+    assert.strictEqual(result.stats.recordsMatched, 2);
+    assert.strictEqual(result.aggregate.totalTokens, 1000);
   });
 
   // Codex parser: no usage records

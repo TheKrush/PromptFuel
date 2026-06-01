@@ -10,6 +10,7 @@ import {
   mergeTokenUsageIntoLocalHistoryWindows,
   parseTimestampEpochMs,
 } from '../core/usageAggregate';
+import { fileEndsWithLineBreak, normalizeJsonlLine } from './jsonlLine';
 
 const MAX_DEPTH = 3;
 const MAX_LINES_PER_FILE = 5000;
@@ -73,6 +74,7 @@ async function parseSingleFile(
   },
 ): Promise<void> {
   result.stats.filesInspected += 1;
+  const endsWithLineBreak = await fileEndsWithLineBreak(file);
 
   const reader = readline.createInterface({
     input: fs.createReadStream(file, { encoding: 'utf8' }),
@@ -80,15 +82,26 @@ async function parseSingleFile(
   });
 
   let lineCount = 0;
+  let pendingMalformedTail = false;
 
   for await (const line of reader) {
     lineCount++;
 
     if (lineCount > MAX_LINES_PER_FILE) {
+      if (pendingMalformedTail) {
+        result.stats.parseErrors += 1;
+        pendingMalformedTail = false;
+      }
       break;
     }
 
-    if (!line.trim()) {
+    if (pendingMalformedTail) {
+      result.stats.parseErrors += 1;
+      pendingMalformedTail = false;
+    }
+
+    const normalizedLine = normalizeJsonlLine(line);
+    if (!normalizedLine) {
       continue;
     }
 
@@ -96,9 +109,9 @@ async function parseSingleFile(
 
     let record: CodexRecord;
     try {
-      record = JSON.parse(line) as CodexRecord;
+      record = JSON.parse(normalizedLine) as CodexRecord;
     } catch {
-      result.stats.parseErrors += 1;
+      pendingMalformedTail = true;
       continue;
     }
 
@@ -115,6 +128,14 @@ async function parseSingleFile(
       parseTimestampEpochMs(record.timestamp),
       result.nowMs,
     );
+  }
+
+  if (pendingMalformedTail) {
+    if (endsWithLineBreak) {
+      result.stats.parseErrors += 1;
+    } else {
+      result.stats.recordsRead = Math.max(0, result.stats.recordsRead - 1);
+    }
   }
 }
 
