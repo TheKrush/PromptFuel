@@ -1186,7 +1186,11 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
 
   assert.ok(html.includes('class="usage-history-chart"'), `expected aggregate history chart`);
   assert.ok(html.includes('data-history-chart="overview"'), `expected overview history chart scope`);
-  assert.ok(html.includes('data-history-window-bar="today"'), `expected history bars per dashboard window`);
+  assert.ok(html.includes('data-history-range="1W"'), `expected 1W history range control`);
+  assert.ok(html.includes('data-history-range="1M"'), `expected 1M history range control`);
+  assert.ok(html.includes('data-history-range="1Y"'), `expected 1Y history range control`);
+  assert.ok(html.includes('data-history-range="ALL"'), `expected ALL history range control`);
+  assert.ok(html.includes('data-history-range-group="local-1M"'), `expected daily history range bins`);
   assert.ok(html.includes('usage-history-bar-segment claude'), `expected Claude chart segment`);
   assert.ok(html.includes('usage-history-bar-segment codex'), `expected Codex chart segment`);
   assert.ok(html.includes('--pf-provider-claude: var(--vscode-charts-blue'), `expected AgentBridge Claude blue`);
@@ -1292,7 +1296,12 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   assert.ok(html.includes('Imported snapshots'), `expected snapshot summary section`);
   assert.ok(html.includes('Provider coverage'), `expected provider coverage summary`);
   assert.ok(html.includes('data-state-chip="aggregate-only"'), `expected aggregate-only snapshot chip`);
-  assert.ok(html.includes('class="card-grid snapshot-grid"'), `expected snapshot cards to use stable grid class`);
+  assert.ok(html.includes('class="snapshot-provider-list"'), `expected compact snapshot provider list`);
+  assert.ok(!html.includes('class="card-grid snapshot-grid"'), `snapshot section should not render repeated provider cards`);
+  assert.ok(html.includes('data-today-source-group="local"'), `expected Today local source group`);
+  assert.ok(html.includes('data-today-source-group="snapshots"'), `expected Today snapshot source group`);
+  assert.ok(html.includes('data-today-source-group="combined"'), `expected Today combined source group`);
+  assert.ok(html.includes('function updateTodaySections()'), `expected Today section to update with selected source mode`);
   assert.ok(html.includes('data-tokens-local-all="1.0K tokens"'), `expected local all-history source data`);
   assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
   assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);

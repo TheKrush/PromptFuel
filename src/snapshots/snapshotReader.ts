@@ -16,6 +16,7 @@ import {
   type LocalHistoryWindowId,
   LOCAL_HISTORY_WINDOW_IDS,
   createEmptyAggregate,
+  cloneAggregate,
 } from '../core/usageAggregate';
 import {
   mergeModelUsageAggregate,
@@ -24,6 +25,7 @@ import {
   type ModelUsageAggregate,
   type ModelUsageWindowAggregateMap,
 } from '../core/modelUsage';
+import type { PromptFuelSnapshotHistoryBucket } from '../core/snapshotTypes';
 
 export interface SnapshotDiagnostics {
   info(message: string): void;
@@ -436,6 +438,7 @@ function validateAgentBridgeProvider(
     generatedAtEpochMs: readEpochMs(value.lastUpdatedEpochMs) ?? generatedAtEpochMs,
     aggregate: normalized.aggregate,
     windowTotals: normalized.windowTotals,
+    historyBuckets: normalized.historyBuckets,
     modelAggregates: normalized.modelAggregates,
     modelWindowTotals: normalized.modelWindowTotals,
     sourceLabel,
@@ -452,6 +455,7 @@ function normalizeAgentBridgeHistoryBuckets(
   windowTotals: Partial<LocalHistoryWindowAggregateMap>;
   modelAggregates: ModelUsageAggregate[];
   modelWindowTotals: Partial<ModelUsageWindowAggregateMap>;
+  historyBuckets: PromptFuelSnapshotHistoryBucket[];
 } | undefined {
   const aggregate = createEmptyAggregate();
   const windowTotals: Partial<LocalHistoryWindowAggregateMap> = {
@@ -461,6 +465,7 @@ function normalizeAgentBridgeHistoryBuckets(
   const modelWindowTotals: Partial<ModelUsageWindowAggregateMap> = {
     all: [],
   };
+  const historyBuckets: PromptFuelSnapshotHistoryBucket[] = [];
   const todayKey = localDateKey(nowMs);
   const last7dStartKey = localDateKey(nowMs - (6 * 24 * 60 * 60 * 1000));
   let validBucketCount = 0;
@@ -475,6 +480,18 @@ function normalizeAgentBridgeHistoryBuckets(
     addAggregate(windowTotals.all!, bucket.aggregate);
     mergeBucketModels(modelAggregates, providerId, bucket.models, sourceLabel);
     mergeBucketModels(modelWindowTotals.all!, providerId, bucket.models, sourceLabel, 'all');
+    historyBuckets.push({
+      dateKey: bucket.dateKey,
+      aggregate: cloneAggregate(bucket.aggregate),
+      modelAggregates: bucket.models.map(model => ({
+        providerId,
+        modelLabel: model.modelLabel,
+        totalTokens: model.totalTokens,
+        totalAssistantMessages: model.totalAssistantMessages,
+        source: 'snapshot',
+        sourceLabels: [sourceLabel],
+      })),
+    });
 
     if (bucket.dateKey === todayKey) {
       if (!windowTotals.today) {
@@ -506,6 +523,7 @@ function normalizeAgentBridgeHistoryBuckets(
   return {
     aggregate,
     windowTotals,
+    historyBuckets,
     modelAggregates: sortModelUsageAggregates(modelAggregates),
     modelWindowTotals,
   };

@@ -559,6 +559,9 @@ async function main() {
     assert.strictEqual(provider.modelAggregates[0].modelLabel, 'gpt-5.4-codex');
     assert.strictEqual(provider.modelAggregates[0].totalTokens, 900);
     assert.strictEqual(provider.modelWindowTotals.today[0].totalTokens, 900);
+    assert.strictEqual(provider.historyBuckets[0].dateKey, '2026-05-31');
+    assert.strictEqual(provider.historyBuckets[0].aggregate.totalTokens, 1800);
+    assert.strictEqual(provider.historyBuckets[0].modelAggregates[0].modelLabel, 'gpt-5.4-codex');
     assert.strictEqual(provider.sourceLabel, 'WATCHER');
     assert.deepStrictEqual(provider.modelAggregates[0].sourceLabels, ['WATCHER']);
   });

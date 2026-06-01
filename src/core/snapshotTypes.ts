@@ -50,9 +50,16 @@ export interface PromptFuelSnapshotProviderAggregate {
   generatedAtEpochMs: number;
   aggregate: AggregateUsage;
   windowTotals?: Partial<LocalHistoryWindowAggregateMap>;
+  historyBuckets?: PromptFuelSnapshotHistoryBucket[];
   modelAggregates?: ModelUsageAggregate[];
   modelWindowTotals?: Partial<ModelUsageWindowAggregateMap>;
   sourceLabel?: string;
+}
+
+export interface PromptFuelSnapshotHistoryBucket {
+  dateKey: string;
+  aggregate: AggregateUsage;
+  modelAggregates?: ModelUsageAggregate[];
 }
 
 export interface PromptFuelSnapshotState {
@@ -76,6 +83,7 @@ export function cloneSnapshotState(state: PromptFuelSnapshotState): PromptFuelSn
       generatedAtEpochMs: provider.generatedAtEpochMs,
       aggregate: cloneAggregate(provider.aggregate),
       ...(provider.windowTotals ? { windowTotals: cloneWindowTotals(provider.windowTotals) } : {}),
+      ...(provider.historyBuckets ? { historyBuckets: cloneHistoryBuckets(provider.historyBuckets) } : {}),
       ...(provider.modelAggregates ? { modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) } : {}),
       ...(provider.modelWindowTotals ? { modelWindowTotals: cloneModelUsageWindowAggregates(provider.modelWindowTotals) } : {}),
       ...(provider.sourceLabel ? { sourceLabel: provider.sourceLabel } : {}),
@@ -83,6 +91,16 @@ export function cloneSnapshotState(state: PromptFuelSnapshotState): PromptFuelSn
     snapshotCount: state.snapshotCount,
     lastReadEpochMs: state.lastReadEpochMs,
   };
+}
+
+function cloneHistoryBuckets(
+  buckets: ReadonlyArray<PromptFuelSnapshotHistoryBucket>,
+): PromptFuelSnapshotHistoryBucket[] {
+  return buckets.map(bucket => ({
+    dateKey: bucket.dateKey,
+    aggregate: cloneAggregate(bucket.aggregate),
+    ...(bucket.modelAggregates ? { modelAggregates: cloneModelUsageAggregates(bucket.modelAggregates) } : {}),
+  }));
 }
 
 export function createZeroSnapshotAggregate(): AggregateUsage {

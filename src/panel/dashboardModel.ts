@@ -46,6 +46,21 @@ export interface DashboardLocalHistoryWindow {
   totalAssistantMessages: number;
 }
 
+export interface DashboardHistoryProviderSegment {
+  providerId: ProviderId;
+  label: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+}
+
+export interface DashboardHistoryPoint {
+  dateKey: string;
+  label: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  providerSegments: DashboardHistoryProviderSegment[];
+}
+
 export interface DashboardModelUsageAggregate {
   providerId: ProviderId;
   providerLabel: string;
@@ -74,6 +89,7 @@ export interface DashboardSourceModeProviderCard {
   parseErrors: number;
   sourceLabels: string[];
   windows: DashboardLocalHistoryWindow[];
+  historyPoints: DashboardHistoryPoint[];
   modelWindows: DashboardModelUsageWindowMap;
 }
 
@@ -85,6 +101,7 @@ export interface DashboardSourceModeTotals {
   providers: DashboardSourceModeProviderCard[];
   windows: DashboardLocalHistoryWindow[];
   modelWindows: DashboardModelUsageWindowMap;
+  historyPoints: DashboardHistoryPoint[];
   sourceLabels: string[];
   missingSnapshotWindowIds: LocalHistoryWindowId[];
 }
@@ -97,6 +114,7 @@ export interface DashboardProviderCard {
   totalAssistantMessages: number;
   parseErrors: number;
   localHistoryWindows: DashboardLocalHistoryWindow[];
+  historyPoints: DashboardHistoryPoint[];
   modelAggregates: ModelUsageAggregate[];
   localHistoryModelWindows: ModelUsageWindowAggregateMap;
 }
@@ -125,6 +143,7 @@ export interface DashboardSnapshotProviderCard {
   sourceLabel?: string;
   windows: DashboardLocalHistoryWindow[];
   providedWindowIds: LocalHistoryWindowId[];
+  historyPoints: DashboardHistoryPoint[];
   modelAggregates: ModelUsageAggregate[];
   modelWindows: DashboardModelUsageWindowMap;
 }
@@ -184,6 +203,9 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
       totalAssistantMessages: messages,
       parseErrors: errors,
       localHistoryWindows: providerWindows,
+      historyPoints: isKnownProvider(state.providerId)
+        ? buildLocalHistoryPoints(state.providerId, PROVIDER_LABELS[state.providerId], providerWindows)
+        : [],
       modelAggregates: cloneModelUsageAggregates(state.modelAggregates) ?? [],
       localHistoryModelWindows: cloneFullModelWindowMap(state.localHistoryModelWindows, state.modelAggregates),
     };
@@ -307,6 +329,7 @@ function buildDashboardSnapshotProviderCard(
     ...(sourceLabel ? { sourceLabel } : {}),
     windows: buildSnapshotWindowCards(provider.windowTotals, provider.aggregate),
     providedWindowIds: getProvidedSnapshotWindowIds(provider.windowTotals),
+    historyPoints: buildSnapshotHistoryPoints(provider),
     modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) ?? [],
     modelWindows: buildSnapshotModelWindowCards(provider),
   };
@@ -329,6 +352,107 @@ function buildSnapshotWindowCards(
       totalAssistantMessages: windowAggregate?.totalAssistantMessages ?? (windowId === 'all' ? aggregate.totalAssistantMessages : 0),
     };
   });
+}
+
+function buildLocalHistoryPoints(
+  providerId: ProviderId,
+  label: string,
+  windows: DashboardLocalHistoryWindow[],
+): DashboardHistoryPoint[] {
+  const today = windows.find(window => window.windowId === 'today');
+  if (!today || (today.totalTokens <= 0 && today.totalAssistantMessages <= 0)) {
+    return [];
+  }
+  const dateKey = localDateKey(Date.now());
+  return [buildHistoryPoint(dateKey, providerId, label, today.totalTokens, today.totalAssistantMessages)];
+}
+
+function buildSnapshotHistoryPoints(
+  provider: PromptFuelSnapshotProviderAggregate,
+): DashboardHistoryPoint[] {
+  const label = PROVIDER_LABELS[provider.providerId];
+  if (provider.historyBuckets && provider.historyBuckets.length > 0) {
+    return provider.historyBuckets.map(bucket => buildHistoryPoint(
+      bucket.dateKey,
+      provider.providerId,
+      label,
+      bucket.aggregate.totalTokens,
+      bucket.aggregate.totalAssistantMessages,
+    ));
+  }
+
+  const today = provider.windowTotals?.today;
+  if (today && (today.totalTokens > 0 || today.totalAssistantMessages > 0)) {
+    return [buildHistoryPoint(
+      localDateKey(provider.generatedAtEpochMs),
+      provider.providerId,
+      label,
+      today.totalTokens,
+      today.totalAssistantMessages,
+    )];
+  }
+
+  return [];
+}
+
+function buildHistoryPoint(
+  dateKey: string,
+  providerId: ProviderId,
+  label: string,
+  totalTokens: number,
+  totalAssistantMessages: number,
+): DashboardHistoryPoint {
+  return {
+    dateKey,
+    label: dateKey.slice(5),
+    totalTokens,
+    totalAssistantMessages,
+    providerSegments: [{
+      providerId,
+      label,
+      totalTokens,
+      totalAssistantMessages,
+    }],
+  };
+}
+
+function combineHistoryPoints(points: DashboardHistoryPoint[]): DashboardHistoryPoint[] {
+  const byDate = new Map<string, DashboardHistoryPoint>();
+  for (const point of points) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(point.dateKey)) {
+      continue;
+    }
+    const existing = byDate.get(point.dateKey);
+    if (!existing) {
+      byDate.set(point.dateKey, {
+        dateKey: point.dateKey,
+        label: point.label || point.dateKey.slice(5),
+        totalTokens: point.totalTokens,
+        totalAssistantMessages: point.totalAssistantMessages,
+        providerSegments: point.providerSegments.map(segment => ({ ...segment })),
+      });
+      continue;
+    }
+    existing.totalTokens += point.totalTokens;
+    existing.totalAssistantMessages += point.totalAssistantMessages;
+    mergeHistorySegments(existing.providerSegments, point.providerSegments);
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+}
+
+function mergeHistorySegments(
+  target: DashboardHistoryProviderSegment[],
+  source: DashboardHistoryProviderSegment[],
+): void {
+  for (const segment of source) {
+    const existing = target.find(candidate => candidate.providerId === segment.providerId);
+    if (existing) {
+      existing.totalTokens += segment.totalTokens;
+      existing.totalAssistantMessages += segment.totalAssistantMessages;
+    } else {
+      target.push({ ...segment });
+    }
+  }
 }
 
 function cloneFullModelWindowMap(
@@ -470,6 +594,7 @@ function buildSourceTotals(
     providers,
     windows,
     modelWindows: buildModelWindowTotalsForProviders(sourceMode, providers),
+    historyPoints: combineHistoryPoints(providers.flatMap(provider => provider.historyPoints)),
     sourceLabels: uniqueSnapshotSourceLabels(providers.flatMap(provider => provider.sourceLabels)),
     missingSnapshotWindowIds,
   };
@@ -489,6 +614,7 @@ function buildLocalSourceProviders(
       parseErrors: provider.parseErrors,
       sourceLabels: [],
       windows: provider.localHistoryWindows,
+      historyPoints: provider.historyPoints,
       modelWindows: toDashboardModelWindows('local', provider.localHistoryModelWindows),
     }));
 }
@@ -521,6 +647,7 @@ function buildSnapshotSourceProviders(
       parseErrors: 0,
       sourceLabels,
       windows: buildLocalHistoryWindowCards(aggregateWindows, totalTokens, totalAssistantMessages),
+      historyPoints: combineHistoryPoints(matching.flatMap(provider => provider.historyPoints)),
       modelWindows: combineProviderModelWindows('snapshots', matching.map(provider => provider.modelWindows)),
     };
   });
@@ -586,6 +713,10 @@ function combineSourceProviderCards(
     parseErrors: local?.parseErrors ?? 0,
     sourceLabels: uniqueSnapshotSourceLabels(snapshot?.sourceLabels ?? []),
     windows,
+    historyPoints: combineHistoryPoints([
+      ...(local?.historyPoints ?? []),
+      ...(snapshot?.historyPoints ?? []),
+    ]),
     modelWindows,
   };
 }
@@ -637,4 +768,9 @@ function combineProviderModelWindows(
       .map(model => toDashboardModelUsage(sourceMode, windowId, model));
   }
   return combined;
+}
+
+function localDateKey(epochMs: number): string {
+  const date = new Date(epochMs);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

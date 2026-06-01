@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import {
   DashboardLiveQuotaCard,
+  DashboardHistoryPoint,
+  DashboardHistoryProviderSegment,
   DashboardLocalHistoryWindow,
   DashboardModel,
   DashboardModelUsageAggregate,
@@ -235,7 +237,7 @@ function renderLiveQuotaSection(model: DashboardModel): string {
       : stateChip('DISABLED', 'disabled');
     return `
   <div class="live-quota-section">
-    ${sectionHeader('Live quota', liveQuotaSectionChip(model), 'Provider-reported remaining quota appears before local history.')}
+    ${sectionHeader('At a glance', liveQuotaSectionChip(model), 'Current quota window state per provider.')}
     <div class="live-quota-not-enabled calm-state">
       <div class="calm-state-header">${esc(stateText)} ${badge}</div>
       <div class="calm-state-copy">Live provider quota will appear here when available.</div>
@@ -245,7 +247,7 @@ function renderLiveQuotaSection(model: DashboardModel): string {
 
   return `
   <div class="live-quota-section">
-    ${sectionHeader('Live quota', liveQuotaSectionChip(model), 'Provider-reported remaining quota appears before local history.')}
+    ${sectionHeader('At a glance', liveQuotaSectionChip(model), 'Current quota window state per provider.')}
     ${renderLiveQuotaCards(model.liveQuotaCards)}
   </div>`;
 }
@@ -305,6 +307,7 @@ function findSourceModeTotals(
       providers: [],
       windows: [],
       modelWindows: { today: [], last5h: [], last7d: [], all: [] },
+      historyPoints: [],
       sourceLabels: [],
       missingSnapshotWindowIds: [],
     };
@@ -325,6 +328,7 @@ function findSourceProvider(
       sourceLabels: [],
       windows: [],
       modelWindows: { today: [], last5h: [], last7d: [], all: [] },
+      historyPoints: [],
     };
 }
 
@@ -403,109 +407,267 @@ function historyWindowBarHeight(value: number, maxValue: number): string {
   return String(Math.max(2, Math.min(100, Math.round((value / maxValue) * 100))));
 }
 
+type DashboardHistoryRangeKey = '1W' | '1M' | '1Y' | 'ALL';
+
+interface DashboardHistoryRangeView {
+  key: DashboardHistoryRangeKey;
+  label: string;
+  granularityLabel: string;
+  points: DashboardHistoryPoint[];
+  maxTotalTokens: number;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  activeBinCount: number;
+  unavailableReason?: string;
+}
+
+const DASHBOARD_HISTORY_RANGE_KEYS: ReadonlyArray<DashboardHistoryRangeKey> = ['1W', '1M', '1Y', 'ALL'];
+const DEFAULT_HISTORY_RANGE_KEY: DashboardHistoryRangeKey = '1M';
+
+function historyRangeLabel(rangeKey: DashboardHistoryRangeKey): string {
+  const labels: Record<DashboardHistoryRangeKey, string> = {
+    '1W': '1W',
+    '1M': '1M',
+    '1Y': '1Y',
+    'ALL': 'ALL',
+  };
+  return labels[rangeKey];
+}
+
+function historyRangeMeta(rangeKey: DashboardHistoryRangeKey): string {
+  const labels: Record<DashboardHistoryRangeKey, string> = {
+    '1W': '7 daily bins',
+    '1M': 'Daily bins',
+    '1Y': 'Weekly bins',
+    'ALL': 'Monthly bins',
+  };
+  return labels[rangeKey];
+}
+
+function parseDateKey(dateKey: string | undefined): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || ''));
+  if (!match) {
+    return undefined;
+  }
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isFinite(date.getTime()) ? date : undefined;
+}
+
+function formatDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function buildHistoryBins(rangeKey: DashboardHistoryRangeKey, anchorDate = new Date()): Array<{ start: Date; end: Date; label: string }> {
+  const anchor = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate());
+  if (rangeKey === 'ALL') {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth() - 11, 1);
+    return Array.from({ length: 12 }, (_, i) => {
+      const month = new Date(start.getFullYear(), start.getMonth() + i, 1);
+      const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+      return {
+        start: month,
+        end: end > anchor ? anchor : end,
+        label: `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`,
+      };
+    });
+  }
+
+  const days = rangeKey === '1W' ? 7 : rangeKey === '1M' ? 30 : 365;
+  const start = addDays(anchor, -(days - 1));
+  if (rangeKey === '1Y') {
+    const bins: Array<{ start: Date; end: Date; label: string }> = [];
+    let cursor = start;
+    while (cursor <= anchor) {
+      const end = addDays(cursor, 6) > anchor ? anchor : addDays(cursor, 6);
+      bins.push({
+        start: cursor,
+        end,
+        label: `${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`,
+      });
+      cursor = addDays(end, 1);
+    }
+    return bins;
+  }
+
+  return Array.from({ length: days }, (_, i) => {
+    const day = addDays(start, i);
+    return {
+      start: day,
+      end: day,
+      label: `${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`,
+    };
+  });
+}
+
+function pointInBin(point: DashboardHistoryPoint, start: Date, end: Date): boolean {
+  const date = parseDateKey(point.dateKey);
+  if (!date) {
+    return false;
+  }
+  return date >= start && date <= end;
+}
+
+function mergeHistoryProviderSegments(
+  target: DashboardHistoryProviderSegment[],
+  source: DashboardHistoryProviderSegment[],
+): void {
+  for (const segment of source) {
+    const existing = target.find(candidate => candidate.providerId === segment.providerId);
+    if (existing) {
+      existing.totalTokens += segment.totalTokens;
+      existing.totalAssistantMessages += segment.totalAssistantMessages;
+    } else {
+      target.push({ ...segment });
+    }
+  }
+}
+
+function buildHistoryRangeView(
+  points: DashboardHistoryPoint[],
+  rangeKey: DashboardHistoryRangeKey,
+): DashboardHistoryRangeView {
+  const bins = buildHistoryBins(rangeKey);
+  const binned = bins.map(bin => {
+    const matching = points.filter(point => pointInBin(point, bin.start, bin.end));
+    const providerSegments: DashboardHistoryProviderSegment[] = [];
+    let totalTokens = 0;
+    let totalAssistantMessages = 0;
+    for (const point of matching) {
+      totalTokens += point.totalTokens;
+      totalAssistantMessages += point.totalAssistantMessages;
+      mergeHistoryProviderSegments(providerSegments, point.providerSegments);
+    }
+    return {
+      dateKey: formatDateKey(bin.start),
+      label: bin.label,
+      totalTokens,
+      totalAssistantMessages,
+      providerSegments,
+    };
+  });
+  const totalTokens = binned.reduce((sum, point) => sum + point.totalTokens, 0);
+  const totalAssistantMessages = binned.reduce((sum, point) => sum + point.totalAssistantMessages, 0);
+  const activeBinCount = binned.filter(point => point.totalTokens > 0 || point.totalAssistantMessages > 0).length;
+
+  return {
+    key: rangeKey,
+    label: historyRangeLabel(rangeKey),
+    granularityLabel: historyRangeMeta(rangeKey),
+    points: binned,
+    maxTotalTokens: binned.reduce((max, point) => Math.max(max, point.totalTokens), 0),
+    totalTokens,
+    totalAssistantMessages,
+    activeBinCount,
+    unavailableReason: activeBinCount > 0 ? undefined : `No usage records in the ${historyRangeLabel(rangeKey)} range.`,
+  };
+}
+
+function historyPointsForSource(
+  sourceTotals: DashboardSourceModeTotals,
+  providerId?: string,
+): DashboardHistoryPoint[] {
+  return providerId
+    ? findSourceProvider(sourceTotals, providerId).historyPoints
+    : sourceTotals.historyPoints;
+}
+
+function buildHistoryRangeViews(
+  sourceTotals: DashboardSourceModeTotals,
+  providerId?: string,
+): DashboardHistoryRangeView[] {
+  const points = historyPointsForSource(sourceTotals, providerId);
+  return DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => buildHistoryRangeView(points, rangeKey));
+}
+
 function historyChartAttributes(
   model: DashboardModel,
   providerId?: string,
 ): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => {
-    const windows = historyWindowsForSource(sourceTotals, providerId);
-    const total = findLocalHistoryWindow(windows, 'all');
-    const selectedWindow = findLocalHistoryWindow(windows, model.defaultLocalHistoryWindowId);
-    const key = `${sourceTotals.sourceMode}-${model.defaultLocalHistoryWindowId}`;
-    return [
-      `data-history-source-label-${esc(sourceTotals.sourceMode)}="${esc(sourceTotals.label)}"`,
-      `data-history-total-label-${esc(sourceTotals.sourceMode)}="${esc(formatTokenCount(total.totalTokens))}"`,
-      `data-history-selected-label-${esc(sourceTotals.sourceMode)}="${esc(formatTokenCount(selectedWindow.totalTokens))}"`,
-      `data-history-selected-messages-${esc(sourceTotals.sourceMode)}="${esc(formatMessageCount(selectedWindow.totalAssistantMessages))}"`,
-      `data-history-empty-${esc(key)}="${selectedWindow.totalTokens <= 0 && selectedWindow.totalAssistantMessages <= 0 ? 'true' : 'false'}"`,
-    ].join(' ');
-  }).join(' ');
-}
-
-function historyChartBarAttributes(
-  model: DashboardModel,
-  windowId: string,
-  providerId?: string,
-): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => {
-    const windows = historyWindowsForSource(sourceTotals, providerId);
-    const window = findLocalHistoryWindow(windows, windowId);
-    const maxTokens = Math.max(...windows.map(w => w.totalTokens), 0);
-    const height = historyWindowBarHeight(window.totalTokens, maxTokens);
-    return [
-      `data-height-${esc(sourceTotals.sourceMode)}="${esc(height)}"`,
-      `data-tokens-${esc(sourceTotals.sourceMode)}="${esc(formatTokenCount(window.totalTokens))}"`,
-      `data-messages-${esc(sourceTotals.sourceMode)}="${esc(formatMessageCount(window.totalAssistantMessages))}"`,
-      `data-empty-${esc(sourceTotals.sourceMode)}="${window.totalTokens <= 0 && window.totalAssistantMessages <= 0 ? 'true' : 'false'}"`,
-    ].join(' ');
-  }).join(' ');
+  return model.sourceModeTotals.flatMap(sourceTotals =>
+    buildHistoryRangeViews(sourceTotals, providerId).map(view => {
+      const key = `${sourceTotals.sourceMode}-${view.key}`;
+      return [
+        `data-history-source-label-${esc(sourceTotals.sourceMode)}="${esc(sourceTotals.label)}"`,
+        `data-history-total-label-${esc(key)}="${esc(formatTokenCount(view.totalTokens))}"`,
+        `data-history-selected-messages-${esc(key)}="${esc(formatMessageCount(view.totalAssistantMessages))}"`,
+        `data-history-range-meta-${esc(key)}="${esc(view.granularityLabel)}"`,
+        `data-history-empty-${esc(key)}="${view.totalTokens <= 0 && view.totalAssistantMessages <= 0 ? 'true' : 'false'}"`,
+      ].join(' ');
+    })).join(' ');
 }
 
 function renderUsageHistoryChart(
   model: DashboardModel,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
+  _defaultWindowId: DashboardLocalHistoryWindow['windowId'],
   provider?: DashboardProviderCard,
 ): string {
   const scope = provider ? provider.providerId : 'overview';
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const selectedWindows = historyWindowsForSource(selectedSource, provider?.providerId);
-  const selectedWindow = findLocalHistoryWindow(selectedWindows, defaultWindowId);
-  const maxTokens = Math.max(...selectedWindows.map(w => w.totalTokens), 0);
+  const selectedView = buildHistoryRangeView(historyPointsForSource(selectedSource, provider?.providerId), DEFAULT_HISTORY_RANGE_KEY);
   const chartTitle = provider ? `${provider.label} history chart` : 'History chart';
   const chartCopy = provider
-    ? 'Aggregate window trend for this provider. Model-level timeline backend is pending.'
-    : 'Aggregate window trend by provider. Model-level timeline backend is pending.';
-  const bars = selectedWindows.map(window => {
-    const height = historyWindowBarHeight(window.totalTokens, maxTokens);
-    const isActive = window.windowId === defaultWindowId;
-    const isEmpty = window.totalTokens <= 0 && window.totalAssistantMessages <= 0;
-    const providerSegments = provider
-      ? renderHistoryProviderSegments(
-        [{ providerId: provider.providerId, label: provider.label, totalTokens: window.totalTokens }],
-        window.totalTokens,
-      )
-      : renderHistoryProviderSegments(
-        selectedSource.providers.map(sourceProvider => {
-          const providerWindow = findLocalHistoryWindow(sourceProvider.windows, window.windowId);
-          return {
-            providerId: sourceProvider.providerId,
-            label: sourceProvider.label,
-            totalTokens: providerWindow.totalTokens,
-          };
-        }),
-        window.totalTokens,
-      );
-    return `
-      <div class="usage-history-bin${isActive ? ' active' : ''}">
-        <div class="usage-history-bar${isEmpty ? ' empty' : ''}" data-history-window-bar="${esc(window.windowId)}" ${historyChartBarAttributes(model, window.windowId, provider?.providerId)} role="meter" aria-label="${esc(`${window.label} usage history`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(height)}" title="${esc(`${window.label}: ${formatTokenCount(window.totalTokens)} - ${formatMessageCount(window.totalAssistantMessages)}`)}">
+    ? 'Range-controlled daily trend for this provider when day buckets are available.'
+    : 'Range-controlled usage trend by provider using local and imported day buckets where available.';
+  const rangeButtons = DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => {
+    const selected = rangeKey === DEFAULT_HISTORY_RANGE_KEY;
+    return `<button type="button" class="history-range-btn${selected ? ' active' : ''}" data-history-range="${esc(rangeKey)}" aria-pressed="${selected ? 'true' : 'false'}">${esc(historyRangeLabel(rangeKey))}</button>`;
+  }).join('\n');
+  const groups = model.sourceModeTotals.flatMap(sourceTotals =>
+    buildHistoryRangeViews(sourceTotals, provider?.providerId).map(view => {
+      const groupKey = `${sourceTotals.sourceMode}-${view.key}`;
+      const isVisible = sourceTotals.sourceMode === model.defaultSourceMode && view.key === DEFAULT_HISTORY_RANGE_KEY;
+      const bars = view.points.map(point => {
+        const height = historyWindowBarHeight(point.totalTokens, view.maxTotalTokens);
+        const isEmpty = point.totalTokens <= 0 && point.totalAssistantMessages <= 0;
+        const providerSegments = renderHistoryProviderSegments(point.providerSegments, point.totalTokens);
+        return `
+      <div class="usage-history-bin">
+        <div class="usage-history-bar${isEmpty ? ' empty' : ''}" data-history-bin-bar="${esc(point.dateKey)}" role="meter" aria-label="${esc(`${point.label} usage history`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(height)}" title="${esc(`${point.label}: ${formatTokenCount(point.totalTokens)} - ${formatMessageCount(point.totalAssistantMessages)}`)}">
           <div class="usage-history-bar-fill stacked" style="height: ${esc(height)}%">
             ${providerSegments}
           </div>
         </div>
-        <div class="usage-history-bin-label">${esc(window.label)}</div>
-        <div class="usage-history-bin-value">${esc(formatTokenCount(window.totalTokens))}</div>
+        <div class="usage-history-bin-label">${esc(point.label)}</div>
       </div>`;
-  }).join('\n');
+      }).join('\n');
+
+      return `
+      <div class="usage-history-range-group" data-history-range-group="${esc(groupKey)}"${isVisible ? '' : ' hidden'}>
+        <div class="usage-history-empty calm-state"${view.activeBinCount > 0 ? ' hidden' : ''}>
+          <div class="calm-state-header">${esc(view.unavailableReason ?? 'No history data for this selection')}</div>
+          <div class="calm-state-copy">Try another source mode or wait for daily snapshot buckets.</div>
+        </div>
+        <div class="usage-history-bars" style="--history-bin-count: ${view.points.length}">
+          ${bars}
+        </div>
+        <div class="history-summary-grid">
+          <div class="history-summary-card"><span>History</span><strong>${esc(String(view.activeBinCount))} active ${view.key === '1Y' ? 'weeks' : view.key === 'ALL' ? 'months' : 'days'}</strong></div>
+          <div class="history-summary-card"><span>Tokens</span><strong>${esc(formatTokenCount(view.totalTokens))}</strong></div>
+          <div class="history-summary-card"><span>Activity</span><strong>${esc(formatMessageCount(view.totalAssistantMessages))}</strong></div>
+        </div>
+      </div>`;
+    })).join('\n');
 
   return `
     <div class="usage-history-chart" data-history-chart="${esc(scope)}" ${historyChartAttributes(model, provider?.providerId)}>
       <div class="usage-history-chart-head">
         <div>
           <div class="usage-history-chart-title">${esc(chartTitle)}</div>
-          <div class="usage-history-chart-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - selected window: <span class="usage-history-selected-value">${esc(formatTokenCount(selectedWindow.totalTokens))}</span></div>
+          <div class="usage-history-chart-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - <span class="usage-history-range-meta">${esc(selectedView.granularityLabel)}</span></div>
         </div>
         <div class="distribution-total">
-          <span class="distribution-total-value usage-history-total-value">${esc(formatTokenCount(findLocalHistoryWindow(selectedWindows, 'all').totalTokens))}</span>
-          <span class="distribution-total-messages usage-history-selected-messages">${esc(formatMessageCount(selectedWindow.totalAssistantMessages))}</span>
+          <span class="distribution-total-value usage-history-total-value">${esc(formatTokenCount(selectedView.totalTokens))}</span>
+          <span class="distribution-total-messages usage-history-selected-messages">${esc(formatMessageCount(selectedView.totalAssistantMessages))}</span>
         </div>
       </div>
-      <div class="usage-history-empty calm-state">
-        <div class="calm-state-header">No history data for this selection</div>
-        <div class="calm-state-copy">Try another history window or source mode.</div>
+      <div class="history-range-selector" aria-label="History range">
+        ${rangeButtons}
       </div>
-      <div class="usage-history-bars" style="--history-bin-count: ${selectedWindows.length}">
-        ${bars}
-      </div>
+      ${groups}
       <div class="usage-history-legend" aria-label="Provider color legend">
         <span><span class="usage-history-legend-swatch claude"></span>Claude</span>
         <span><span class="usage-history-legend-swatch codex"></span>Codex</span>
@@ -808,9 +970,13 @@ function modelRowsForSourceWindow(
   providerId?: string,
 ): DashboardModelUsageAggregate[] {
   const rows = sourceTotals.modelWindows[windowId as DashboardLocalHistoryWindow['windowId']] ?? [];
-  return providerId
+  const scopedRows = providerId
     ? rows.filter(row => row.providerId === providerId)
     : rows;
+  const hasNamedModel = scopedRows.some(row => row.modelLabel.toLowerCase() !== 'unknown model');
+  return hasNamedModel
+    ? scopedRows.filter(row => row.modelLabel.toLowerCase() !== 'unknown model')
+    : scopedRows;
 }
 
 function modelRowKey(row: Pick<DashboardModelUsageAggregate, 'providerId' | 'modelLabel'>): string {
@@ -962,6 +1128,90 @@ function renderModelBreakdownDistribution(
     </div>`;
 }
 
+function laneLabelForSource(
+  sourceTotals: DashboardSourceModeTotals,
+  providerId?: string,
+): string {
+  const providers = providerId
+    ? [findSourceProvider(sourceTotals, providerId)]
+    : sourceTotals.providers;
+  const parts: string[] = [];
+  for (const provider of providers) {
+    const hasLocal = sourceTotals.sourceMode !== 'snapshots' &&
+      findLocalHistoryWindow(provider.windows, 'all').totalTokens > 0;
+    const sourceSummary = formatSnapshotSourceLabels(provider.sourceLabels, 2);
+    if (hasLocal) {
+      parts.push(provider.label);
+    }
+    if (sourceSummary) {
+      parts.push(`${provider.label} (${sourceSummary})`);
+    }
+    if (!hasLocal && !sourceSummary && findLocalHistoryWindow(provider.windows, 'today').totalTokens > 0) {
+      parts.push(provider.label);
+    }
+  }
+  return parts.length > 0 ? parts.join(' + ') : (providerId ? findSourceProvider(sourceTotals, providerId).label : sourceTotals.label);
+}
+
+function renderTodaySection(
+  model: DashboardModel,
+  provider?: DashboardProviderCard,
+): string {
+  const title = provider ? `${provider.label} today` : 'Today';
+  const groups = model.sourceModeTotals.map(sourceTotals => {
+    const today = provider
+      ? findLocalHistoryWindow(findSourceProvider(sourceTotals, provider.providerId).windows, 'today')
+      : findLocalHistoryWindow(sourceTotals.windows, 'today');
+    const modelRows = modelRowsForSourceWindow(sourceTotals, 'today', provider?.providerId);
+    const topModels = modelRows
+      .filter(row => row.totalTokens > 0)
+      .slice(0, 3)
+      .map(row => row.modelLabel)
+      .join(', ');
+    const laneLabel = laneLabelForSource(sourceTotals, provider?.providerId);
+    const empty = today.totalTokens <= 0 && today.totalAssistantMessages <= 0;
+    const hidden = sourceTotals.sourceMode === model.defaultSourceMode ? '' : ' hidden';
+
+    if (empty) {
+      return `
+      <div class="today-source-group" data-today-source-group="${esc(sourceTotals.sourceMode)}"${hidden}>
+        <div class="today-empty calm-state">
+          <div class="calm-state-header">Today unavailable</div>
+          <div class="calm-state-copy">${esc(provider ? `${provider.label} has no ${sourceTotals.label.toLowerCase()} usage for today.` : `${sourceTotals.label} has no usage for today.`)}</div>
+        </div>
+      </div>`;
+    }
+
+    return `
+      <div class="today-source-group" data-today-source-group="${esc(sourceTotals.sourceMode)}"${hidden}>
+        <div class="today-card-grid">
+          <div class="today-card">
+            <span class="metric-label">Tokens</span>
+            <span class="today-card-value">${esc(formatTokenCount(today.totalTokens))}</span>
+            <span class="today-card-copy">${esc(`${formatMessageCount(today.totalAssistantMessages)}${topModels ? ` - ${topModels}` : ''}`)}</span>
+          </div>
+          <div class="today-card">
+            <span class="metric-label">Activity</span>
+            <span class="today-card-value">${esc(formatMessageCount(today.totalAssistantMessages))}</span>
+            <span class="today-card-copy">${esc(laneLabel)}</span>
+          </div>
+          <div class="today-card">
+            <span class="metric-label">Source</span>
+            <span class="today-card-value">${esc(sourceTotals.label)}</span>
+            <span class="today-card-copy">${esc(laneLabel)}</span>
+          </div>
+        </div>
+        <div class="snapshot-note">${esc(`${title} - ${laneLabel}`)}</div>
+      </div>
+    `;
+  }).join('\n');
+
+  return `
+    <div class="today-panel" data-today-section="${esc(provider?.providerId ?? 'overview')}">
+      ${groups}
+    </div>`;
+}
+
 function renderUsageDistributionVisuals(
   model: DashboardModel,
   defaultWindowId: DashboardLocalHistoryWindow['windowId'],
@@ -1055,9 +1305,13 @@ function renderProviderTab(model: DashboardModel, providerId: string): string {
 
   return `
   <section class="tab-panel" id="tab-${esc(provider.providerId)}" data-dashboard-tab-panel="${esc(provider.providerId)}" role="tabpanel" aria-labelledby="tab-button-${esc(provider.providerId)}" hidden>
+    <div class="usage-section-title">Usage</div>
     ${renderProviderLiveQuotaSection(model, provider)}
 
-    ${sectionHeader(`${provider.label} history chart`, sourceModeChip(model.defaultSourceMode), 'Aggregate history windows use provider-coded chart colors.')}
+    ${sectionHeader(`${provider.label} today`, sourceModeChip(model.defaultSourceMode), 'Selected source usage for the local day.')}
+    ${renderTodaySection(model, provider)}
+
+    ${sectionHeader(`${provider.label} history`, sourceModeChip(model.defaultSourceMode), 'Range-controlled token trend from daily bins where available.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId, provider)}
 
     ${sectionHeader(`${provider.label} usage distribution`, sourceModeChip(model.defaultSourceMode), 'Visual summary follows the selected history source and window.')}
@@ -1108,40 +1362,17 @@ function renderSnapshotSummary(model: DashboardModel): string {
   const refreshed = aggregate.lastReadMs !== undefined
     ? formatRefreshTime(aggregate.lastReadMs)
     : 'Not yet refreshed';
-  const providerCards = aggregate.providers.map(provider => `
-    <div class="snapshot-card">
-      <div class="provider-header card-header">
-        <div>
-          <span class="provider-label">${esc(provider.label)}</span>
-          <span class="card-kicker">Imported usage aggregate</span>
-        </div>
-        <div class="chip-row">${stateChip('SNAPSHOT', 'snapshot')}${stateChip('AGGREGATE ONLY', 'aggregate-only')}</div>
-      </div>
-      <div class="provider-metrics">
-        <div class="metric">
-          <span class="metric-label">Generated</span>
-          <span class="metric-value small">${esc(formatRefreshTime(provider.generatedAtMs))}</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Tokens</span>
-          <span class="metric-value">${esc(formatTokenCount(provider.totalTokens))}</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Messages</span>
-          <span class="metric-value">${esc(String(provider.totalAssistantMessages))}</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Coverage</span>
-          <span class="metric-value small">${esc(provider.providedWindowIds.map(windowId => findLocalHistoryWindow(provider.windows, windowId).label).join(', '))}</span>
-        </div>
-        ${provider.sourceLabel ? `
-        <div class="metric">
-          <span class="metric-label">Source</span>
-          <span class="metric-value small">${esc(provider.sourceLabel)}</span>
-        </div>` : ''}
-      </div>
-      <div class="snapshot-note">Aggregate-only import; daily/model details are not included.</div>
-    </div>`).join('\n');
+  const topProviderRows = aggregate.providers
+    .slice()
+    .sort((a, b) => b.totalTokens - a.totalTokens)
+    .slice(0, 6)
+    .map(provider => `
+      <div class="snapshot-provider-row">
+        <span>${esc(provider.label)}${provider.sourceLabel ? ` (${esc(provider.sourceLabel)})` : ''}</span>
+        <strong>${esc(formatTokenCount(provider.totalTokens))}</strong>
+        <span>${esc(formatMessageCount(provider.totalAssistantMessages))}</span>
+      </div>`)
+    .join('\n');
 
   return `
   <div class="snapshot-summary">
@@ -1173,7 +1404,9 @@ function renderSnapshotSummary(model: DashboardModel): string {
         <span class="overview-value">Aggregate only</span>
       </div>
     </div>
-    <div class="card-grid snapshot-grid">${providerCards}</div>
+    <div class="snapshot-provider-list">
+      ${topProviderRows}
+    </div>
   </div>`;
 }
 
@@ -2079,6 +2312,84 @@ export function buildDashboardHtml(
     font-size: 11px;
     color: var(--vscode-descriptionForeground, #999999);
   }
+  .usage-section-title {
+    margin: 14px 0 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--vscode-foreground, #cccccc);
+  }
+  .today-card-grid,
+  .history-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .today-card,
+  .history-summary-card {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 6px;
+    background: var(--vscode-sideBar-background, rgba(127,127,127,0.05));
+    padding: 12px;
+    min-width: 0;
+  }
+  .today-card-value,
+  .history-summary-card strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--vscode-foreground, #cccccc);
+    font-size: 20px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .today-card-copy,
+  .history-summary-card span {
+    display: block;
+    margin-top: 4px;
+    color: var(--vscode-descriptionForeground, #999999);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .history-range-selector {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin: 10px 0 8px;
+  }
+  .history-range-btn {
+    background: transparent;
+    color: var(--vscode-foreground, #cccccc);
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 999px;
+    padding: 3px 9px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .history-range-btn.active {
+    border-color: var(--vscode-focusBorder, #007acc);
+    background: rgba(0, 122, 204, 0.16);
+  }
+  .history-summary-grid {
+    margin-top: 12px;
+  }
+  .history-summary-card strong {
+    font-size: 16px;
+  }
+  .snapshot-provider-list {
+    margin-top: 12px;
+    border-top: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+  }
+  .snapshot-provider-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.18));
+    color: var(--vscode-descriptionForeground, #999999);
+    font-size: 12px;
+  }
+  .snapshot-provider-row strong {
+    color: var(--vscode-foreground, #cccccc);
+  }
   .source-window-note[hidden] {
     display: none;
   }
@@ -2121,7 +2432,9 @@ export function buildDashboardHtml(
     }
     .control-panel,
     .card-grid,
-    .visual-grid {
+    .visual-grid,
+    .today-card-grid,
+    .history-summary-grid {
       grid-template-columns: 1fr;
     }
     .overview-row {
@@ -2199,9 +2512,13 @@ export function buildDashboardHtml(
   </div>
 
   <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
+    <div class="usage-section-title">Usage</div>
     ${renderLiveQuotaSection(model)}
 
-    ${sectionHeader('History chart', sourceModeChip(model.defaultSourceMode), 'Aggregate history windows use provider-coded chart colors.')}
+    ${sectionHeader('Today', sourceModeChip(model.defaultSourceMode), 'Selected source and provider-aware usage for the local day.')}
+    ${renderTodaySection(model)}
+
+    ${sectionHeader('History', sourceModeChip(model.defaultSourceMode), 'Range-controlled token trend from daily bins where available.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId)}
 
     ${sectionHeader('Usage distribution', sourceModeChip(model.defaultSourceMode), 'Visual summaries follow the selected history source and window.')}
@@ -2235,8 +2552,10 @@ export function buildDashboardHtml(
     var tabPanels = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab-panel]'));
     var windowButtons = Array.prototype.slice.call(document.querySelectorAll('[data-local-window]'));
     var sourceButtons = Array.prototype.slice.call(document.querySelectorAll('[data-source-mode]'));
+    var historyRangeButtons = Array.prototype.slice.call(document.querySelectorAll('[data-history-range]'));
     var activeSourceMode = '${model.defaultSourceMode}';
     var activeWindowId = '${model.defaultLocalHistoryWindowId}';
+    var activeHistoryRange = '${DEFAULT_HISTORY_RANGE_KEY}';
     function statusClass(statusClassName) {
       return statusClassName ? 'badge source-provider-status ' + statusClassName : 'badge source-provider-status';
     }
@@ -2308,51 +2627,40 @@ export function buildDashboardHtml(
       });
     }
     function updateUsageHistoryCharts() {
-      var key = activeSourceMode + '-' + activeWindowId;
+      var key = activeSourceMode + '-' + activeHistoryRange;
       Array.prototype.forEach.call(document.querySelectorAll('[data-history-chart]'), function(chart) {
-        var totalLabel = chart.getAttribute('data-history-total-label-' + activeSourceMode);
+        var totalLabel = chart.getAttribute('data-history-total-label-' + key);
+        var totalMessages = chart.getAttribute('data-history-selected-messages-' + key);
+        var rangeMeta = chart.getAttribute('data-history-range-meta-' + key);
         var totalEl = chart.querySelector('.usage-history-total-value');
-        var selectedValueEl = chart.querySelector('.usage-history-selected-value');
         var selectedMessagesEl = chart.querySelector('.usage-history-selected-messages');
-        var selectedValue = '0 tokens';
-        var selectedMessages = '0 messages';
+        var rangeMetaEl = chart.querySelector('.usage-history-range-meta');
         var selectedEmpty = chart.getAttribute('data-history-empty-' + key) === 'true';
         if (totalEl && totalLabel !== null) {
           totalEl.textContent = totalLabel;
         }
-        Array.prototype.forEach.call(chart.querySelectorAll('[data-history-window-bar]'), function(bar) {
-          var windowId = bar.getAttribute('data-history-window-bar');
-          var height = bar.getAttribute('data-height-' + activeSourceMode) || '0';
-          var tokens = bar.getAttribute('data-tokens-' + activeSourceMode) || '0 tokens';
-          var messages = bar.getAttribute('data-messages-' + activeSourceMode) || '0 messages';
-          var empty = bar.getAttribute('data-empty-' + activeSourceMode) === 'true';
-          var active = windowId === activeWindowId;
-          var bin = bar.parentElement;
-          var fill = bar.querySelector('.usage-history-bar-fill');
-          var valueEl = bin ? bin.querySelector('.usage-history-bin-value') : null;
-          bar.classList.toggle('empty', empty);
-          bar.setAttribute('aria-valuenow', height);
-          if (bin) {
-            bin.classList.toggle('active', active);
-          }
-          if (fill) {
-            fill.style.height = height + '%';
-          }
-          if (valueEl) {
-            valueEl.textContent = tokens;
-          }
-          if (active) {
-            selectedValue = tokens;
-            selectedMessages = messages;
-            selectedEmpty = empty;
+        if (selectedMessagesEl && totalMessages !== null) {
+          selectedMessagesEl.textContent = totalMessages;
+        }
+        if (rangeMetaEl && rangeMeta !== null) {
+          rangeMetaEl.textContent = rangeMeta;
+        }
+        Array.prototype.forEach.call(chart.querySelectorAll('[data-history-range-group]'), function(group) {
+          if (group.getAttribute('data-history-range-group') === key) {
+            group.removeAttribute('hidden');
+          } else {
+            group.setAttribute('hidden', '');
           }
         });
         chart.classList.toggle('is-empty', selectedEmpty);
-        if (selectedValueEl) {
-          selectedValueEl.textContent = selectedValue;
-        }
-        if (selectedMessagesEl) {
-          selectedMessagesEl.textContent = selectedMessages;
+      });
+    }
+    function updateTodaySections() {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-today-source-group]'), function(group) {
+        if (group.getAttribute('data-today-source-group') === activeSourceMode) {
+          group.removeAttribute('hidden');
+        } else {
+          group.setAttribute('hidden', '');
         }
       });
     }
@@ -2423,6 +2731,7 @@ export function buildDashboardHtml(
       });
       updateSourceModeLabels();
       updateSourceWindowNotes();
+      updateTodaySections();
       updateDistributionVisuals();
       updateUsageHistoryCharts();
       updateModelDistributionVisuals();
@@ -2475,6 +2784,18 @@ export function buildDashboardHtml(
         button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
     }
+    function setHistoryRange(rangeKey) {
+      if (!rangeKey) {
+        return;
+      }
+      activeHistoryRange = rangeKey;
+      updateUsageHistoryCharts();
+      historyRangeButtons.forEach(function(button) {
+        var selected = button.getAttribute('data-history-range') === rangeKey;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+    }
     tabButtons.forEach(function(button) {
       button.addEventListener('click', function() {
         setActiveTab(button.getAttribute('data-dashboard-tab'));
@@ -2488,6 +2809,11 @@ export function buildDashboardHtml(
     windowButtons.forEach(function(button) {
       button.addEventListener('click', function() {
         setLocalWindow(button.getAttribute('data-local-window'));
+      });
+    });
+    historyRangeButtons.forEach(function(button) {
+      button.addEventListener('click', function() {
+        setHistoryRange(button.getAttribute('data-history-range'));
       });
     });
     btn.addEventListener('click', function() {
