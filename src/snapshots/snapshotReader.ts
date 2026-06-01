@@ -1,4 +1,5 @@
 import * as fs from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import { isKnownProvider, type ProviderId } from '../core/providers';
 import {
@@ -36,6 +37,8 @@ export interface ReadPromptFuelSnapshotsOptions {
   enabledProviderIds?: ReadonlyArray<string>;
   diagnostics?: SnapshotDiagnostics;
   nowMs?: number;
+  localMachineLabel?: string;
+  snapshotImportLabels?: ReadonlyArray<string>;
 }
 
 export interface ReadPromptFuelSnapshotsResult {
@@ -44,6 +47,7 @@ export interface ReadPromptFuelSnapshotsResult {
   malformedRecords: number;
   unsupportedSchemaVersions: number;
   unknownProviders: number;
+  skippedByMachineLabel: number;
 }
 
 interface ValidatedPromptFuelSnapshot {
@@ -53,8 +57,8 @@ interface ValidatedPromptFuelSnapshot {
 
 const MAX_SNAPSHOT_FILES = 50;
 const MAX_ARCHIVE_FILES = 240;
-const AGENTBRIDGE_SNAPSHOT_SCHEMA_VERSION = 2;
-const AGENTBRIDGE_HISTORY_ARCHIVE_SCHEMA_VERSION = 1;
+const SNAPSHOT_IMPORT_SCHEMA_V2 = 2;
+const SNAPSHOT_ARCHIVE_SCHEMA_V1 = 1;
 
 export async function readPromptFuelSnapshots(
   options: ReadPromptFuelSnapshotsOptions,
@@ -79,10 +83,14 @@ export async function readPromptFuelSnapshots(
     ? new Set(options.enabledProviderIds.filter(isKnownProvider))
     : undefined;
 
+  const localLabelNormalized = resolveLocalMachineLabel(options.localMachineLabel);
+  const importAllowSet = buildImportAllowSet(options.snapshotImportLabels);
+
   const providers: PromptFuelSnapshotProviderAggregate[] = [];
   let malformedRecords = 0;
   let unsupportedSchemaVersions = 0;
   let unknownProviders = 0;
+  let skippedByMachineLabel = 0;
   let validSnapshotCount = 0;
 
   for (const fileName of files) {
@@ -92,6 +100,18 @@ export async function readPromptFuelSnapshots(
     } catch {
       malformedRecords++;
       continue;
+    }
+
+    const machineLabel = getImportedSnapshotMachineLabel(parsed);
+    if (machineLabel !== undefined) {
+      if (machineLabel === localLabelNormalized) {
+        skippedByMachineLabel++;
+        continue;
+      }
+      if (importAllowSet.size > 0 && !importAllowSet.has(machineLabel)) {
+        skippedByMachineLabel++;
+        continue;
+      }
     }
 
     const validation = validatePromptFuelSnapshotPayload(parsed, enabled, nowMs);
@@ -121,6 +141,9 @@ export async function readPromptFuelSnapshots(
   if (unknownProviders > 0) {
     options.diagnostics?.info(`unknown snapshot provider ignored; count=${unknownProviders}`);
   }
+  if (skippedByMachineLabel > 0) {
+    options.diagnostics?.info(`snapshot skipped (local machine label); count=${skippedByMachineLabel}`);
+  }
 
   return {
     state: {
@@ -132,6 +155,7 @@ export async function readPromptFuelSnapshots(
     malformedRecords,
     unsupportedSchemaVersions,
     unknownProviders,
+    skippedByMachineLabel,
   };
 }
 
@@ -149,8 +173,8 @@ export function validatePromptFuelSnapshotPayload(
     return { malformed: true, unsupportedSchemaVersion: false, unknownProviders: 0 };
   }
 
-  if (value.schemaVersion === AGENTBRIDGE_SNAPSHOT_SCHEMA_VERSION) {
-    return validateAgentBridgeSnapshotPayload(value, enabledProviderIds, nowMs);
+  if (value.schemaVersion === SNAPSHOT_IMPORT_SCHEMA_V2) {
+    return validateImportedSnapshotPayload(value, enabledProviderIds, nowMs);
   }
 
   if (value.schemaVersion !== PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION) {
@@ -264,7 +288,7 @@ async function collectYearArchiveFiles(yearDir: string, files: string[]): Promis
   }
 }
 
-function validateAgentBridgeSnapshotPayload(
+function validateImportedSnapshotPayload(
   value: Record<string, unknown>,
   enabledProviderIds: ReadonlySet<ProviderId> | undefined,
   nowMs: number,
@@ -279,7 +303,7 @@ function validateAgentBridgeSnapshotPayload(
   }
 
   if (value.archiveSchemaVersion !== undefined) {
-    return validateAgentBridgeArchiveSnapshotPayload(value, enabledProviderIds, nowMs);
+    return validateImportedArchiveSnapshotPayload(value, enabledProviderIds, nowMs);
   }
 
   if (hasUnexpectedFields(value, ['schemaVersion', 'generatedAtEpochMs', 'machine', 'providerUsage', 'exportMeta'])) {
@@ -296,7 +320,7 @@ function validateAgentBridgeSnapshotPayload(
 
   const sourceLabel = safeSnapshotSourceLabel(value.machine.label, IMPORTED_SNAPSHOT_SOURCE_LABEL);
 
-  return validateAgentBridgeProviders(
+  return validateImportedProviders(
     value.providerUsage ?? [],
     generatedAtEpochMs,
     enabledProviderIds,
@@ -305,7 +329,7 @@ function validateAgentBridgeSnapshotPayload(
   );
 }
 
-function validateAgentBridgeArchiveSnapshotPayload(
+function validateImportedArchiveSnapshotPayload(
   value: Record<string, unknown>,
   enabledProviderIds: ReadonlySet<ProviderId> | undefined,
   nowMs: number,
@@ -315,7 +339,7 @@ function validateAgentBridgeArchiveSnapshotPayload(
   unsupportedSchemaVersion: boolean;
   unknownProviders: number;
 } {
-  if (value.archiveSchemaVersion !== AGENTBRIDGE_HISTORY_ARCHIVE_SCHEMA_VERSION) {
+  if (value.archiveSchemaVersion !== SNAPSHOT_ARCHIVE_SCHEMA_V1) {
     return { malformed: false, unsupportedSchemaVersion: true, unknownProviders: 0 };
   }
   if (hasUnexpectedFields(value, [
@@ -339,7 +363,7 @@ function validateAgentBridgeArchiveSnapshotPayload(
     ? safeSnapshotSourceLabel(value.machine.label, IMPORTED_SNAPSHOT_SOURCE_LABEL)
     : IMPORTED_SNAPSHOT_SOURCE_LABEL;
 
-  return validateAgentBridgeProviders(
+  return validateImportedProviders(
     value.providers,
     generatedAtEpochMs,
     enabledProviderIds,
@@ -348,7 +372,7 @@ function validateAgentBridgeArchiveSnapshotPayload(
   );
 }
 
-function validateAgentBridgeProviders(
+function validateImportedProviders(
   rawProviders: unknown[],
   generatedAtEpochMs: number,
   enabledProviderIds: ReadonlySet<ProviderId> | undefined,
@@ -365,7 +389,7 @@ function validateAgentBridgeProviders(
   let malformedProvider = false;
 
   for (const rawProvider of rawProviders) {
-    const provider = validateAgentBridgeProvider(rawProvider, generatedAtEpochMs, nowMs, sourceLabel);
+    const provider = validateImportedProvider(rawProvider, generatedAtEpochMs, nowMs, sourceLabel);
     if (provider === 'unknown-provider') {
       unknownProviders++;
       continue;
@@ -392,7 +416,7 @@ function validateAgentBridgeProviders(
   };
 }
 
-function validateAgentBridgeProvider(
+function validateImportedProvider(
   value: unknown,
   generatedAtEpochMs: number,
   nowMs: number,
@@ -423,7 +447,7 @@ function validateAgentBridgeProvider(
     return undefined;
   }
 
-  const normalized = normalizeAgentBridgeHistoryBuckets(
+  const normalized = normalizeImportedHistoryBuckets(
     value.provider,
     value.historyBuckets ?? [],
     nowMs,
@@ -445,7 +469,7 @@ function validateAgentBridgeProvider(
   };
 }
 
-function normalizeAgentBridgeHistoryBuckets(
+function normalizeImportedHistoryBuckets(
   providerId: ProviderId,
   buckets: unknown[],
   nowMs: number,
@@ -471,7 +495,7 @@ function normalizeAgentBridgeHistoryBuckets(
   let validBucketCount = 0;
 
   for (const rawBucket of buckets) {
-    const bucket = readAgentBridgeHistoryBucket(rawBucket);
+    const bucket = readImportedHistoryBucket(rawBucket);
     if (!bucket) {
       continue;
     }
@@ -529,7 +553,7 @@ function normalizeAgentBridgeHistoryBuckets(
   };
 }
 
-function readAgentBridgeHistoryBucket(value: unknown): {
+function readImportedHistoryBucket(value: unknown): {
   dateKey: string;
   aggregate: AggregateUsage;
   models: Array<{ modelLabel: string; totalTokens: number; totalAssistantMessages: number }>;
@@ -556,9 +580,9 @@ function readAgentBridgeHistoryBucket(value: unknown): {
     return undefined;
   }
 
-  const aggregate = readAgentBridgeTokenAggregate(value);
+  const aggregate = readImportedTokenAggregate(value);
   const models = (value.models ?? [])
-    .map(readAgentBridgeModelBucket)
+    .map(readImportedModelBucket)
     .filter((model): model is { modelLabel: string; totalTokens: number; totalAssistantMessages: number } => model !== undefined);
 
   if (aggregate.totalTokens <= 0 && models.length === 0) {
@@ -572,7 +596,7 @@ function readAgentBridgeHistoryBucket(value: unknown): {
   };
 }
 
-function readAgentBridgeModelBucket(value: unknown): {
+function readImportedModelBucket(value: unknown): {
   modelLabel: string;
   totalTokens: number;
   totalAssistantMessages: number;
@@ -591,7 +615,7 @@ function readAgentBridgeModelBucket(value: unknown): {
     return undefined;
   }
   const modelLabel = sanitizeModelLabel(value.model);
-  const aggregate = readAgentBridgeTokenAggregate(value);
+  const aggregate = readImportedTokenAggregate(value);
   if (!modelLabel || aggregate.totalTokens <= 0) {
     return undefined;
   }
@@ -602,7 +626,7 @@ function readAgentBridgeModelBucket(value: unknown): {
   };
 }
 
-function readAgentBridgeTokenAggregate(value: Record<string, unknown>): AggregateUsage {
+function readImportedTokenAggregate(value: Record<string, unknown>): AggregateUsage {
   const aggregate = createEmptyAggregate();
   aggregate.totalInputTokens = readNonNegativeInteger(value.inputTokens) ?? 0;
   aggregate.totalOutputTokens = readNonNegativeInteger(value.outputTokens) ?? 0;
@@ -944,5 +968,28 @@ function createReadResult(nowMs: number): ReadPromptFuelSnapshotsResult {
     malformedRecords: 0,
     unsupportedSchemaVersions: 0,
     unknownProviders: 0,
+    skippedByMachineLabel: 0,
   };
+}
+
+function resolveLocalMachineLabel(configured: string | undefined): string {
+  const trimmed = configured?.trim();
+  return (trimmed ? trimmed : os.hostname()).toLowerCase().trim();
+}
+
+function buildImportAllowSet(labels: ReadonlyArray<string> | undefined): Set<string> {
+  if (!labels || labels.length === 0) {
+    return new Set();
+  }
+  return new Set(labels.map(l => l.toLowerCase().trim()).filter(l => l.length > 0));
+}
+
+function getImportedSnapshotMachineLabel(value: unknown): string | undefined {
+  if (!isRecord(value) || value.schemaVersion !== SNAPSHOT_IMPORT_SCHEMA_V2) {
+    return undefined;
+  }
+  if (!isRecord(value.machine) || typeof value.machine.label !== 'string') {
+    return undefined;
+  }
+  return value.machine.label.toLowerCase().trim();
 }

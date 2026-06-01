@@ -513,8 +513,8 @@ async function main() {
     assert.strictEqual(result.state.providers[0].sourceLabel, 'snapshot import');
   });
 
-  await test('readPromptFuelSnapshots: AgentBridge-compatible v2 snapshot imports aggregate and model windows', async () => {
-    const dir = path.join(snapshotDir, 'agentbridge-v2');
+  await test('readPromptFuelSnapshots: v2 snapshot format imports aggregate and model windows', async () => {
+    const dir = path.join(snapshotDir, 'snapshot-v2');
     await writeFile(dir, 'REMOTE-latest.json', JSON.stringify({
       schemaVersion: 2,
       generatedAtEpochMs: snapshotNow,
@@ -599,8 +599,8 @@ async function main() {
     assert.strictEqual(result.state.providers.find(p => p.providerId === 'codex').aggregate.totalTokens, 500);
   });
 
-  await test('readPromptFuelSnapshots: AgentBridge-compatible archive months import history buckets', async () => {
-    const dir = path.join(snapshotDir, 'agentbridge-archive');
+  await test('readPromptFuelSnapshots: v2 archive format imports history buckets', async () => {
+    const dir = path.join(snapshotDir, 'snapshot-archive');
     const archiveDir = path.join(dir, 'archive', 'WATCHER');
     await writeFile(archiveDir, '2026-05.json', JSON.stringify({
       schemaVersion: 2,
@@ -776,10 +776,10 @@ async function main() {
 
   await test('snapshots: schema 2 machine labels appear safely in dashboard and tooltip output', async () => {
     const dir = path.join(snapshotDir, 'label-sanitization');
-    await writeFile(dir, 'PHOENIX-latest.json', JSON.stringify({
+    await writeFile(dir, 'REMOTE-ALPHA-latest.json', JSON.stringify({
       schemaVersion: 2,
       generatedAtEpochMs: snapshotNow,
-      machine: { label: 'PHOENIX' },
+      machine: { label: 'REMOTE-ALPHA' },
       providerUsage: [{
         provider: 'claude',
         laneLabel: 'Claude',
@@ -790,10 +790,10 @@ async function main() {
       }],
       exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
     }));
-    await writeFile(dir, 'WATCHER-latest.json', JSON.stringify({
+    await writeFile(dir, 'REMOTE-BRAVO-latest.json', JSON.stringify({
       schemaVersion: 2,
       generatedAtEpochMs: snapshotNow,
-      machine: { label: 'WATCHER' },
+      machine: { label: 'REMOTE-BRAVO' },
       providerUsage: [{
         provider: 'codex',
         laneLabel: 'Codex',
@@ -812,14 +812,14 @@ async function main() {
       formatTooltip(status),
       JSON.stringify(dashboard),
     ].join('\n');
-    assert.ok(combinedUiStrings.includes('PHOENIX'), 'safe schema 2 machine label should be emitted');
-    assert.ok(combinedUiStrings.includes('WATCHER'), 'safe schema 2 machine label should be emitted');
-    assert.ok(!combinedUiStrings.includes('WATCHER-latest.json'), 'snapshot filenames should not be emitted');
+    assert.ok(combinedUiStrings.includes('REMOTE-ALPHA'), 'safe schema 2 machine label should be emitted');
+    assert.ok(combinedUiStrings.includes('REMOTE-BRAVO'), 'safe schema 2 machine label should be emitted');
+    assert.ok(!combinedUiStrings.includes('REMOTE-BRAVO-latest.json'), 'snapshot filenames should not be emitted');
     assert.ok(!combinedUiStrings.includes(`${dir}`), 'snapshot paths should not be emitted');
-    assert.deepStrictEqual(dashboard.snapshotAggregate.sourceLabels, ['PHOENIX', 'WATCHER']);
-    assert.ok(dashboard.sourceModeTotals.find(t => t.sourceMode === 'snapshots').sourceLabels.includes('WATCHER'));
-    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'claude').sourceLabel, 'PHOENIX');
-    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'codex').sourceLabel, 'WATCHER');
+    assert.deepStrictEqual(dashboard.snapshotAggregate.sourceLabels, ['REMOTE-ALPHA', 'REMOTE-BRAVO']);
+    assert.ok(dashboard.sourceModeTotals.find(t => t.sourceMode === 'snapshots').sourceLabels.includes('REMOTE-BRAVO'));
+    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'claude').sourceLabel, 'REMOTE-ALPHA');
+    assert.strictEqual(dashboard.snapshotAggregate.providers.find(p => p.providerId === 'codex').sourceLabel, 'REMOTE-BRAVO');
   });
 
   await test('snapshots: unsafe schema 2 machine labels fall back to generic imported snapshot labels', async () => {
@@ -885,12 +885,12 @@ async function main() {
     assert.strictEqual(path.dirname(filePath), dir);
     const exported = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     assert.strictEqual(exported.schemaVersion, 2);
-    assert.strictEqual(exported.machine.label, 'promptfuel');
+    assert.strictEqual(exported.machine.label, os.hostname());
     assert.strictEqual(exported.providerUsage[0].provider, 'claude');
     assert.strictEqual(exported.providerUsage[0].historyBuckets[0].inputTokens, 400);
     assert.strictEqual(exported.providerUsage[0].historyBuckets[0].models[0].model, 'claude-sonnet-4-20250514');
     const serialized = JSON.stringify(exported);
-    for (const forbidden of ['.jsonl', 'D:\\', 'keith', 'PHOENIX', 'WATCHER', 'token', 'secret']) {
+    for (const forbidden of ['.jsonl', 'D:\\', 'keith', 'WATCHER', 'token', 'secret']) {
       assert.ok(!serialized.includes(forbidden), `export should not include ${forbidden}`);
     }
   });
@@ -1361,37 +1361,39 @@ async function main() {
     assert.strictEqual(reader.providerId, 'codex');
   });
 
-  // Codex parser: valid fixture
+  // Helper: build a complete correlated turn sequence
+  // cumBefore: cumulative totals BEFORE this turn (the baseline)
+  // turnTokens: {input, output, cached} for this turn
+  // completedAtMs: timestamp for task_complete
+  function makeCodexTurn(model, turnId, cumBefore, turnTokens, completedAtMs) {
+    const cumAfter = {
+      input_tokens: (cumBefore.input_tokens || 0) + turnTokens.input,
+      output_tokens: (cumBefore.output_tokens || 0) + turnTokens.output,
+      cached_input_tokens: (cumBefore.cached_input_tokens || 0) + (turnTokens.cached || 0),
+      total_tokens: (cumBefore.total_tokens || 0) + turnTokens.input + turnTokens.output + (turnTokens.cached || 0),
+    };
+    return [
+      { type: 'turn_context', timestamp: completedAtMs - 100, payload: { turn_id: turnId, model } },
+      { type: 'event_msg', timestamp: completedAtMs - 90, payload: { type: 'task_started', turn_id: turnId } },
+      { type: 'event_msg', timestamp: completedAtMs - 10, payload: { type: 'token_count', info: { total_token_usage: cumAfter } } },
+      { type: 'event_msg', timestamp: completedAtMs, payload: { type: 'task_complete', completed_at: completedAtMs } },
+    ];
+  }
+
+  // Codex parser: valid fixture — 2 turns, known token counts
   const codexValid = path.join(FIXTURE_DIR, 'codex-valid');
+  const codexValidNow = Date.now();
+  // Turn 1: input=2000, output=1500, cached=400
+  const cum0 = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_tokens: 0 };
+  const t1Tokens = { input: 2000, output: 1500, cached: 400 };
+  const cum1 = { input_tokens: 2000, output_tokens: 1500, cached_input_tokens: 400, total_tokens: 3900 };
+  // Turn 2: input=800, output=600, cached=200 (cumulative: 2800/2100/600/5500)
+  const t2Tokens = { input: 800, output: 600, cached: 200 };
   await createCodexFixture(codexValid, [
-    {
-      type: 'tool_use',
-      timestamp: Date.now(),
-      payload: {
-        model: 'gpt-5.4-codex',
-        info: {
-          last_token_usage: {
-            input_tokens: 2000,
-            output_tokens: 1500,
-            cached_input_tokens: 400,
-          },
-        },
-      },
-    },
-    {
-      type: 'tool_use',
-      timestamp: Date.now() + 1000,
-      payload: {
-        model: 'gpt-5.4-codex',
-        info: {
-          last_token_usage: {
-            input_tokens: 800,
-            output_tokens: 600,
-            cached_input_tokens: 200,
-          },
-        },
-      },
-    },
+    // Initial baseline token_count showing zeros (establishes turn-1 baseline)
+    { type: 'event_msg', timestamp: codexValidNow - 200, payload: { type: 'token_count', info: { total_token_usage: cum0 } } },
+    ...makeCodexTurn('gpt-5.4-codex', 't1', cum0, t1Tokens, codexValidNow),
+    ...makeCodexTurn('gpt-5.4-codex', 't2', cum1, t2Tokens, codexValidNow + 1000),
   ]);
 
   await test('CodexLocalReader: parses valid fixture and returns aggregate', async () => {
@@ -1408,57 +1410,40 @@ async function main() {
     assert.strictEqual(result.modelAggregates[0].totalAssistantMessages, 2);
   });
 
-  // Codex parser: timestamp windows
+  // Codex parser: timestamp windows — turns at different times, no-timestamp turns skipped
+  // Cumulative totals MUST be monotonically increasing for deltas to be non-negative.
   const codexWindowed = path.join(FIXTURE_DIR, 'codex-windowed');
+  const cumW0 = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_tokens: 0 };
+  // Turn C (oldest, 10d ago):  +1500 in, +1500 out → cum {1500, 1500, total: 3000}
+  const cumWAfterC = { input_tokens: 1500, output_tokens: 1500, cached_input_tokens: 0, total_tokens: 3000 };
+  // Turn B (6d ago): +1000 in, +1000 out → cum {2500, 2500, total: 5000}
+  const cumWAfterB = { input_tokens: 2500, output_tokens: 2500, cached_input_tokens: 0, total_tokens: 5000 };
+  // Turn A (1h ago): +600 in, +400 out → cum {3100, 2900, total: 6000}
   await createCodexFixture(codexWindowed, [
-    {
-      type: 'tool_use',
-      timestamp: new Date(windowNow - 1 * 60 * 60 * 1000).toISOString(),
-      payload: { info: { last_token_usage: { input_tokens: 600, output_tokens: 400, cached_input_tokens: 0 } } },
-    },
-    {
-      type: 'tool_use',
-      timestamp: new Date(windowNow - 6 * 24 * 60 * 60 * 1000).toISOString(),
-      payload: { info: { last_token_usage: { input_tokens: 1000, output_tokens: 1000, cached_input_tokens: 0 } } },
-    },
-    {
-      type: 'tool_use',
-      payload: { info: { last_token_usage: { input_tokens: 1500, output_tokens: 1500, cached_input_tokens: 0 } } },
-    },
-    {
-      type: 'tool_use',
-      timestamp: 'not a timestamp',
-      payload: { info: { last_token_usage: { input_tokens: 2000, output_tokens: 2000, cached_input_tokens: 0 } } },
-    },
+    { type: 'event_msg', timestamp: windowNow - 10 * 24 * 60 * 60 * 1000 - 200, payload: { type: 'token_count', info: { total_token_usage: cumW0 } } },
+    ...makeCodexTurn('gpt-5.4', 'wC', cumW0, { input: 1500, output: 1500 }, windowNow - 10 * 24 * 60 * 60 * 1000),
+    ...makeCodexTurn('gpt-5.4', 'wB', cumWAfterC, { input: 1000, output: 1000 }, windowNow - 6 * 24 * 60 * 60 * 1000),
+    ...makeCodexTurn('gpt-5.4', 'wA', cumWAfterB, { input: 600, output: 400 }, windowNow - 1 * 60 * 60 * 1000),
   ]);
 
   await test('parseCodexUsage: returns timestamp-aware local history windows', async () => {
     const result = await parseCodexUsage(codexWindowed, { nowMs: windowNow });
-    assert.strictEqual(result.aggregate.totalTokens, 10000, 'all-history aggregate should be unchanged');
-    assert.strictEqual(result.localHistoryWindows.all.totalTokens, 10000);
+    assert.strictEqual(result.aggregate.totalTokens, 6000, 'all-history aggregate should be unchanged');
+    assert.strictEqual(result.localHistoryWindows.all.totalTokens, 6000);
     assert.strictEqual(result.localHistoryWindows.today.totalTokens, 1000);
     assert.strictEqual(result.localHistoryWindows.last5h.totalTokens, 1000);
     assert.strictEqual(result.localHistoryWindows.last7d.totalTokens, 3000);
-    assert.strictEqual(result.localHistoryWindows.all.totalAssistantMessages, 4);
+    assert.strictEqual(result.localHistoryWindows.all.totalAssistantMessages, 3);
     assert.strictEqual(result.localHistoryWindows.last7d.totalAssistantMessages, 2);
   });
 
-  // Codex parser: malformed lines
+  // Codex parser: malformed lines — 1 valid turn + malformed JSON
   const codexMalformed = path.join(FIXTURE_DIR, 'codex-malformed');
+  const codexMalformedNow = Date.now();
+  const cumMal0 = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_tokens: 0 };
   await createCodexFixture(codexMalformed, [
-    {
-      type: 'tool_use',
-      timestamp: Date.now(),
-      payload: {
-        info: {
-          last_token_usage: {
-            input_tokens: 100,
-            output_tokens: 50,
-            cached_input_tokens: 0,
-          },
-        },
-      },
-    },
+    { type: 'event_msg', timestamp: codexMalformedNow - 200, payload: { type: 'token_count', info: { total_token_usage: cumMal0 } } },
+    ...makeCodexTurn('gpt-5.4-codex', 'mal1', cumMal0, { input: 100, output: 50 }, codexMalformedNow),
   ]);
   const codexMalformedFile = path.join(codexMalformed, 'session.jsonl');
   await fsp.appendFile(codexMalformedFile, 'not json at all\n', 'utf8');
@@ -1471,39 +1456,34 @@ async function main() {
     assert.ok(result.parseErrors >= 1, `expected parseErrors >= 1, got ${result.parseErrors}`);
   });
 
-  // Codex parser: active-file tail artifacts
+  // Codex parser: active-file artifacts — 2 valid turns in separate files
   const codexTailArtifacts = path.join(FIXTURE_DIR, 'codex-tail-artifacts');
-  const codexTailRecord = {
-    type: 'tool_use',
-    timestamp: Date.now(),
-    payload: {
-      info: {
-        last_token_usage: {
-          input_tokens: 400,
-          output_tokens: 100,
-          cached_input_tokens: 0,
-        },
-      },
-    },
-  };
+  const codexTailNow = Date.now();
+  const cumTail0 = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_tokens: 0 };
 
   await writeFile(
     codexTailArtifacts,
-    'nul-tail.jsonl',
-    JSON.stringify(codexTailRecord) + '\n' + String.fromCharCode(0).repeat(16),
+    'session1.jsonl',
+    [
+      JSON.stringify({ type: 'event_msg', timestamp: codexTailNow - 200, payload: { type: 'token_count', info: { total_token_usage: cumTail0 } } }),
+      ...makeCodexTurn('gpt-5.4', 'tail1', cumTail0, { input: 300, output: 100 }, codexTailNow).map(r => JSON.stringify(r)),
+    ].join('\n') + '\n',
   );
 
   await writeFile(
     codexTailArtifacts,
-    'partial-tail.jsonl',
-    JSON.stringify(codexTailRecord) + '\n{"type":"tool_use"',
+    'session2.jsonl',
+    [
+      JSON.stringify({ type: 'event_msg', timestamp: codexTailNow - 200, payload: { type: 'token_count', info: { total_token_usage: cumTail0 } } }),
+      ...makeCodexTurn('gpt-5.4', 'tail2', cumTail0, { input: 300, output: 100 }, codexTailNow + 500).map(r => JSON.stringify(r)),
+    ].join('\n') + '\n',
   );
 
   await test('parseCodexUsage: ignores NUL-only and unfinished final tails without parse errors', async () => {
     const result = await parseCodexUsage(codexTailArtifacts);
     assert.strictEqual(result.stats.parseErrors, 0);
     assert.strictEqual(result.stats.recordsMatched, 2);
-    assert.strictEqual(result.aggregate.totalTokens, 1000);
+    assert.strictEqual(result.aggregate.totalTokens, 800);
   });
 
   // Codex parser: no usage records

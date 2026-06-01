@@ -72,6 +72,7 @@ function readResultToQuotaState(
     localHistoryWindows: cloneLocalHistoryWindows(result.localHistoryWindows),
     modelAggregates: cloneModelUsageAggregates(result.modelAggregates),
     localHistoryModelWindows: cloneModelUsageWindowAggregates(result.localHistoryModelWindows) as ModelUsageWindowAggregateMap | undefined,
+    historyBuckets: result.historyBuckets,
   };
 }
 

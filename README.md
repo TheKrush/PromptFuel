@@ -12,7 +12,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **Combined dashboard usage by default** - Overview uses local history plus imported snapshots unless `promptFuel.dashboardUsageSource` is changed.
 - **Range-driven history** - the History range controls the chart, summary cards, usage distribution, and model distribution below it.
 - **Snapshot imports and exports** - open an import folder, drop in aggregate-only snapshot JSON, or export a compatible aggregate snapshot for another install.
-- **AgentBridge-compatible imports** - read compatible aggregate snapshot files directly, including safe source labels such as machine/source names.
+- **Cross-machine imports** - read compatible aggregate snapshot files from other installs, including safe source labels such as machine/source names.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
 ## Privacy & Data
@@ -38,7 +38,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 
 ## Snapshot Imports
 
-Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files or AgentBridge-compatible aggregate snapshot files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
+Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files or compatible aggregate snapshot files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
 
 By default, PromptFuel uses an import folder under its extension storage. Set `promptFuel.snapshotImportPath` to a local folder to read snapshots from that folder instead. Empty string means use the default storage folder. The command opens the effective import folder.
 

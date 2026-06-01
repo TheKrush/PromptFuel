@@ -1,7 +1,13 @@
-import { LocalHistoryWindowAggregateMap } from './usageAggregate';
+import { type AggregateUsage, LocalHistoryWindowAggregateMap } from './usageAggregate';
 import type { ModelUsageAggregate, ModelUsageWindowAggregateMap } from './modelUsage';
 
 export type QuotaWindowId = '5h' | '7d';
+
+export interface LocalHistoryBucket {
+  dateKey: string;
+  aggregate: AggregateUsage;
+  modelAggregates?: ModelUsageAggregate[];
+}
 
 export const QUOTA_WINDOWS: ReadonlyArray<QuotaWindowId> = ['5h', '7d'];
 
@@ -21,4 +27,5 @@ export interface ProviderQuotaState {
   localHistoryWindows?: LocalHistoryWindowAggregateMap;
   modelAggregates?: ModelUsageAggregate[];
   localHistoryModelWindows?: ModelUsageWindowAggregateMap;
+  historyBuckets?: LocalHistoryBucket[];
 }

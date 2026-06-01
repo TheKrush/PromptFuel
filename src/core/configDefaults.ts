@@ -9,6 +9,8 @@ export interface PromptFuelConfig {
   snapshotImportPath: string;
   snapshotExportPath: string;
   dashboardUsageSource: DashboardUsageSource;
+  localMachineLabel: string;
+  snapshotImportLabels: string[];
 }
 
 export const CONFIG_DEFAULTS: PromptFuelConfig = {
@@ -18,4 +20,6 @@ export const CONFIG_DEFAULTS: PromptFuelConfig = {
   snapshotImportPath: '',
   snapshotExportPath: '',
   dashboardUsageSource: 'combined',
+  localMachineLabel: '',
+  snapshotImportLabels: [],
 };

@@ -77,7 +77,7 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const cfg = getConfig();
         const folderPath = await ensurePromptFuelSnapshotExportFolder(context, cfg.snapshotExportPath);
-        await exportPromptFuelUsageSnapshot(scheduler.status, folderPath);
+        await exportPromptFuelUsageSnapshot(scheduler.status, folderPath, undefined, cfg.localMachineLabel || undefined);
         vscode.window.showInformationMessage('Exported PromptFuel aggregate usage snapshot.');
       } catch {
         vscode.window.showErrorMessage('PromptFuel could not export the aggregate usage snapshot.');

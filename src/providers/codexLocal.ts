@@ -23,7 +23,7 @@ export class CodexLocalReader implements ProviderReader {
       return { providerId: 'codex', status: 'not-found' };
     }
 
-    const { aggregate, localHistoryWindows, modelAggregates, localHistoryModelWindows, stats } = await parseCodexUsage(this.sessionsRoot);
+    const { aggregate, localHistoryWindows, modelAggregates, localHistoryModelWindows, historyBuckets, stats } = await parseCodexUsage(this.sessionsRoot);
 
     if (stats.recordsMatched === 0) {
       return {
@@ -50,6 +50,7 @@ export class CodexLocalReader implements ProviderReader {
       localHistoryWindows,
       modelAggregates,
       localHistoryModelWindows,
+      historyBuckets,
     };
   }
 }

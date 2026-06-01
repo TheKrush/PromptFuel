@@ -985,8 +985,8 @@ function renderModelBreakdownDistribution(
         <span class="usage-model-swatch" aria-hidden="true"></span>
         <span class="usage-model-provider">${esc(providerLabel)}</span>
         <span class="usage-model-name">${esc(row.modelLabel)}</span>
-        <span class="usage-model-value">${esc(formatTokenCount(tokens))}</span>
-        <span class="usage-model-count">${esc(formatMessageCount(messages))}</span>
+        <span class="usage-model-value">${esc(formatTokenCountShort(tokens))}</span>
+        <span class="usage-model-count">${esc(String(messages))}</span>
         <span class="usage-model-percent">${esc(percent)}</span>
       </div>`;
   }).join('\n');
@@ -1950,7 +1950,7 @@ export function buildDashboardHtml(
   }
   .usage-model-row {
     display: grid;
-    grid-template-columns: 10px 52px minmax(60px, 1fr) 64px 84px 36px;
+    grid-template-columns: 10px 52px minmax(60px, 1fr) 68px 60px 36px;
     gap: 8px;
     align-items: center;
     font-size: 11px;
@@ -1984,6 +1984,9 @@ export function buildDashboardHtml(
   .usage-model-percent {
     font-family: var(--vscode-editor-font-family, monospace);
     white-space: nowrap;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .usage-model-count,
   .usage-model-percent {
@@ -2429,11 +2432,11 @@ export function buildDashboardHtml(
       gap: 2px;
     }
     .usage-model-row {
-      grid-template-columns: 10px 44px minmax(0, 1fr) auto auto;
+      grid-template-columns: 10px 40px minmax(0, 1fr) 60px 50px 32px;
     }
     .usage-model-count,
     .usage-model-percent {
-      grid-column: 3 / -1;
+      grid-column: unset;
     }
     .distribution-total {
       text-align: left;

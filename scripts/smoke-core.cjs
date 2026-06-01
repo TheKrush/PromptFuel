@@ -106,7 +106,7 @@ test('CONFIG_DEFAULTS snapshot paths default to empty strings', () => {
 
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
-  assert.deepStrictEqual(keys, ['dashboardUsageSource', 'enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes', 'snapshotExportPath', 'snapshotImportPath']);
+  assert.deepStrictEqual(keys, ['dashboardUsageSource', 'enabledProviders', 'liveQuotaEnabled', 'localMachineLabel', 'refreshIntervalMinutes', 'snapshotExportPath', 'snapshotImportPath', 'snapshotImportLabels'].sort());
   assert.strictEqual(CONFIG_DEFAULTS.dashboardUsageSource, 'combined');
 });
 
@@ -134,7 +134,7 @@ test('README documents snapshot import command and dashboard source modes', () =
   assert.ok(readme.includes('Local only'), 'expected Local only source mode in README');
   assert.ok(readme.includes('Snapshots only'), 'expected Snapshots only source mode in README');
   assert.ok(readme.includes('Combined'), 'expected Combined source mode in README');
-  assert.ok(readme.includes('AgentBridge-compatible'), 'expected compatible snapshot import docs in README');
+  assert.ok(readme.includes('compatible aggregate snapshot'), 'expected compatible snapshot import docs in README');
   assert.ok(readme.includes('promptFuel.snapshotImportPath'), 'expected snapshot import path setting in README');
   assert.ok(readme.includes('promptFuel.snapshotExportPath'), 'expected snapshot export path setting in README');
   assert.ok(/live quota remains separate/i.test(readme), 'expected live quota separation in README');
@@ -1138,19 +1138,19 @@ test('dashboard: History range selector drives historical values', () => {
   assert.ok(!html.includes('data-local-window='), `local history window selector should not render`);
 });
 
-test('dashboard: uses full-width AgentBridge-style canvas', () => {
+test('dashboard: uses full-width dashboard canvas', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
   assert.ok(html.includes('max-width: none;'), `expected dashboard to avoid a fixed width cap`);
-  assert.ok(html.includes('padding: 16px 20px;'), `expected AgentBridge-style body padding`);
+  assert.ok(html.includes('padding: 16px 20px;'), `expected dashboard body padding`);
   assert.ok(!html.includes('max-width: 920px'), `dashboard should not cap content at the old PromptFuel width`);
   assert.ok(!html.includes('margin: 0 auto;'), `dashboard should not center a narrow fixed-width column`);
 });
 
-test('dashboard: renders AgentBridge-style history chart and provider colors', () => {
+test('dashboard: renders history chart and provider colors', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
@@ -1207,8 +1207,8 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
   assert.ok(html.includes('class="usage-history-bar-segment"'), `expected model-stacked chart segments`);
   assert.ok(!html.includes('usage-history-bar-segment claude'), `provider-class segments should be replaced by model-color segments`);
   assert.ok(!html.includes('usage-history-bar-segment codex'), `provider-class segments should be replaced by model-color segments`);
-  assert.ok(html.includes('--pf-provider-claude: var(--vscode-charts-blue'), `expected AgentBridge Claude blue`);
-  assert.ok(html.includes('--pf-provider-codex: var(--vscode-charts-purple'), `expected AgentBridge Codex purple`);
+  assert.ok(html.includes('--pf-provider-claude: var(--vscode-charts-blue'), `expected Claude blue provider color`);
+  assert.ok(html.includes('--pf-provider-codex: var(--vscode-charts-purple'), `expected Codex purple provider color`);
   assert.ok(html.includes('--pf-model-0:'), `expected model color palette variables`);
   assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected source/window changes to update charts`);
 });
@@ -1256,7 +1256,7 @@ test('dashboard: renders model breakdown rows from safe aggregates', () => {
 
   assert.ok(html.includes('data-model-breakdown="overview"'), `expected overview model breakdown card`);
   assert.ok(html.includes('class="usage-model-distribution"'), `expected model distribution surface`);
-  assert.ok(html.includes('class="usage-model-donut"'), `expected AgentBridge-style model donut`);
+  assert.ok(html.includes('class="usage-model-donut"'), `expected model breakdown donut`);
   assert.ok(html.includes('claude-sonnet-4-20250514'), `expected Claude model label`);
   assert.ok(html.includes('gpt-5.4-codex'), `expected Codex model label`);
   assert.ok(html.includes('data-model-value-combined-1M="1.0K tokens"'), `expected range-filtered model data`);

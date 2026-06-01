@@ -120,6 +120,19 @@
           "type": "string",
           "default": "",
           "description": "Optional local folder for aggregate snapshot exports. Empty uses PromptFuel extension storage."
+        },
+        "promptFuel.localMachineLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Machine name used when exporting usage snapshots and for deduplicating imported snapshots from this machine. Overrides the auto-detected hostname. Set this to a stable label (e.g., 'PHOENIX') that matches the machine label in any snapshot files you import."
+        },
+        "promptFuel.snapshotImportLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Allowlist of machine labels to import from the snapshot import folder. When non-empty, only snapshots from these machine labels are read; all others are ignored. The local machine (localMachineLabel or auto-detected hostname) is always excluded regardless of this list. Example: [\"WATCHER\"] to import only WATCHER snapshots."
         }
       }
     }

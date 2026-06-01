@@ -96,6 +96,8 @@ export class RefreshScheduler {
     const snapshotRead = readPromptFuelSnapshots({
       snapshotDir: getPromptFuelSnapshotImportFolderPathFromContext(this.context, cfg.snapshotImportPath),
       enabledProviderIds: cfg.enabledProviders,
+      localMachineLabel: cfg.localMachineLabel || undefined,
+      snapshotImportLabels: cfg.snapshotImportLabels,
       diagnostics: this.diagnostics,
     }).then(result => result.state).catch(() => {
       this.diagnostics?.info('malformed snapshot ignored; count=1');

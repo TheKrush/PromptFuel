@@ -17,6 +17,7 @@ import {
   mergeModelTokenUsage,
   mergeModelTokenUsageIntoLocalHistoryWindows,
 } from '../core/modelUsage';
+import type { LocalHistoryBucket } from '../core/quotaTypes';
 import { fileEndsWithLineBreak, normalizeJsonlLine } from './jsonlLine';
 
 const MAX_DEPTH = 4;
@@ -55,13 +56,16 @@ export async function parseClaudeUsage(
   localHistoryWindows: LocalHistoryWindowAggregateMap;
   modelAggregates: ModelUsageAggregate[];
   localHistoryModelWindows: ModelUsageWindowAggregateMap;
+  historyBuckets: LocalHistoryBucket[];
   stats: ClaudeParseStats;
 }> {
+  const dayBuckets = new Map<string, { aggregate: AggregateUsage; models: Map<string, { totalTokens: number; totalAssistantMessages: number }> }>();
   const result = {
     aggregate: createEmptyAggregate(),
     localHistoryWindows: createEmptyLocalHistoryWindowAggregateMap(),
     modelAggregates: [] as ModelUsageAggregate[],
     localHistoryModelWindows: createEmptyModelUsageWindowAggregateMap(),
+    dayBuckets,
     stats: createEmptyStats(),
     nowMs: options.nowMs ?? Date.now(),
   };
@@ -76,7 +80,8 @@ export async function parseClaudeUsage(
     }
   }
 
-  return result;
+  const historyBuckets = buildHistoryBuckets(dayBuckets);
+  return { ...result, historyBuckets };
 }
 
 async function parseSingleFile(
@@ -86,6 +91,7 @@ async function parseSingleFile(
     localHistoryWindows: LocalHistoryWindowAggregateMap;
     modelAggregates: ModelUsageAggregate[];
     localHistoryModelWindows: ModelUsageWindowAggregateMap;
+    dayBuckets: Map<string, { aggregate: AggregateUsage; models: Map<string, { totalTokens: number; totalAssistantMessages: number }> }>;
     stats: ClaudeParseStats;
     nowMs: number;
   },
@@ -156,6 +162,9 @@ async function parseSingleFile(
       timestampEpochMs,
       result.nowMs,
     );
+    if (timestampEpochMs !== undefined && timestampEpochMs <= result.nowMs) {
+      mergeIntoDayBucket(result.dayBuckets, localDateKeyFromMs(timestampEpochMs), usage, modelLabel);
+    }
   }
 
   if (pendingMalformedTail) {
@@ -222,6 +231,56 @@ async function findJsonlFiles(root: string): Promise<string[]> {
 
   await walk(root, 0);
   return found;
+}
+
+function localDateKeyFromMs(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function mergeIntoDayBucket(
+  dayBuckets: Map<string, { aggregate: AggregateUsage; models: Map<string, { totalTokens: number; totalAssistantMessages: number }> }>,
+  dateKey: string,
+  usage: { inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number },
+  modelLabel: unknown,
+): void {
+  let bucket = dayBuckets.get(dateKey);
+  if (!bucket) {
+    bucket = { aggregate: createEmptyAggregate(), models: new Map() };
+    dayBuckets.set(dateKey, bucket);
+  }
+  mergeTokenUsage(bucket.aggregate, usage);
+  if (typeof modelLabel === 'string' && modelLabel) {
+    const existing = bucket.models.get(modelLabel);
+    const tokenTotal = usage.inputTokens + usage.outputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
+    if (existing) {
+      existing.totalTokens += tokenTotal;
+      existing.totalAssistantMessages += 1;
+    } else {
+      bucket.models.set(modelLabel, { totalTokens: tokenTotal, totalAssistantMessages: 1 });
+    }
+  }
+}
+
+function buildHistoryBuckets(
+  dayBuckets: Map<string, { aggregate: AggregateUsage; models: Map<string, { totalTokens: number; totalAssistantMessages: number }> }>,
+): LocalHistoryBucket[] {
+  return Array.from(dayBuckets.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([dateKey, bucket]) => {
+      const modelAggregates: ModelUsageAggregate[] = Array.from(bucket.models.entries()).map(([label, counts]) => ({
+        providerId: 'claude' as const,
+        modelLabel: label,
+        totalTokens: counts.totalTokens,
+        totalAssistantMessages: counts.totalAssistantMessages,
+        source: 'local',
+      }));
+      return {
+        dateKey,
+        aggregate: bucket.aggregate,
+        ...(modelAggregates.length > 0 ? { modelAggregates } : {}),
+      };
+    });
 }
 
 function createEmptyStats(): ClaudeParseStats {

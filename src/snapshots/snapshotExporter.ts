@@ -1,13 +1,22 @@
 import { promises as fs } from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { PromptFuelStatus } from '../core/statusModel';
 import { isKnownProvider, PROVIDER_LABELS, type ProviderId } from '../core/providers';
+import { safeSnapshotSourceLabel } from '../core/snapshotTypes';
 import type { AggregateUsage } from '../core/usageAggregate';
 import type { ModelUsageAggregate } from '../core/modelUsage';
 
 const EXPORT_SCHEMA_VERSION = 2;
 const EXPORT_FILE_NAME = 'promptfuel-latest.json';
-const EXPORT_MACHINE_LABEL = 'promptfuel';
+const EXPORT_MACHINE_LABEL_FALLBACK = 'promptfuel';
+
+function getExportMachineLabel(configured?: string): string {
+  if (configured && configured.trim()) {
+    return safeSnapshotSourceLabel(configured.trim(), EXPORT_MACHINE_LABEL_FALLBACK);
+  }
+  return safeSnapshotSourceLabel(os.hostname(), EXPORT_MACHINE_LABEL_FALLBACK);
+}
 
 interface ExportHistoryBucket {
   dateKey: string;
@@ -42,8 +51,9 @@ export async function exportPromptFuelUsageSnapshot(
   status: PromptFuelStatus,
   exportDir: string,
   nowMs = Date.now(),
+  machineLabel?: string,
 ): Promise<string> {
-  const snapshot = buildPromptFuelUsageSnapshot(status, nowMs);
+  const snapshot = buildPromptFuelUsageSnapshot(status, nowMs, machineLabel);
   await fs.mkdir(exportDir, { recursive: true });
   const filePath = path.join(exportDir, EXPORT_FILE_NAME);
   const tmpPath = `${filePath}.tmp.${process.pid}.${nowMs}`;
@@ -52,7 +62,7 @@ export async function exportPromptFuelUsageSnapshot(
   return filePath;
 }
 
-export function buildPromptFuelUsageSnapshot(status: PromptFuelStatus, nowMs = Date.now()): unknown {
+export function buildPromptFuelUsageSnapshot(status: PromptFuelStatus, nowMs = Date.now(), machineLabel?: string): unknown {
   const providerUsage = status.providerStates
     .map(provider => buildProviderUsage(provider.providerId, provider.localHistoryWindows?.today, provider.localHistoryModelWindows?.today, nowMs))
     .filter((provider): provider is ExportProviderUsage => provider !== undefined);
@@ -61,7 +71,7 @@ export function buildPromptFuelUsageSnapshot(status: PromptFuelStatus, nowMs = D
     schemaVersion: EXPORT_SCHEMA_VERSION,
     generatedAtEpochMs: nowMs,
     machine: {
-      label: EXPORT_MACHINE_LABEL,
+      label: getExportMachineLabel(machineLabel),
     },
     ...(providerUsage.length > 0 ? { providerUsage } : {}),
     exportMeta: {

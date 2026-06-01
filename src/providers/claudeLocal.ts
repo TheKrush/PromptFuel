@@ -23,7 +23,7 @@ export class ClaudeLocalReader implements ProviderReader {
       return { providerId: 'claude', status: 'not-found' };
     }
 
-    const { aggregate, localHistoryWindows, modelAggregates, localHistoryModelWindows, stats } = await parseClaudeUsage(this.projectsRoot);
+    const { aggregate, localHistoryWindows, modelAggregates, localHistoryModelWindows, historyBuckets, stats } = await parseClaudeUsage(this.projectsRoot);
 
     if (stats.recordsMatched === 0) {
       return {
@@ -50,6 +50,7 @@ export class ClaudeLocalReader implements ProviderReader {
       localHistoryWindows,
       modelAggregates,
       localHistoryModelWindows,
+      historyBuckets,
     };
   }
 }

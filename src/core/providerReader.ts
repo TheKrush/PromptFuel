@@ -1,5 +1,6 @@
 import { LocalHistoryWindowAggregateMap } from './usageAggregate';
 import type { ModelUsageAggregate, ModelUsageWindowAggregateMap } from './modelUsage';
+import type { LocalHistoryBucket } from './quotaTypes';
 
 export type ReadResultStatus = 'ok' | 'not-found' | 'no-data' | 'error';
 
@@ -18,6 +19,7 @@ export interface ReadResult {
   localHistoryWindows?: LocalHistoryWindowAggregateMap;
   modelAggregates?: ModelUsageAggregate[];
   localHistoryModelWindows?: ModelUsageWindowAggregateMap;
+  historyBuckets?: LocalHistoryBucket[];
 }
 
 export interface ProviderReader {

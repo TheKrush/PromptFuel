@@ -25,6 +25,7 @@ import {
   type ModelUsageWindowAggregateMap,
 } from '../core/modelUsage';
 import type { PromptFuelSnapshotProviderAggregate } from '../core/snapshotTypes';
+import type { LocalHistoryBucket } from '../core/quotaTypes';
 
 export type DashboardSourceMode = DashboardUsageSource;
 
@@ -218,6 +219,7 @@ export function buildDashboardModel(
           PROVIDER_LABELS[state.providerId],
           providerWindows,
           toDashboardModelWindows('local', localHistoryModelWindows),
+          state.historyBuckets,
         )
         : [],
       modelAggregates: cloneModelUsageAggregates(state.modelAggregates) ?? [],
@@ -381,7 +383,24 @@ function buildLocalHistoryPoints(
   label: string,
   windows: DashboardLocalHistoryWindow[],
   modelWindows: DashboardModelUsageWindowMap,
+  historyBuckets?: ReadonlyArray<LocalHistoryBucket>,
 ): DashboardHistoryPoint[] {
+  if (historyBuckets && historyBuckets.length > 0) {
+    return historyBuckets.map(bucket => {
+      const cacheTokens = (bucket.aggregate.totalCacheCreationInputTokens ?? 0) + (bucket.aggregate.totalCacheReadInputTokens ?? 0);
+      const bucketModels = toDashboardModelRows('local', 'all', bucket.modelAggregates);
+      return buildHistoryPoint(
+        bucket.dateKey,
+        providerId,
+        label,
+        bucket.aggregate.totalTokens,
+        bucket.aggregate.totalAssistantMessages,
+        bucketModels,
+        cacheTokens > 0 ? cacheTokens : undefined,
+      );
+    });
+  }
+
   const today = windows.find(window => window.windowId === 'today');
   if (!today || (today.totalTokens <= 0 && today.totalAssistantMessages <= 0)) {
     return [];

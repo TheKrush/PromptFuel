@@ -41,6 +41,14 @@ export function getConfig(): PromptFuelConfig {
     cfg.get<string>('dashboardUsageSource', CONFIG_DEFAULTS.dashboardUsageSource),
   );
 
+  const rawLocalMachineLabel = cfg.get<string>('localMachineLabel', CONFIG_DEFAULTS.localMachineLabel);
+  const localMachineLabel = typeof rawLocalMachineLabel === 'string' ? rawLocalMachineLabel.trim() : CONFIG_DEFAULTS.localMachineLabel;
+
+  const rawSnapshotImportLabels = cfg.get<string[]>('snapshotImportLabels', CONFIG_DEFAULTS.snapshotImportLabels);
+  const snapshotImportLabels: string[] = Array.isArray(rawSnapshotImportLabels)
+    ? rawSnapshotImportLabels.filter((l): l is string => typeof l === 'string' && l.trim().length > 0).map(l => l.trim())
+    : CONFIG_DEFAULTS.snapshotImportLabels.slice();
+
   return {
     enabledProviders,
     refreshIntervalMinutes,
@@ -48,6 +56,8 @@ export function getConfig(): PromptFuelConfig {
     snapshotImportPath,
     snapshotExportPath,
     dashboardUsageSource,
+    localMachineLabel,
+    snapshotImportLabels,
   };
 }
 
