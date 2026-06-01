@@ -132,6 +132,13 @@ export interface DashboardLiveQuotaWindow {
   resetsAtEpochMs?: number;
 }
 
+export interface DashboardSnapshotQuotaWindow {
+  windowId: '7d' | '5h';
+  usedPercentage: number;
+  remainingPercentage: number;
+  resetsAtEpochMs?: number;
+}
+
 export interface DashboardLiveQuotaCard {
   providerId: string;
   label: string;
@@ -143,10 +150,13 @@ export interface DashboardLiveQuotaCard {
 export interface DashboardSnapshotProviderCard {
   providerId: string;
   label: string;
+  snapshotLaneLabel?: string;
   generatedAtMs: number;
   totalTokens: number;
   totalAssistantMessages: number;
   sourceLabel?: string;
+  snapshotStale?: boolean;
+  quotaWindows: DashboardSnapshotQuotaWindow[];
   windows: DashboardLocalHistoryWindow[];
   providedWindowIds: LocalHistoryWindowId[];
   historyPoints: DashboardHistoryPoint[];
@@ -343,16 +353,50 @@ function buildDashboardSnapshotProviderCard(
   return {
     providerId: provider.providerId,
     label: PROVIDER_LABELS[provider.providerId],
+    ...(provider.snapshotLaneLabel ? { snapshotLaneLabel: provider.snapshotLaneLabel } : {}),
     generatedAtMs: provider.generatedAtEpochMs,
     totalTokens: provider.aggregate.totalTokens,
     totalAssistantMessages: provider.aggregate.totalAssistantMessages,
     ...(sourceLabel ? { sourceLabel } : {}),
+    ...(provider.snapshotStale !== undefined ? { snapshotStale: provider.snapshotStale } : {}),
+    quotaWindows: buildSnapshotQuotaWindows(provider),
     windows: buildSnapshotWindowCards(provider.windowTotals, provider.aggregate),
     providedWindowIds: getProvidedSnapshotWindowIds(provider.windowTotals),
     historyPoints: buildSnapshotHistoryPoints(provider),
     modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) ?? [],
     modelWindows: buildSnapshotModelWindowCards(provider),
   };
+}
+
+function buildSnapshotQuotaWindows(
+  provider: PromptFuelSnapshotProviderAggregate,
+): DashboardSnapshotQuotaWindow[] {
+  const windows: DashboardSnapshotQuotaWindow[] = [];
+  if (provider.sevenDayUsedPercent !== undefined) {
+    windows.push({
+      windowId: '7d',
+      usedPercentage: provider.sevenDayUsedPercent,
+      remainingPercentage: clampPercentage(100 - provider.sevenDayUsedPercent),
+      ...(provider.sevenDayResetAtEpochSeconds !== undefined
+        ? { resetsAtEpochMs: provider.sevenDayResetAtEpochSeconds * 1000 }
+        : {}),
+    });
+  }
+  if (provider.fiveHourUsedPercent !== undefined) {
+    windows.push({
+      windowId: '5h',
+      usedPercentage: provider.fiveHourUsedPercent,
+      remainingPercentage: clampPercentage(100 - provider.fiveHourUsedPercent),
+      ...(provider.fiveHourResetAtEpochSeconds !== undefined
+        ? { resetsAtEpochMs: provider.fiveHourResetAtEpochSeconds * 1000 }
+        : {}),
+    });
+  }
+  return windows;
+}
+
+function clampPercentage(value: number): number {
+  return Math.max(0, Math.min(100, value));
 }
 
 function normalizeDashboardSourceMode(value: DashboardSourceMode): DashboardSourceMode {

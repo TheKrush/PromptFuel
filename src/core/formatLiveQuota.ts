@@ -108,8 +108,7 @@ export function formatLiveQuotaStatusBarText(status: PromptFuelStatus): string {
   }
 
   const parts = formatLiveQuotaStatusBarParts(status);
-  const liveProviderIds = new Set(status.liveQuotaStates.map(state => state.providerId));
-  parts.push(...formatSnapshotQuotaStatusBarParts(status, liveProviderIds));
+  parts.push(...formatSnapshotQuotaStatusBarParts(status));
 
   if (parts.length > 0) {
     return parts.join(STATUS_PROVIDER_SEPARATOR);
@@ -181,12 +180,8 @@ function formatStatusBarWindow(
   return `${label} ${indicator} ${remaining}`;
 }
 
-function formatSnapshotQuotaStatusBarParts(
-  status: PromptFuelStatus,
-  liveProviderIds: ReadonlySet<string>,
-): string[] {
+function formatSnapshotQuotaStatusBarParts(status: PromptFuelStatus): string[] {
   return status.snapshotState.providers
-    .filter(provider => !liveProviderIds.has(provider.providerId))
     .map(formatSnapshotQuotaStatusBarPart)
     .filter((part): part is string => part !== undefined);
 }
@@ -201,7 +196,10 @@ function formatSnapshotQuotaStatusBarPart(
 
   const labels = windows.map(window => {
     const remaining = Math.round(window.remainingPercentage);
-    return `${formatQuotaIndicator(window.remainingPercentage)}${remaining}%`;
+    const pct = `${formatQuotaIndicator(window.remainingPercentage)}${remaining}%`;
+    return window.resetAtEpochSeconds !== undefined
+      ? `${formatCountdownLabel(window.resetAtEpochSeconds * 1000)} ${pct}`
+      : pct;
   });
   return `${getSnapshotQuotaLabel(provider)} ${labels.join(STATUS_WINDOW_JOINER)}`;
 }
@@ -436,9 +434,19 @@ function getSnapshotQuotaWindows(
 }
 
 function getSnapshotQuotaLabel(provider: PromptFuelSnapshotProviderAggregate): string {
-  return provider.snapshotLaneLabel
+  const label = provider.snapshotLaneLabel
     ?? PROVIDER_LABELS[provider.providerId as ProviderId]
     ?? provider.providerId;
+  if (!provider.sourceLabel) {
+    return label;
+  }
+  const source = provider.sourceLabel;
+  const normalizedLabel = label.toLowerCase();
+  const normalizedSource = source.toLowerCase();
+  if (normalizedLabel === normalizedSource || normalizedLabel.startsWith(`${normalizedSource} `)) {
+    return label;
+  }
+  return `${source} ${label}`;
 }
 
 function formatSnapshotAgeLabel(generatedAtEpochMs: number, nowMs: number = Date.now()): string {

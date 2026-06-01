@@ -7,6 +7,7 @@ import {
   DashboardModel,
   DashboardModelUsageAggregate,
   DashboardProviderCard,
+  DashboardSnapshotProviderCard,
   DashboardSourceModeProviderCard,
   DashboardSourceModeTotals,
 } from './dashboardModel';
@@ -1200,12 +1201,48 @@ function renderFooterSnapshotSummary(model: DashboardModel): string {
   }
   const sourceSummary = formatSnapshotSourceLabels(aggregate.sourceLabels);
   const providerCoverage = Array.from(new Set(aggregate.providers.map(p => p.label))).sort().join(', ');
+  const quotaSummary = formatSnapshotAggregateQuotaSummary(aggregate.providers);
   const parts = [
     `Imported snapshots: ${aggregate.snapshotCount}`,
     sourceSummary ? `Snapshot sources: ${sourceSummary}` : undefined,
     providerCoverage ? `Providers: ${providerCoverage}` : undefined,
+    quotaSummary ? `Snapshot quota: ${quotaSummary}` : undefined,
   ].filter((part): part is string => Boolean(part));
   return `<div>${esc(parts.join(' | '))}</div>`;
+}
+
+function formatSnapshotAggregateQuotaSummary(
+  providers: ReadonlyArray<DashboardSnapshotProviderCard>,
+): string | undefined {
+  const parts = providers
+    .map(provider => {
+      if (provider.quotaWindows.length === 0) {
+        return undefined;
+      }
+      const label = formatSnapshotDisplayLabel(provider);
+      const stale = provider.snapshotStale ? ' stale' : '';
+      const windows = provider.quotaWindows
+        .map(window => `${window.windowId} ${Math.round(window.remainingPercentage)}% remaining`)
+        .join(' / ');
+      return `${label}${stale}: ${windows}`;
+    })
+    .filter((part): part is string => part !== undefined);
+
+  return parts.length > 0 ? parts.join('; ') : undefined;
+}
+
+function formatSnapshotDisplayLabel(provider: DashboardSnapshotProviderCard): string {
+  const label = provider.snapshotLaneLabel ?? provider.label;
+  if (!provider.sourceLabel) {
+    return label;
+  }
+  const source = provider.sourceLabel;
+  const normalizedLabel = label.toLowerCase();
+  const normalizedSource = source.toLowerCase();
+  if (normalizedLabel === normalizedSource || normalizedLabel.startsWith(`${normalizedSource} `)) {
+    return label;
+  }
+  return `${source} ${label}`;
 }
 
 function renderSnapshotSummary(model: DashboardModel): string {

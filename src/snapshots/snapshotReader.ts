@@ -447,30 +447,31 @@ function validateImportedProvider(
     return undefined;
   }
 
-  const normalized = normalizeImportedHistoryBuckets(
-    value.provider,
-    value.historyBuckets ?? [],
-    nowMs,
-    sourceLabel,
-  );
-  if (!normalized) {
-    return undefined;
-  }
   const fiveHourUsedPercent = readBoundedPercent(value.fiveHourUsedPercent);
   const sevenDayUsedPercent = readBoundedPercent(value.sevenDayUsedPercent);
   const fiveHourResetAtEpochSeconds = readEpochSeconds(value.fiveHourResetAtEpochSeconds);
   const sevenDayResetAtEpochSeconds = readEpochSeconds(value.sevenDayResetAtEpochSeconds);
   const snapshotStale = value.stale === true;
   const snapshotLaneLabel = sanitizeSnapshotSourceLabel(value.laneLabel);
+  const hasQuotaWindow = fiveHourUsedPercent !== undefined || sevenDayUsedPercent !== undefined;
+  const normalized = normalizeImportedHistoryBuckets(
+    value.provider,
+    value.historyBuckets ?? [],
+    nowMs,
+    sourceLabel,
+  );
+  if (!normalized && !hasQuotaWindow) {
+    return undefined;
+  }
 
   return {
     providerId: value.provider,
     generatedAtEpochMs: readEpochMs(value.lastUpdatedEpochMs) ?? generatedAtEpochMs,
-    aggregate: normalized.aggregate,
-    windowTotals: normalized.windowTotals,
-    historyBuckets: normalized.historyBuckets,
-    modelAggregates: normalized.modelAggregates,
-    modelWindowTotals: normalized.modelWindowTotals,
+    aggregate: normalized?.aggregate ?? createEmptyAggregate(),
+    ...(normalized?.windowTotals ? { windowTotals: normalized.windowTotals } : {}),
+    ...(normalized?.historyBuckets ? { historyBuckets: normalized.historyBuckets } : {}),
+    ...(normalized?.modelAggregates ? { modelAggregates: normalized.modelAggregates } : {}),
+    ...(normalized?.modelWindowTotals ? { modelWindowTotals: normalized.modelWindowTotals } : {}),
     sourceLabel,
     ...(fiveHourUsedPercent !== undefined ? { fiveHourUsedPercent } : {}),
     ...(sevenDayUsedPercent !== undefined ? { sevenDayUsedPercent } : {}),

@@ -546,6 +546,9 @@ const {
   applyLiveQuotaResults,
   getLiveQuotaState,
 } = require(path.join(OUT, 'core/statusModel'));
+const {
+  validatePromptFuelSnapshotPayload,
+} = require(path.join(OUT, 'snapshots/snapshotReader'));
 
 const syntheticLiveQuota = {
   providerId: 'claude',
@@ -1304,6 +1307,9 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
     generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
     aggregate: aggregateFixture(500, 5),
     sourceLabel: 'snapshot import',
+    snapshotLaneLabel: 'Remote Claude',
+    sevenDayUsedPercent: 27,
+    fiveHourUsedPercent: 92,
   }]));
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
@@ -1321,6 +1327,7 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   assert.ok(html.includes('function updateTodaySections()'), `expected Today section to update with selected source mode`);
   assert.ok(html.includes('data-history-range="1M"'), `expected history range controls`);
   assert.ok(html.includes('snapshot import'), `expected safe source label`);
+  assert.ok(html.includes('Snapshot quota: snapshot import Remote Claude: 7d 73% remaining / 5h 8% remaining'), `expected imported quota remaining in dashboard summary`);
 });
 
 test('dashboard source modes: safe snapshot source labels appear in summary, contribution, and model sections', () => {
@@ -2633,7 +2640,7 @@ test('formatStatusBarText: snapshot quota is appended after live quota', () => {
   assert.ok(text.includes(' | '), `expected provider separator in "${text}"`);
 });
 
-test('formatStatusBarText: live provider takes precedence over matching snapshot quota', () => {
+test('formatStatusBarText: matching live and imported providers both render', () => {
   const withSnapshot = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([
     snapshotQuotaProvider({
       providerId: 'claude',
@@ -2645,8 +2652,7 @@ test('formatStatusBarText: live provider takes precedence over matching snapshot
   const status = applyLiveQuotaResults(withSnapshot, [syntheticLiveQuota]);
   const text = formatStatusBarText(status);
   assert.ok(text.includes('Claude'), `expected live Claude quota in "${text}"`);
-  assert.ok(!text.includes('Remote Claude'), `matching snapshot provider should be excluded from "${text}"`);
-  assert.ok(!text.includes('\uD83D\uDD3590%'), `matching snapshot percentage should be excluded from "${text}"`);
+  assert.ok(text.includes('Remote Claude \uD83D\uDD3590%'), `matching imported provider should remain visible in "${text}"`);
 });
 
 test('formatTooltip and status bar omit snapshots without quota windows', () => {
@@ -2662,6 +2668,41 @@ test('formatTooltip and status bar omit snapshots without quota windows', () => 
   assert.ok(!tooltip.includes('| Remote Codex | 7d |'), `should not render missing snapshot 7d row`);
   assert.ok(!tooltip.includes('| Remote Codex | 5h |'), `should not render missing snapshot 5h row`);
   assert.strictEqual(text, 'PromptFuel: live quota loading');
+});
+
+test('snapshot imports: quota-only provider renders remaining in bar, tooltip, and dashboard', () => {
+  const now = Date.now();
+  const validation = validatePromptFuelSnapshotPayload({
+    schemaVersion: 2,
+    generatedAtEpochMs: now - 2 * 60 * 1000,
+    machine: { label: 'snapshot import' },
+    providerUsage: [{
+      provider: 'codex',
+      laneLabel: 'Remote Codex',
+      sevenDayUsedPercent: 25,
+      fiveHourUsedPercent: 90,
+      sevenDayResetAtEpochSeconds: Math.floor((now + 7 * 24 * 60 * 60 * 1000) / 1000),
+      fiveHourResetAtEpochSeconds: Math.floor((now + 5 * 60 * 60 * 1000) / 1000),
+      stale: false,
+    }],
+  }, new Set(['codex']), now);
+  assert.strictEqual(validation.malformed, false);
+  assert.ok(validation.snapshot, `expected quota-only import to validate`);
+  assert.strictEqual(validation.snapshot.providers.length, 1);
+  assert.strictEqual(validation.snapshot.providers[0].aggregate.totalTokens, 0);
+  assert.strictEqual(validation.snapshot.providers[0].sevenDayUsedPercent, 25);
+
+  const status = applySnapshotReadResults(createInitialStatus(['codex']), snapshotStateFixture(validation.snapshot.providers));
+  const text = formatStatusBarText(status);
+  const tooltip = formatTooltip(status);
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, buildDashboardModel(status));
+
+  assert.ok(text.includes('snapshot import Remote Codex 7d0h \uD83D\uDFE275%'), `expected imported 7d countdown and remaining in status bar "${text}"`);
+  assert.ok(text.includes('5h00m \uD83D\uDFE010%'), `expected imported 5h countdown and remaining in status bar "${text}"`);
+  assert.ok(tooltip.includes('| snapshot import Remote Codex | 7d | \uD83D\uDFE2 | **75%**'), `expected imported 7d remaining in tooltip`);
+  assert.ok(tooltip.includes('| snapshot import Remote Codex | 5h | \uD83D\uDFE0 | **10%**'), `expected imported 5h remaining in tooltip`);
+  assert.ok(html.includes('Snapshot quota: snapshot import Remote Codex: 7d 75% remaining / 5h 10% remaining'), `expected imported remaining in dashboard`);
 });
 
 // --- Helper: freshness labels ---
