@@ -547,7 +547,12 @@ async function main() {
         includeAnalytics: true,
       },
     }));
-    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['codex'], nowMs: snapshotNow });
+    const result = await readPromptFuelSnapshots({
+      snapshotDir: dir,
+      enabledProviderIds: ['codex'],
+      nowMs: snapshotNow,
+      localMachineLabel: 'LOCAL-TEST',
+    });
     assert.strictEqual(result.state.snapshotCount, 1);
     assert.strictEqual(result.state.providers.length, 1);
     const provider = result.state.providers[0];
@@ -593,7 +598,12 @@ async function main() {
       }],
       exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
     }));
-    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude', 'codex'], nowMs: snapshotNow });
+    const result = await readPromptFuelSnapshots({
+      snapshotDir: dir,
+      enabledProviderIds: ['claude', 'codex'],
+      nowMs: snapshotNow,
+      localMachineLabel: 'LOCAL-TEST',
+    });
     assert.strictEqual(result.state.snapshotCount, 2);
     assert.strictEqual(result.state.providers.find(p => p.providerId === 'claude').aggregate.totalTokens, 1200);
     assert.strictEqual(result.state.providers.find(p => p.providerId === 'codex').aggregate.totalTokens, 500);
@@ -626,7 +636,12 @@ async function main() {
         archiveSchemaVersion: 1,
       },
     }));
-    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude'], nowMs: snapshotNow });
+    const result = await readPromptFuelSnapshots({
+      snapshotDir: dir,
+      enabledProviderIds: ['claude'],
+      nowMs: snapshotNow,
+      localMachineLabel: 'LOCAL-TEST',
+    });
     assert.strictEqual(result.state.snapshotCount, 1);
     assert.strictEqual(result.state.providers[0].aggregate.totalTokens, 1000);
     assert.strictEqual(result.state.providers[0].windowTotals.last7d.totalTokens, 1000);
@@ -881,11 +896,11 @@ async function main() {
         },
       }],
     );
-    const filePath = await exportPromptFuelUsageSnapshot(status, dir, snapshotNow);
+    const filePath = await exportPromptFuelUsageSnapshot(status, dir, snapshotNow, 'REMOTE-EXPORT');
     assert.strictEqual(path.dirname(filePath), dir);
     const exported = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     assert.strictEqual(exported.schemaVersion, 2);
-    assert.strictEqual(exported.machine.label, os.hostname());
+    assert.strictEqual(exported.machine.label, 'REMOTE-EXPORT');
     assert.strictEqual(exported.providerUsage[0].provider, 'claude');
     assert.strictEqual(exported.providerUsage[0].historyBuckets[0].inputTokens, 400);
     assert.strictEqual(exported.providerUsage[0].historyBuckets[0].models[0].model, 'claude-sonnet-4-20250514');

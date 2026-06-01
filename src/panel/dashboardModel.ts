@@ -90,6 +90,7 @@ export interface DashboardSourceModeProviderCard {
   providerId: ProviderId;
   label: string;
   status: string;
+  hasUsageData: boolean;
   totalTokens: number;
   totalAssistantMessages: number;
   parseErrors: number;
@@ -110,6 +111,12 @@ export interface DashboardSourceModeTotals {
   historyPoints: DashboardHistoryPoint[];
   sourceLabels: string[];
   missingSnapshotWindowIds: LocalHistoryWindowId[];
+}
+
+export interface DashboardProviderTab {
+  providerId: ProviderId;
+  label: string;
+  sourceLabels: string[];
 }
 
 export interface DashboardProviderCard {
@@ -188,6 +195,7 @@ export interface DashboardModel {
   sourceModes: DashboardSourceModeOption[];
   sourceModeTotals: DashboardSourceModeTotals[];
   defaultSourceMode: DashboardSourceMode;
+  providerTabs: DashboardProviderTab[];
 }
 
 export function buildDashboardModel(
@@ -242,6 +250,7 @@ export function buildDashboardModel(
   const sourceModes = buildSourceModeOptions(snapshotsAvailable);
   const defaultSourceMode = normalizeDashboardSourceMode(dashboardUsageSource);
   const sourceModeTotals = buildSourceModeTotals(cards, snapshotAggregate, combinedWindows);
+  const providerTabs = buildDashboardProviderTabs(sourceModeTotals, defaultSourceMode);
 
   const liveQuotaCards: DashboardLiveQuotaCard[] = status.liveQuotaStates.map(s => ({
     providerId: s.providerId,
@@ -271,6 +280,7 @@ export function buildDashboardModel(
     sourceModes,
     sourceModeTotals,
     defaultSourceMode,
+    providerTabs,
   };
 }
 
@@ -752,12 +762,79 @@ function buildSourceTotals(
   };
 }
 
+type DashboardSourceModeProviderCardInput = Omit<DashboardSourceModeProviderCard, 'hasUsageData'>;
+
+function withProviderUsageAvailability(
+  provider: DashboardSourceModeProviderCardInput,
+): DashboardSourceModeProviderCard {
+  return {
+    ...provider,
+    hasUsageData: hasDashboardProviderUsageData(provider),
+  };
+}
+
+export function hasDashboardProviderUsageData(
+  provider: DashboardSourceModeProviderCardInput | DashboardSourceModeProviderCard | undefined,
+): boolean {
+  if (!provider) {
+    return false;
+  }
+
+  if (provider.totalTokens > 0 || provider.totalAssistantMessages > 0) {
+    return true;
+  }
+
+  if (provider.windows.some(window =>
+    window.totalTokens > 0 ||
+    window.totalAssistantMessages > 0 ||
+    (window.totalCacheCreationInputTokens ?? 0) > 0 ||
+    (window.totalCacheReadInputTokens ?? 0) > 0
+  )) {
+    return true;
+  }
+
+  if (provider.historyPoints.some(point =>
+    point.totalTokens > 0 ||
+    point.totalAssistantMessages > 0 ||
+    (point.totalCacheTokens ?? 0) > 0 ||
+    point.providerSegments.length > 0 ||
+    point.modelAggregates.length > 0
+  )) {
+    return true;
+  }
+
+  return LOCAL_HISTORY_WINDOW_IDS.some(windowId =>
+    (provider.modelWindows[windowId] ?? []).some(row =>
+      row.totalTokens > 0 || row.totalAssistantMessages > 0
+    )
+  );
+}
+
+function buildDashboardProviderTabs(
+  totals: DashboardSourceModeTotals[],
+  sourceMode: DashboardSourceMode,
+): DashboardProviderTab[] {
+  const selectedTotals = totals.find(t => t.sourceMode === sourceMode);
+  if (!selectedTotals) {
+    return [];
+  }
+
+  return KNOWN_PROVIDERS
+    .map(providerId => selectedTotals.providers.find(provider => provider.providerId === providerId))
+    .filter((provider): provider is DashboardSourceModeProviderCard => hasDashboardProviderUsageData(provider))
+    .map(provider => ({
+      providerId: provider.providerId,
+      label: provider.label,
+      sourceLabels: provider.sourceLabels.slice(),
+    }));
+}
+
 function buildLocalSourceProviders(
   providers: DashboardProviderCard[],
 ): DashboardSourceModeProviderCard[] {
   return providers
     .filter(provider => isKnownProvider(provider.providerId))
-    .map(provider => ({
+    .map(provider => withProviderUsageAvailability({
       providerId: provider.providerId as ProviderId,
       label: provider.label,
       status: provider.status,
@@ -790,7 +867,7 @@ function buildSnapshotSourceProviders(
     aggregateWindows.all.totalAssistantMessages = totalAssistantMessages;
     const sourceLabels = uniqueSnapshotSourceLabels(matching.map(provider => provider.sourceLabel));
 
-    return {
+    return withProviderUsageAvailability({
       providerId,
       label: PROVIDER_LABELS[providerId],
       status: totalTokens > 0 || totalAssistantMessages > 0 ? 'loaded' : 'no-data',
@@ -801,7 +878,7 @@ function buildSnapshotSourceProviders(
       windows: buildLocalHistoryWindowCards(aggregateWindows, totalTokens, totalAssistantMessages),
       historyPoints: combineHistoryPoints(matching.flatMap(provider => provider.historyPoints)),
       modelWindows: combineProviderModelWindows('snapshots', matching.map(provider => provider.modelWindows)),
-    };
+    });
   });
 }
 
@@ -856,7 +933,7 @@ function combineSourceProviderCards(
   const totalTokens = (local?.totalTokens ?? 0) + (snapshot?.totalTokens ?? 0);
   const totalAssistantMessages = (local?.totalAssistantMessages ?? 0) + (snapshot?.totalAssistantMessages ?? 0);
 
-  return {
+  return withProviderUsageAvailability({
     providerId,
     label: PROVIDER_LABELS[providerId],
     status: totalTokens > 0 || totalAssistantMessages > 0 ? 'loaded' : (local?.status ?? 'no-data'),
@@ -870,7 +947,7 @@ function combineSourceProviderCards(
       ...(snapshot?.historyPoints ?? []),
     ]),
     modelWindows,
-  };
+  });
 }
 
 function combineWindowCards(

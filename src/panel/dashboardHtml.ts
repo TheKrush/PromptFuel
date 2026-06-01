@@ -6,7 +6,6 @@ import {
   DashboardLocalHistoryWindow,
   DashboardModel,
   DashboardModelUsageAggregate,
-  DashboardProviderCard,
   DashboardSnapshotProviderCard,
   DashboardSourceModeProviderCard,
   DashboardSourceModeTotals,
@@ -253,7 +252,7 @@ function renderLiveQuotaSection(model: DashboardModel): string {
   </div>`;
 }
 
-function renderProviderLiveQuotaSection(model: DashboardModel, provider: DashboardProviderCard): string {
+function renderProviderLiveQuotaSection(model: DashboardModel, provider: DashboardProviderScope): string {
   const card = model.liveQuotaCards.find(c => c.providerId === provider.providerId);
   const body = card
     ? renderLiveQuotaCards([card])
@@ -283,6 +282,12 @@ function liveQuotaRefreshSummary(model: DashboardModel): string {
   const staleCount = model.liveQuotaCards.filter(c => c.freshness === 'stale' || c.freshness === 'cached').length;
   const cacheText = staleCount > 0 ? ` (${staleCount} cached/stale)` : '';
   return `Live quota refreshed: ${formatRefreshTime(model.liveQuotaLastRefreshedMs)}${cacheText}`;
+}
+
+interface DashboardProviderScope {
+  providerId: string;
+  label: string;
+  parseErrors: number;
 }
 
 function findLocalHistoryWindow(
@@ -326,6 +331,7 @@ function findSourceProvider(
       totalTokens: 0,
       totalAssistantMessages: 0,
       parseErrors: 0,
+      hasUsageData: false,
       sourceLabels: [],
       windows: [],
       modelWindows: { today: [], last5h: [], last7d: [], all: [] },
@@ -687,7 +693,7 @@ function historyChartAttributes(
 function renderUsageHistoryChart(
   model: DashboardModel,
   _defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-  provider?: DashboardProviderCard,
+  provider?: DashboardProviderScope,
 ): string {
   const scope = provider ? provider.providerId : 'overview';
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
@@ -962,7 +968,7 @@ function modelDistributionRowAttributes(
 function renderModelBreakdownDistribution(
   model: DashboardModel,
   _defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-  provider?: DashboardProviderCard,
+  provider?: DashboardProviderScope,
 ): string {
   const scope = provider ? provider.providerId : 'overview';
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
@@ -1048,7 +1054,7 @@ function laneLabelForSource(
 
 function renderTodaySection(
   model: DashboardModel,
-  provider?: DashboardProviderCard,
+  provider?: DashboardProviderScope,
 ): string {
   const title = provider ? `${provider.label} today` : 'Today';
   const groups = model.sourceModeTotals.map(sourceTotals => {
@@ -1152,11 +1158,38 @@ function sourceModeRangeDataAttributes(
 }
 
 
+function renderDashboardTabs(model: DashboardModel): string {
+  const providerButtons = model.providerTabs.map(tab =>
+    `<button type="button" class="tab-btn" id="tab-button-${esc(tab.providerId)}" data-dashboard-tab="${esc(tab.providerId)}" role="tab" aria-controls="tab-${esc(tab.providerId)}" aria-selected="false">${esc(tab.label)}</button>`
+  ).join('\n');
+
+  return `
+  <div class="tabs" role="tablist" aria-label="Dashboard provider views">
+    <button type="button" class="tab-btn active" id="tab-button-overview" data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>
+    ${providerButtons}
+  </div>`;
+}
+
+function renderProviderTabs(model: DashboardModel): string {
+  return model.providerTabs.map(tab => renderProviderTab(model, tab.providerId)).join('\n');
+}
+
 function renderProviderTab(model: DashboardModel, providerId: string): string {
-  const provider = model.providers.find(p => p.providerId === providerId);
-  if (!provider) {
+  const tab = model.providerTabs.find(providerTab => providerTab.providerId === providerId);
+  if (!tab) {
     return '';
   }
+  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
+  const sourceProvider = findSourceProvider(selectedSource, providerId);
+  if (!sourceProvider.hasUsageData) {
+    return '';
+  }
+  const localProvider = model.providers.find(p => p.providerId === providerId);
+  const provider: DashboardProviderScope = {
+    providerId,
+    label: tab.label,
+    parseErrors: localProvider?.parseErrors ?? sourceProvider.parseErrors,
+  };
 
   const parseErrorNote = provider.parseErrors > 0
     ? `<div class="parse-error-note">${esc(formatParseErrorText(provider.parseErrors))} in local history</div>`
@@ -2511,11 +2544,7 @@ export function buildDashboardHtml(
   </div>
   <div class="disclaimer">Live quota is shown first when provider APIs are available. Totals can use local history, imported snapshots, or both. ${esc(renderSourceModeCopy(model))}</div>
 
-  <div class="tabs" role="tablist" aria-label="Dashboard provider views">
-    <button type="button" class="tab-btn active" id="tab-button-overview" data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>
-    <button type="button" class="tab-btn" id="tab-button-claude" data-dashboard-tab="claude" role="tab" aria-controls="tab-claude" aria-selected="false">Claude</button>
-    <button type="button" class="tab-btn" id="tab-button-codex" data-dashboard-tab="codex" role="tab" aria-controls="tab-codex" aria-selected="false">Codex</button>
-  </div>
+  ${renderDashboardTabs(model)}
 
   <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
     <div class="usage-section-title">Usage</div>
@@ -2531,8 +2560,7 @@ export function buildDashboardHtml(
     ${renderModelBreakdownDistribution(model, model.defaultLocalHistoryWindowId)}
   </section>
 
-  ${renderProviderTab(model, 'claude')}
-  ${renderProviderTab(model, 'codex')}
+  ${renderProviderTabs(model)}
 
   <div class="footer">
     <div>
@@ -2838,8 +2866,8 @@ export function buildDashboardHtml(
       if (e.key === 'Escape') { hidePfTip(null); }
     });
     function setActiveTab(tabId) {
-      if (!tabId) {
-        return;
+      if (!tabId || !document.querySelector('[data-dashboard-tab="' + tabId + '"]')) {
+        tabId = 'overview';
       }
       tabButtons.forEach(function(button) {
         var selected = button.getAttribute('data-dashboard-tab') === tabId;

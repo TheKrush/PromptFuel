@@ -701,7 +701,10 @@ test('formatTooltip: no file paths in output', () => {
 
 // === Dashboard model ===
 
-const { buildDashboardModel } = require(path.join(OUT, 'panel/dashboardModel'));
+const {
+  buildDashboardModel,
+  hasDashboardProviderUsageData,
+} = require(path.join(OUT, 'panel/dashboardModel'));
 const {
   createEmptyLocalHistoryWindowAggregateMap,
   mergeTokenUsageIntoLocalHistoryWindows,
@@ -987,6 +990,70 @@ test('dashboard source modes: provider tabs filter source totals by provider', (
   assert.strictEqual(providerSourceTotals(model, 'combined', 'codex').totalTokens, 2700);
   assert.strictEqual(providerSourceTotals(model, 'snapshots', 'claude').totalAssistantMessages, 3);
   assert.strictEqual(providerSourceTotals(model, 'snapshots', 'codex').totalAssistantMessages, 7);
+});
+
+test('dashboard provider availability: local source only shows providers with local usage data', () => {
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'no-data' },
+    ],
+  );
+  const model = buildDashboardModel(status, 'local');
+
+  assert.deepStrictEqual(model.providerTabs.map(tab => tab.providerId), ['claude']);
+  assert.strictEqual(providerSourceTotals(model, 'local', 'claude').hasUsageData, true);
+  assert.strictEqual(providerSourceTotals(model, 'local', 'codex').hasUsageData, false);
+});
+
+test('dashboard provider availability: snapshots source only shows providers with imported usage data', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'codex',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(700, 7),
+  }]));
+  const model = buildDashboardModel(status, 'snapshots');
+
+  assert.deepStrictEqual(model.providerTabs.map(tab => tab.providerId), ['codex']);
+  assert.strictEqual(providerSourceTotals(model, 'snapshots', 'codex').hasUsageData, true);
+  assert.strictEqual(providerSourceTotals(model, 'snapshots', 'claude').hasUsageData, false);
+});
+
+test('dashboard provider availability: combined source includes local and imported provider lanes', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'codex',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(700, 7),
+    sourceLabel: 'WATCHER',
+  }]));
+  const model = buildDashboardModel(status, 'combined');
+
+  assert.deepStrictEqual(model.providerTabs.map(tab => tab.providerId), ['claude', 'codex']);
+  assert.deepStrictEqual(model.providerTabs.find(tab => tab.providerId === 'codex').sourceLabels, ['WATCHER']);
+});
+
+test('dashboard provider availability: live quota alone does not create provider usage tabs', () => {
+  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+    {
+      providerId: 'claude',
+      windows: [{ windowId: '5h', usedPercentage: 25, remainingPercentage: 75 }],
+      freshness: 'live',
+      lastUpdatedEpochMs: Date.now(),
+    },
+  ]);
+  const model = buildDashboardModel(status);
+
+  assert.deepStrictEqual(model.providerTabs, []);
+  assert.strictEqual(hasDashboardProviderUsageData(providerSourceTotals(model, 'combined', 'claude')), false);
 });
 
 test('dashboard source modes: recent windows do not invent snapshot data when windows are missing', () => {
@@ -1604,6 +1671,49 @@ test('dashboard: renders Overview, Claude, and Codex tabs with Overview active b
   assert.ok(html.includes('aria-labelledby="tab-button-codex" hidden'), `expected Codex tab hidden by default`);
 });
 
+test('dashboard: hides provider tabs and panels when selected source scope has no provider usage data', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+    {
+      providerId: 'claude',
+      windows: [{ windowId: '5h', usedPercentage: 25, remainingPercentage: 75 }],
+      freshness: 'live',
+      lastUpdatedEpochMs: Date.now(),
+    },
+  ]);
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+
+  assert.ok(html.includes('data-dashboard-tab="overview"'), `expected Overview tab`);
+  assert.ok(html.includes('aria-selected="true">Overview</button>'), `expected Overview active by default`);
+  assert.ok(!html.includes('data-dashboard-tab="claude"'), `live quota alone should not render Claude tab`);
+  assert.ok(!html.includes('data-dashboard-tab="codex"'), `live quota alone should not render Codex tab`);
+  assert.ok(!html.includes('data-dashboard-tab-panel="claude"'), `live quota alone should not render Claude provider panel`);
+  assert.ok(!html.includes('data-dashboard-tab-panel="codex"'), `live quota alone should not render Codex provider panel`);
+  assert.ok(html.includes('75% remaining'), `Overview should still show live quota`);
+  assert.ok(html.includes("tabId = 'overview'"), `tab script should fall back to Overview when a tab is unavailable`);
+});
+
+test('dashboard: provider tab appears when usage comes from imported snapshot data', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applySnapshotReadResults(createInitialStatus(['claude', 'codex']), snapshotStateFixture([{
+    providerId: 'codex',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(700, 7),
+    sourceLabel: 'WATCHER',
+    windowTotals: { today: aggregateFixture(70, 1), all: aggregateFixture(700, 7) },
+  }]));
+  const model = buildDashboardModel(status, 'snapshots');
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(!html.includes('data-dashboard-tab="claude"'), `Claude tab should be hidden without snapshot usage`);
+  assert.ok(html.includes('data-dashboard-tab="codex"'), `Codex tab should render for snapshot usage`);
+  assert.ok(codexPanel.includes('Codex (WATCHER)'), `Codex tab should label imported source lane`);
+  assert.ok(codexPanel.includes('metric-label">Tokens'), `provider Today tokens card should render`);
+  assert.ok(codexPanel.includes('metric-label">Activity'), `provider Today activity card should render`);
+});
+
 test('dashboard: provider tabs isolate local history details by provider', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
@@ -1818,7 +1928,14 @@ test('dashboard: live quota values are not filtered by history range or source s
 
 test('dashboard: stale provider card renders inside provider tab only for that provider', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
-  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
+  const status = applyLiveQuotaResults(localStatus, [
     {
       providerId: 'claude',
       windows: [
@@ -1854,7 +1971,11 @@ test('dashboard: stale provider card renders inside provider tab only for that p
 
 test('dashboard: unavailable provider state renders inside provider tab', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
-  const status = applyLiveQuotaResults(createInitialStatus(['claude', 'codex']), [
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [{ providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 2, filesFound: 1 }],
+  );
+  const status = applyLiveQuotaResults(localStatus, [
     { providerId: 'codex', windows: [], freshness: 'unavailable' },
   ]);
   const model = buildDashboardModel(status);
@@ -1869,7 +1990,13 @@ test('dashboard: unavailable provider state renders inside provider tab', () => 
 
 test('dashboard: disabled live quota state renders inside provider tabs', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
-  const status = createInitialStatus(['claude', 'codex'], false);
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex'], false),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 1, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 2, filesFound: 1 },
+    ],
+  );
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
