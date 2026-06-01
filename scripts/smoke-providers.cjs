@@ -448,6 +448,19 @@ async function main() {
             totalAssistantMessages: 1,
           },
         },
+        modelTotals: [{
+          providerId: 'claude',
+          modelLabel: 'claude-sonnet-4-20250514',
+          totalTokens: 1800,
+          totalAssistantMessages: 3,
+        }],
+        modelWindowTotals: {
+          today: [{
+            model: 'claude-sonnet-4-20250514',
+            totalTokens: 500,
+            messages: 1,
+          }],
+        },
       }],
     }));
     const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude'], nowMs: snapshotNow });
@@ -457,7 +470,36 @@ async function main() {
     assert.strictEqual(result.state.providers[0].aggregate.totalTokens, 1800);
     assert.strictEqual(result.state.providers[0].aggregate.totalAssistantMessages, 3);
     assert.strictEqual(result.state.providers[0].windowTotals.today.totalTokens, 500);
+    assert.strictEqual(result.state.providers[0].modelAggregates[0].modelLabel, 'claude-sonnet-4-20250514');
+    assert.strictEqual(result.state.providers[0].modelAggregates[0].totalTokens, 1800);
+    assert.strictEqual(result.state.providers[0].modelWindowTotals.today[0].totalTokens, 500);
     assert.strictEqual(result.state.providers[0].sourceLabel, 'snapshot import');
+  });
+
+  await test('readPromptFuelSnapshots: malformed model aggregate entries are ignored', async () => {
+    const dir = path.join(snapshotDir, 'malformed-models');
+    await writeFile(dir, 'usage.json', JSON.stringify({
+      schemaVersion: PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+      generatedAtEpochMs: snapshotNow,
+      providers: [{
+        providerId: 'codex',
+        aggregate: {
+          totalTokens: 1200,
+          totalAssistantMessages: 2,
+        },
+        modelTotals: [
+          { modelLabel: 'gpt-5.4-codex', totalTokens: 900, turns: 1 },
+          { modelLabel: '../secret/path', totalTokens: 100, turns: 1 },
+          { modelLabel: 'gpt-5.4-codex', totalTokens: 100, rawPayload: 'private' },
+          { providerId: 'unknown', modelLabel: 'gpt-other', totalTokens: 100 },
+        ],
+      }],
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['codex'], nowMs: snapshotNow });
+    assert.strictEqual(result.state.providers.length, 1);
+    assert.strictEqual(result.state.providers[0].modelAggregates.length, 1);
+    assert.strictEqual(result.state.providers[0].modelAggregates[0].modelLabel, 'gpt-5.4-codex');
+    assert.strictEqual(result.state.providers[0].modelAggregates[0].totalTokens, 900);
   });
 
   await test('readPromptFuelSnapshots: malformed snapshot ignored', async () => {
@@ -553,6 +595,11 @@ async function main() {
           totalTokens: 150,
           totalAssistantMessages: 1,
         },
+        modelTotals: [{
+          modelLabel: rawPrivateValue,
+          totalTokens: 150,
+          totalAssistantMessages: 1,
+        }],
         rawPayload: rawPrivateValue,
       }],
     }));
@@ -893,6 +940,11 @@ async function main() {
     assert.strictEqual(result.totalInputTokens, 1700);
     assert.strictEqual(result.totalOutputTokens, 1100);
     assert.strictEqual(result.totalTokens, 3450);
+    assert.strictEqual(result.modelAggregates[0].providerId, 'claude');
+    assert.strictEqual(result.modelAggregates[0].modelLabel, 'claude-sonnet-4-20250514');
+    assert.strictEqual(result.modelAggregates[0].totalTokens, 3450);
+    assert.strictEqual(result.modelAggregates[0].totalAssistantMessages, 2);
+    assert.strictEqual(result.localHistoryModelWindows.all[0].modelLabel, 'claude-sonnet-4-20250514');
   });
 
   // Claude parser: timestamp windows
@@ -939,6 +991,10 @@ async function main() {
     assert.strictEqual(result.localHistoryWindows.last7d.totalTokens, 600);
     assert.strictEqual(result.localHistoryWindows.all.totalAssistantMessages, 6);
     assert.strictEqual(result.localHistoryWindows.last7d.totalAssistantMessages, 3);
+    assert.strictEqual(result.modelAggregates[0].modelLabel, 'Unknown model');
+    assert.strictEqual(result.modelAggregates[0].totalTokens, 2100);
+    assert.strictEqual(result.localHistoryModelWindows.last7d[0].modelLabel, 'Unknown model');
+    assert.strictEqual(result.localHistoryModelWindows.last7d[0].totalTokens, 600);
   });
 
   // Claude parser: malformed lines
@@ -1028,6 +1084,7 @@ async function main() {
       type: 'tool_use',
       timestamp: Date.now(),
       payload: {
+        model: 'gpt-5.4-codex',
         info: {
           last_token_usage: {
             input_tokens: 2000,
@@ -1041,6 +1098,7 @@ async function main() {
       type: 'tool_use',
       timestamp: Date.now() + 1000,
       payload: {
+        model: 'gpt-5.4-codex',
         info: {
           last_token_usage: {
             input_tokens: 800,
@@ -1060,6 +1118,10 @@ async function main() {
     assert.strictEqual(result.totalAssistantMessages, 2);
     assert.strictEqual(result.totalInputTokens, 2800);
     assert.strictEqual(result.totalOutputTokens, 2100);
+    assert.strictEqual(result.modelAggregates[0].providerId, 'codex');
+    assert.strictEqual(result.modelAggregates[0].modelLabel, 'gpt-5.4-codex');
+    assert.strictEqual(result.modelAggregates[0].totalTokens, 5500);
+    assert.strictEqual(result.modelAggregates[0].totalAssistantMessages, 2);
   });
 
   // Codex parser: timestamp windows

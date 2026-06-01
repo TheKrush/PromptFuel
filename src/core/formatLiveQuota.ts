@@ -1,6 +1,11 @@
 import { PROVIDER_LABELS, ProviderId } from './providers';
 import type { LiveQuotaFreshness, LiveQuotaStatus, LiveQuotaWindow } from './liveQuotaTypes';
 import { PromptFuelStatus } from './statusModel';
+import {
+  mergeModelUsageAggregate,
+  sortModelUsageAggregates,
+  type ModelUsageAggregate,
+} from './modelUsage';
 
 const STATUS_PROVIDER_SEPARATOR = ' | ';
 const STATUS_WINDOW_JOINER = ' \u00B7 ';
@@ -256,7 +261,35 @@ export function formatLiveQuotaTooltip(status: PromptFuelStatus): string {
     lines.push(`* ${formatParseErrorLine(totalParseErrors)}`);
   }
 
+  const modelRows = getTooltipModelRows(status);
+  if (modelRows.length > 0) {
+    lines.push('');
+    lines.push('## Models');
+    lines.push('');
+    lines.push('| Provider | Model | Tokens | Msgs/Turns |');
+    lines.push('| --- | --- | ---: | ---: |');
+    for (const row of modelRows.slice(0, 5)) {
+      const provider = PROVIDER_LABELS[row.providerId] ?? row.providerId;
+      lines.push(`| ${escapeTooltipCell(provider)} | ${escapeTooltipCell(row.modelLabel)} | **${formatTooltipTokenCount(row.totalTokens)}** | ${row.totalAssistantMessages} |`);
+    }
+  }
+
   return lines.join(LINE_SEPARATOR);
+}
+
+function getTooltipModelRows(status: PromptFuelStatus): ModelUsageAggregate[] {
+  const merged: ModelUsageAggregate[] = [];
+  for (const state of status.providerStates) {
+    for (const model of state.modelAggregates ?? []) {
+      mergeModelUsageAggregate(merged, model);
+    }
+  }
+  for (const provider of status.snapshotState.providers) {
+    for (const model of provider.modelAggregates ?? []) {
+      mergeModelUsageAggregate(merged, model);
+    }
+  }
+  return sortModelUsageAggregates(merged).filter(row => row.totalTokens > 0);
 }
 
 function formatQuotaRows(
@@ -527,6 +560,18 @@ export function formatTokenCount(count: number): string {
     return `${(count / 1_000).toFixed(1)}K tokens`;
   }
   return `${count} tokens`;
+}
+
+function formatTooltipTokenCount(count: number): string {
+  return formatTokenCount(count).replace(/ tokens$/, '');
+}
+
+function escapeTooltipCell(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\|/g, '\\|');
 }
 
 // --- Utility: check if any live quota is usable ---

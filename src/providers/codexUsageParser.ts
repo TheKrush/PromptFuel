@@ -10,6 +10,13 @@ import {
   mergeTokenUsageIntoLocalHistoryWindows,
   parseTimestampEpochMs,
 } from '../core/usageAggregate';
+import {
+  ModelUsageAggregate,
+  ModelUsageWindowAggregateMap,
+  createEmptyModelUsageWindowAggregateMap,
+  mergeModelTokenUsage,
+  mergeModelTokenUsageIntoLocalHistoryWindows,
+} from '../core/modelUsage';
 import { fileEndsWithLineBreak, normalizeJsonlLine } from './jsonlLine';
 
 const MAX_DEPTH = 3;
@@ -43,10 +50,18 @@ export interface CodexUsageParseOptions {
 export async function parseCodexUsage(
   sessionsRoot: string,
   options: CodexUsageParseOptions = {},
-): Promise<{ aggregate: AggregateUsage; localHistoryWindows: LocalHistoryWindowAggregateMap; stats: CodexParseStats }> {
+): Promise<{
+  aggregate: AggregateUsage;
+  localHistoryWindows: LocalHistoryWindowAggregateMap;
+  modelAggregates: ModelUsageAggregate[];
+  localHistoryModelWindows: ModelUsageWindowAggregateMap;
+  stats: CodexParseStats;
+}> {
   const result = {
     aggregate: createEmptyAggregate(),
     localHistoryWindows: createEmptyLocalHistoryWindowAggregateMap(),
+    modelAggregates: [] as ModelUsageAggregate[],
+    localHistoryModelWindows: createEmptyModelUsageWindowAggregateMap(),
     stats: createEmptyStats(),
     nowMs: options.nowMs ?? Date.now(),
   };
@@ -69,6 +84,8 @@ async function parseSingleFile(
   result: {
     aggregate: AggregateUsage;
     localHistoryWindows: LocalHistoryWindowAggregateMap;
+    modelAggregates: ModelUsageAggregate[];
+    localHistoryModelWindows: ModelUsageWindowAggregateMap;
     stats: CodexParseStats;
     nowMs: number;
   },
@@ -121,11 +138,22 @@ async function parseSingleFile(
     }
 
     result.stats.recordsMatched += 1;
+    const timestampEpochMs = parseTimestampEpochMs(record.timestamp);
+    const modelLabel = extractCodexModel(record);
     mergeTokenUsage(result.aggregate, usage);
+    mergeModelTokenUsage(result.modelAggregates, 'codex', modelLabel, usage);
     mergeTokenUsageIntoLocalHistoryWindows(
       result.localHistoryWindows,
       usage,
-      parseTimestampEpochMs(record.timestamp),
+      timestampEpochMs,
+      result.nowMs,
+    );
+    mergeModelTokenUsageIntoLocalHistoryWindows(
+      result.localHistoryModelWindows,
+      'codex',
+      modelLabel,
+      usage,
+      timestampEpochMs,
       result.nowMs,
     );
   }
@@ -168,6 +196,27 @@ function extractCodexUsage(record: CodexRecord): CodexTokenUsage | undefined {
     cacheCreationInputTokens: readTokenCount(source.cached_input_tokens),
     cacheReadInputTokens: 0,
   };
+}
+
+function extractCodexModel(record: CodexRecord): unknown {
+  const payload = asRecord(record.payload);
+  if (!payload) {
+    return undefined;
+  }
+
+  const payloadModel = asString(payload.model);
+  if (payloadModel) {
+    return payloadModel;
+  }
+
+  const info = asRecord(payload.info);
+  const infoModel = asString(info?.model);
+  if (infoModel) {
+    return infoModel;
+  }
+
+  const settings = asRecord(payload.settings);
+  return asString(settings?.model);
 }
 
 async function findJsonlFiles(root: string): Promise<string[]> {
@@ -221,6 +270,10 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     return value as Record<string, unknown>;
   }
   return undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
 function joinPath(a: string, b: string): string {

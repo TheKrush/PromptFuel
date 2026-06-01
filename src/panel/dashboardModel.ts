@@ -11,6 +11,14 @@ import {
   LocalHistoryWindowId,
   createEmptyAggregate,
 } from '../core/usageAggregate';
+import {
+  cloneModelUsageAggregates,
+  createEmptyModelUsageWindowAggregateMap,
+  mergeModelUsageAggregate,
+  sortModelUsageAggregates,
+  type ModelUsageAggregate,
+  type ModelUsageWindowAggregateMap,
+} from '../core/modelUsage';
 import type { PromptFuelSnapshotProviderAggregate } from '../core/snapshotTypes';
 
 export type DashboardSourceMode = 'local' | 'snapshots' | 'combined';
@@ -41,6 +49,18 @@ export interface DashboardLocalHistoryWindow {
   totalAssistantMessages: number;
 }
 
+export interface DashboardModelUsageAggregate {
+  providerId: ProviderId;
+  providerLabel: string;
+  modelLabel: string;
+  totalTokens: number;
+  totalAssistantMessages: number;
+  sourceMode: DashboardSourceMode;
+  windowId: LocalHistoryWindowId;
+}
+
+export type DashboardModelUsageWindowMap = Record<LocalHistoryWindowId, DashboardModelUsageAggregate[]>;
+
 export interface DashboardSourceModeOption {
   sourceMode: DashboardSourceMode;
   label: string;
@@ -55,6 +75,7 @@ export interface DashboardSourceModeProviderCard {
   totalAssistantMessages: number;
   parseErrors: number;
   windows: DashboardLocalHistoryWindow[];
+  modelWindows: DashboardModelUsageWindowMap;
 }
 
 export interface DashboardSourceModeTotals {
@@ -64,6 +85,7 @@ export interface DashboardSourceModeTotals {
   totalAssistantMessages: number;
   providers: DashboardSourceModeProviderCard[];
   windows: DashboardLocalHistoryWindow[];
+  modelWindows: DashboardModelUsageWindowMap;
   missingSnapshotWindowIds: LocalHistoryWindowId[];
 }
 
@@ -75,6 +97,8 @@ export interface DashboardProviderCard {
   totalAssistantMessages: number;
   parseErrors: number;
   localHistoryWindows: DashboardLocalHistoryWindow[];
+  modelAggregates: ModelUsageAggregate[];
+  localHistoryModelWindows: ModelUsageWindowAggregateMap;
 }
 
 export interface DashboardLiveQuotaWindow {
@@ -101,6 +125,8 @@ export interface DashboardSnapshotProviderCard {
   sourceLabel?: string;
   windows: DashboardLocalHistoryWindow[];
   providedWindowIds: LocalHistoryWindowId[];
+  modelAggregates: ModelUsageAggregate[];
+  modelWindows: DashboardModelUsageWindowMap;
 }
 
 export interface DashboardSnapshotAggregate {
@@ -157,6 +183,8 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
       totalAssistantMessages: messages,
       parseErrors: errors,
       localHistoryWindows: providerWindows,
+      modelAggregates: cloneModelUsageAggregates(state.modelAggregates) ?? [],
+      localHistoryModelWindows: cloneFullModelWindowMap(state.localHistoryModelWindows, state.modelAggregates),
     };
   });
 
@@ -277,6 +305,8 @@ function buildDashboardSnapshotProviderCard(
     ...(sourceLabel ? { sourceLabel } : {}),
     windows: buildSnapshotWindowCards(provider.windowTotals, provider.aggregate),
     providedWindowIds: getProvidedSnapshotWindowIds(provider.windowTotals),
+    modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) ?? [],
+    modelWindows: buildSnapshotModelWindowCards(provider),
   };
 }
 
@@ -301,6 +331,64 @@ function buildSnapshotWindowCards(
       totalAssistantMessages: windowAggregate?.totalAssistantMessages ?? (windowId === 'all' ? aggregate.totalAssistantMessages : 0),
     };
   });
+}
+
+function cloneFullModelWindowMap(
+  windows: Partial<ModelUsageWindowAggregateMap> | undefined,
+  allModels: ReadonlyArray<ModelUsageAggregate> | undefined,
+): ModelUsageWindowAggregateMap {
+  const cloned = createEmptyModelUsageWindowAggregateMap();
+  for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
+    cloned[windowId] = sortModelUsageAggregates(cloneModelUsageAggregates(windows?.[windowId]) ?? []);
+  }
+  if (cloned.all.length === 0 && allModels && allModels.length > 0) {
+    cloned.all = sortModelUsageAggregates(cloneModelUsageAggregates(allModels) ?? []);
+  }
+  return cloned;
+}
+
+function buildSnapshotModelWindowCards(
+  provider: PromptFuelSnapshotProviderAggregate,
+): DashboardModelUsageWindowMap {
+  const modelWindows = cloneFullModelWindowMap(provider.modelWindowTotals, provider.modelAggregates);
+  return toDashboardModelWindows('snapshots', modelWindows);
+}
+
+function createEmptyDashboardModelWindowMap(): DashboardModelUsageWindowMap {
+  return {
+    today: [],
+    last5h: [],
+    last7d: [],
+    all: [],
+  };
+}
+
+function toDashboardModelWindows(
+  sourceMode: DashboardSourceMode,
+  windows: Partial<ModelUsageWindowAggregateMap> | undefined,
+): DashboardModelUsageWindowMap {
+  const dashboardWindows = createEmptyDashboardModelWindowMap();
+  for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
+    dashboardWindows[windowId] = sortModelUsageAggregates(windows?.[windowId] ?? [])
+      .map(model => toDashboardModelUsage(sourceMode, windowId, model));
+  }
+  return dashboardWindows;
+}
+
+function toDashboardModelUsage(
+  sourceMode: DashboardSourceMode,
+  windowId: LocalHistoryWindowId,
+  model: ModelUsageAggregate,
+): DashboardModelUsageAggregate {
+  return {
+    providerId: model.providerId,
+    providerLabel: PROVIDER_LABELS[model.providerId],
+    modelLabel: model.modelLabel,
+    totalTokens: model.totalTokens,
+    totalAssistantMessages: model.totalAssistantMessages,
+    sourceMode,
+    windowId,
+  };
 }
 
 function getProvidedSnapshotWindowIds(
@@ -382,6 +470,7 @@ function buildSourceTotals(
     totalAssistantMessages: windows.find(w => w.windowId === 'all')?.totalAssistantMessages ?? 0,
     providers,
     windows,
+    modelWindows: buildModelWindowTotalsForProviders(sourceMode, providers),
     missingSnapshotWindowIds,
   };
 }
@@ -399,6 +488,7 @@ function buildLocalSourceProviders(
       totalAssistantMessages: provider.totalAssistantMessages,
       parseErrors: provider.parseErrors,
       windows: provider.localHistoryWindows,
+      modelWindows: toDashboardModelWindows('local', provider.localHistoryModelWindows),
     }));
 }
 
@@ -428,6 +518,7 @@ function buildSnapshotSourceProviders(
       totalAssistantMessages,
       parseErrors: 0,
       windows: buildLocalHistoryWindowCards(aggregateWindows, totalTokens, totalAssistantMessages),
+      modelWindows: combineProviderModelWindows('snapshots', matching.map(provider => provider.modelWindows)),
     };
   });
 }
@@ -476,6 +567,10 @@ function combineSourceProviderCards(
   const localWindows = local?.windows ?? buildLocalHistoryWindowCards(undefined, 0, 0);
   const snapshotWindows = snapshot?.windows ?? buildLocalHistoryWindowCards(undefined, 0, 0);
   const windows = combineWindowCards(localWindows, snapshotWindows);
+  const modelWindows = combineProviderModelWindows('combined', [
+    local?.modelWindows,
+    snapshot?.modelWindows,
+  ]);
   const totalTokens = (local?.totalTokens ?? 0) + (snapshot?.totalTokens ?? 0);
   const totalAssistantMessages = (local?.totalAssistantMessages ?? 0) + (snapshot?.totalAssistantMessages ?? 0);
 
@@ -487,6 +582,7 @@ function combineSourceProviderCards(
     totalAssistantMessages,
     parseErrors: local?.parseErrors ?? 0,
     windows,
+    modelWindows,
   };
 }
 
@@ -504,4 +600,36 @@ function combineWindowCards(
       totalAssistantMessages: (leftWindow?.totalAssistantMessages ?? 0) + (rightWindow?.totalAssistantMessages ?? 0),
     };
   });
+}
+
+function buildModelWindowTotalsForProviders(
+  sourceMode: DashboardSourceMode,
+  providers: DashboardSourceModeProviderCard[],
+): DashboardModelUsageWindowMap {
+  return combineProviderModelWindows(sourceMode, providers.map(provider => provider.modelWindows));
+}
+
+function combineProviderModelWindows(
+  sourceMode: DashboardSourceMode,
+  windowsList: Array<DashboardModelUsageWindowMap | undefined>,
+): DashboardModelUsageWindowMap {
+  const combined = createEmptyDashboardModelWindowMap();
+  for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
+    const merged: ModelUsageAggregate[] = [];
+    for (const windows of windowsList) {
+      for (const model of windows?.[windowId] ?? []) {
+        mergeModelUsageAggregate(merged, {
+          providerId: model.providerId,
+          modelLabel: model.modelLabel,
+          totalTokens: model.totalTokens,
+          totalAssistantMessages: model.totalAssistantMessages,
+          source: sourceMode === 'snapshots' ? 'snapshot' : sourceMode,
+          windowId,
+        });
+      }
+    }
+    combined[windowId] = sortModelUsageAggregates(merged)
+      .map(model => toDashboardModelUsage(sourceMode, windowId, model));
+  }
+  return combined;
 }

@@ -2,6 +2,11 @@ import { ProviderQuotaState, ProviderQuotaStatus, QUOTA_WINDOW_LABELS } from './
 import { ReadResult } from './providerReader';
 import { cloneAggregate, LocalHistoryWindowAggregateMap } from './usageAggregate';
 import {
+  cloneModelUsageAggregates,
+  cloneModelUsageWindowAggregates,
+  type ModelUsageWindowAggregateMap,
+} from './modelUsage';
+import {
   availabilityFromFreshness,
   getGenericQuotaUnavailableMessage,
   getResetInMs,
@@ -65,6 +70,8 @@ function readResultToQuotaState(
     totalAssistantMessages: result.totalAssistantMessages,
     parseErrors: result.parseErrors,
     localHistoryWindows: cloneLocalHistoryWindows(result.localHistoryWindows),
+    modelAggregates: cloneModelUsageAggregates(result.modelAggregates),
+    localHistoryModelWindows: cloneModelUsageWindowAggregates(result.localHistoryModelWindows) as ModelUsageWindowAggregateMap | undefined,
   };
 }
 

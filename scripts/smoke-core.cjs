@@ -330,6 +330,36 @@ test('formatTooltip: reports imported aggregate snapshot state', () => {
   assert.ok(tooltip.includes('Snapshots: available'), `expected imported snapshot state in tooltip`);
 });
 
+test('formatTooltip: model breakdown appears below quota/details without API estimates', () => {
+  const local = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 2,
+      filesFound: 1,
+      modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+    }],
+  );
+  const status = applySnapshotReadResults(local, snapshotStateFixture([{
+    providerId: 'codex',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 1),
+    modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 500, totalAssistantMessages: 1 }],
+  }]));
+  const tooltip = formatTooltip(status);
+
+  assert.ok(tooltip.includes('## Quota'), `expected quota to remain first-class`);
+  assert.ok(tooltip.includes('## Details'), `expected details section`);
+  assert.ok(tooltip.includes('## Models'), `expected model section`);
+  assert.ok(tooltip.indexOf('## Models') > tooltip.indexOf('## Details'), `models should render below details`);
+  assert.ok(tooltip.includes('| Provider | Model | Tokens | Msgs/Turns |'), `expected compact model table`);
+  assert.ok(tooltip.includes('claude-sonnet-4-20250514'), `expected local model row`);
+  assert.ok(tooltip.includes('gpt-5.4-codex'), `expected snapshot model row`);
+  assert.ok(!tooltip.includes('API est.'), `API estimates should be skipped`);
+});
+
 // === Tooltip: local usage details omitted ===
 
 test('formatTooltip: provider token splits omitted', () => {
@@ -966,6 +996,57 @@ test('dashboard source modes: All local history combines local all-history and s
   assert.strictEqual(all.totalAssistantMessages, 6);
 });
 
+test('dashboard source modes: model aggregates follow Local, Snapshots, and Combined', () => {
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 2,
+      filesFound: 1,
+      modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+      localHistoryModelWindows: {
+        today: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 100, totalAssistantMessages: 1 }],
+        last5h: [],
+        last7d: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 300, totalAssistantMessages: 1 }],
+        all: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+      },
+    }, {
+      providerId: 'codex',
+      status: 'ok',
+      totalTokens: 2000,
+      totalAssistantMessages: 3,
+      filesFound: 1,
+      modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 2000, totalAssistantMessages: 3 }],
+      localHistoryModelWindows: {
+        today: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 200, totalAssistantMessages: 1 }],
+        last5h: [],
+        last7d: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 600, totalAssistantMessages: 2 }],
+        all: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 2000, totalAssistantMessages: 3 }],
+      },
+    }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 1),
+    modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-opus-4-20250514', totalTokens: 500, totalAssistantMessages: 1 }],
+    modelWindowTotals: {
+      today: [{ providerId: 'claude', modelLabel: 'claude-opus-4-20250514', totalTokens: 50, totalAssistantMessages: 1 }],
+      all: [{ providerId: 'claude', modelLabel: 'claude-opus-4-20250514', totalTokens: 500, totalAssistantMessages: 1 }],
+    },
+  }]));
+  const model = buildDashboardModel(status);
+
+  assert.strictEqual(sourceTotals(model, 'local').modelWindows.all.length, 2);
+  assert.strictEqual(sourceTotals(model, 'snapshots').modelWindows.all[0].modelLabel, 'claude-opus-4-20250514');
+  assert.strictEqual(sourceTotals(model, 'combined').modelWindows.all.find(row => row.modelLabel === 'claude-sonnet-4-20250514').totalTokens, 1000);
+  assert.strictEqual(sourceTotals(model, 'combined').modelWindows.all.find(row => row.modelLabel === 'claude-opus-4-20250514').totalTokens, 500);
+  assert.strictEqual(sourceTotals(model, 'combined').modelWindows.today.find(row => row.modelLabel === 'claude-opus-4-20250514').totalTokens, 50);
+  assert.strictEqual(sourceTotals(model, 'snapshots').modelWindows.last7d.length, 0, 'snapshot all-time model totals must not be invented for recent windows');
+});
+
 test('dashboard: uses local history wording, not subscription', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
@@ -978,8 +1059,8 @@ test('dashboard: uses local history wording, not subscription', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Live quota first, usage history second'), `expected live quota/local history subtitle`);
-  assert.ok(html.includes('Usage history tokens'), `expected "Usage history tokens" overview label`);
-  assert.ok(html.includes('Usage history messages'), `expected "Usage history messages" overview label`);
+  assert.ok(html.includes('History chart'), `expected history chart section`);
+  assert.ok(!html.includes('Usage history (secondary)'), `dashboard should not include removed summary section`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
 });
 
@@ -1076,29 +1157,60 @@ test('dashboard: renders AgentBridge-style history chart and provider colors', (
   assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected source/window changes to update charts`);
 });
 
-test('dashboard: renders model breakdown placeholders until backend exists', () => {
+test('dashboard: renders model breakdown rows from safe aggregates', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
     createInitialStatus(['claude', 'codex']),
     [
-      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 10, filesFound: 1 },
-      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 20, filesFound: 1 },
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 10 }],
+        localHistoryModelWindows: {
+          today: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 100, totalAssistantMessages: 1 }],
+          last5h: [],
+          last7d: [],
+          all: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 10 }],
+        },
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        modelAggregates: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 2000, totalAssistantMessages: 20 }],
+        localHistoryModelWindows: {
+          today: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 200, totalAssistantMessages: 2 }],
+          last5h: [],
+          last7d: [],
+          all: [{ providerId: 'codex', modelLabel: 'gpt-5.4-codex', totalTokens: 2000, totalAssistantMessages: 20 }],
+        },
+      },
     ],
   );
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
   const claudePanel = dashboardTabPanel(html, 'claude');
+  const codexPanel = dashboardTabPanel(html, 'codex');
 
-  assert.ok(html.includes('data-model-placeholder="overview"'), `expected overview model placeholder card`);
+  assert.ok(html.includes('data-model-breakdown="overview"'), `expected overview model breakdown card`);
   assert.ok(html.includes('class="usage-model-distribution"'), `expected model distribution surface`);
   assert.ok(html.includes('class="usage-model-donut"'), `expected AgentBridge-style model donut`);
-  assert.ok(html.includes('model-level backend pending'), `expected backend-pending model copy`);
-  assert.ok(html.includes('Claude models pending'), `expected Claude placeholder row`);
-  assert.ok(html.includes('Codex models pending'), `expected Codex placeholder row`);
-  assert.ok(html.includes('Model-level rows are placeholders until PromptFuel stores safe per-model aggregates.'), `expected honest placeholder note`);
-  assert.ok(claudePanel.includes('data-model-placeholder="claude"'), `expected provider tab model placeholder`);
-  assert.ok(claudePanel.includes('Claude models pending'), `expected provider tab model row`);
+  assert.ok(html.includes('claude-sonnet-4-20250514'), `expected Claude model label`);
+  assert.ok(html.includes('gpt-5.4-codex'), `expected Codex model label`);
+  assert.ok(html.includes('data-model-value-local-today="100 tokens"'), `expected windowed local model data`);
+  assert.ok(html.includes('data-model-width-local-today'), `expected compact model bars`);
+  assert.ok(html.includes('No model breakdown available.'), `expected calm empty state copy`);
+  assert.ok(claudePanel.includes('data-model-breakdown="claude"'), `expected provider tab model breakdown`);
+  assert.ok(claudePanel.includes('claude-sonnet-4-20250514'), `expected Claude tab model row`);
+  assert.ok(!claudePanel.includes('gpt-5.4-codex'), `Claude tab should not include Codex model row`);
+  assert.ok(codexPanel.includes('gpt-5.4-codex'), `Codex tab should include Codex model row`);
+  assert.ok(!html.includes('API est.'), `PromptFuel dashboard should not include API estimates in this pass`);
 });
 
 test('dashboard source modes: buttons render and no-snapshot modes are disabled', () => {
@@ -1487,7 +1599,7 @@ test('dashboard: provider tabs isolate local history details by provider', () =>
   assert.ok(!codexPanel.includes('Parse errors: 2 lines skipped'), `Codex tab should not include Claude parse count`);
 });
 
-test('dashboard: local history selector updates tab summaries and provider details', () => {
+test('dashboard: local history selector updates provider details and charts', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
@@ -1511,8 +1623,9 @@ test('dashboard: local history selector updates tab summaries and provider detai
   const claudePanel = dashboardTabPanel(html, 'claude');
 
   assert.ok(html.includes('data-local-window="last7d"'), `expected Last 7d selector button`);
-  assert.ok(html.includes('querySelectorAll(\'.local-history-summary-value\')'), `expected selector script to update visible tab summary values`);
-  assert.ok(claudePanel.includes('data-tokens-last7d="1.2K tokens"'), `expected Claude tab summary to carry Last 7d tokens`);
+  assert.ok(!html.includes('local-history-summary-value'), `removed usage summary values should not render or update`);
+  assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected selector script to update charts`);
+  assert.ok(claudePanel.includes('data-tokens-last7d="1.2K tokens"'), `expected Claude tab details to carry Last 7d tokens`);
   assert.ok(claudePanel.includes('data-messages-all="5"'), `expected Claude tab details to carry all-history messages`);
 });
 
@@ -1599,7 +1712,8 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Live quota unavailable'), `expected unavailable live quota in dashboard`);
   assert.ok(html.includes('UNAVAILABLE'), `expected unavailable badge in dashboard`);
-  assert.ok(html.includes('Usage history tokens'), `expected usage history to remain separated`);
+  assert.ok(html.includes('History chart'), `expected historical chart to remain separated`);
+  assert.ok(!html.includes('Usage history tokens'), `removed usage summary labels should stay absent`);
 });
 
 test('dashboard: live quota values are not filtered by local history selector', () => {
@@ -1758,7 +1872,7 @@ test('dashboard: live provider card shows live badge and reset countdown', () =>
   assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
 });
 
-test('dashboard: local history secondary label and parse wording', () => {
+test('dashboard: removed usage summary section stays removed and parse wording remains', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
@@ -1767,7 +1881,10 @@ test('dashboard: local history secondary label and parse wording', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Usage history (secondary)'), `expected secondary usage history section`);
+  assert.ok(!html.includes('Usage totals'), `dashboard should not show standalone usage totals section`);
+  assert.ok(!html.includes('Usage history (secondary)'), `dashboard should not show confusing secondary usage history label`);
+  assert.ok(!html.includes('Usage history is secondary'), `dashboard should not describe usage history as secondary`);
+  assert.ok(!html.includes('local-history-summary-value'), `dashboard should not render removed usage summary values`);
   assert.ok(html.includes('Provider usage history details'), `expected provider usage detail heading`);
   assert.ok(html.includes('Parse errors: 1 line skipped'), `expected non-alarming parse wording`);
 });

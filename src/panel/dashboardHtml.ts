@@ -3,6 +3,7 @@ import {
   DashboardLiveQuotaCard,
   DashboardLocalHistoryWindow,
   DashboardModel,
+  DashboardModelUsageAggregate,
   DashboardProviderCard,
   DashboardSourceModeProviderCard,
   DashboardSourceModeTotals,
@@ -302,6 +303,7 @@ function findSourceModeTotals(
       totalAssistantMessages: 0,
       providers: [],
       windows: [],
+      modelWindows: { today: [], last5h: [], last7d: [], all: [] },
       missingSnapshotWindowIds: [],
     };
 }
@@ -319,6 +321,7 @@ function findSourceProvider(
       totalAssistantMessages: 0,
       parseErrors: 0,
       windows: [],
+      modelWindows: { today: [], last5h: [], last7d: [], all: [] },
     };
 }
 
@@ -732,25 +735,6 @@ function renderSourceContributionVisual(
     </div>`;
 }
 
-function modelDistributionRowsForSource(
-  sourceTotals: DashboardSourceModeTotals,
-  providerId?: string,
-): DashboardSourceModeProviderCard[] {
-  return providerId
-    ? [findSourceProvider(sourceTotals, providerId)]
-    : sourceTotals.providers;
-}
-
-function modelDistributionTotalWindow(
-  sourceTotals: DashboardSourceModeTotals,
-  windowId: string,
-  providerId?: string,
-): DashboardLocalHistoryWindow {
-  return providerId
-    ? findLocalHistoryWindow(findSourceProvider(sourceTotals, providerId).windows, windowId)
-    : findLocalHistoryWindow(sourceTotals.windows, windowId);
-}
-
 function providerColorVar(providerId: string): string {
   if (providerId === 'claude') {
     return 'var(--pf-provider-claude)';
@@ -790,19 +774,63 @@ function modelDonutGradient(
   return `conic-gradient(${parts.join(', ')})`;
 }
 
+function modelRowsForSourceWindow(
+  sourceTotals: DashboardSourceModeTotals,
+  windowId: string,
+  providerId?: string,
+): DashboardModelUsageAggregate[] {
+  const rows = sourceTotals.modelWindows[windowId as DashboardLocalHistoryWindow['windowId']] ?? [];
+  return providerId
+    ? rows.filter(row => row.providerId === providerId)
+    : rows;
+}
+
+function modelRowKey(row: Pick<DashboardModelUsageAggregate, 'providerId' | 'modelLabel'>): string {
+  return `${row.providerId}--${row.modelLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+}
+
+function modelDistributionTotal(
+  rows: DashboardModelUsageAggregate[],
+): { totalTokens: number; totalAssistantMessages: number } {
+  return rows.reduce((sum, row) => ({
+    totalTokens: sum.totalTokens + row.totalTokens,
+    totalAssistantMessages: sum.totalAssistantMessages + row.totalAssistantMessages,
+  }), { totalTokens: 0, totalAssistantMessages: 0 });
+}
+
+function modelRowsForCard(
+  model: DashboardModel,
+  providerId?: string,
+): DashboardModelUsageAggregate[] {
+  const rowsByKey = new Map<string, DashboardModelUsageAggregate>();
+  for (const sourceTotals of model.sourceModeTotals) {
+    for (const window of sourceTotals.windows) {
+      for (const row of modelRowsForSourceWindow(sourceTotals, window.windowId, providerId)) {
+        const key = modelRowKey(row);
+        const existing = rowsByKey.get(key);
+        if (!existing || row.totalTokens > existing.totalTokens) {
+          rowsByKey.set(key, row);
+        }
+      }
+    }
+  }
+  return Array.from(rowsByKey.values()).sort((a, b) => {
+    const tokenDelta = b.totalTokens - a.totalTokens;
+    if (tokenDelta !== 0) {
+      return tokenDelta;
+    }
+    const providerDelta = a.providerLabel.localeCompare(b.providerLabel);
+    return providerDelta !== 0 ? providerDelta : a.modelLabel.localeCompare(b.modelLabel);
+  });
+}
+
 function modelDistributionCardAttributes(
   model: DashboardModel,
   providerId?: string,
 ): string {
   return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const rows = modelDistributionRowsForSource(sourceTotals, providerId).map(row => {
-      const providerWindow = findLocalHistoryWindow(row.windows, window.windowId);
-      return {
-        providerId: row.providerId,
-        totalTokens: providerWindow.totalTokens,
-      };
-    });
-    const total = modelDistributionTotalWindow(sourceTotals, window.windowId, providerId);
+    const rows = modelRowsForSourceWindow(sourceTotals, window.windowId, providerId);
+    const total = modelDistributionTotal(rows);
     const key = `${sourceTotals.sourceMode}-${window.windowId}`;
     const isEmpty = total.totalTokens <= 0 && total.totalAssistantMessages <= 0;
     return [
@@ -816,74 +844,85 @@ function modelDistributionCardAttributes(
 
 function modelDistributionRowAttributes(
   model: DashboardModel,
-  rowProviderId: string,
+  rowKey: string,
   scopeProviderId?: string,
 ): string {
   return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const provider = findSourceProvider(sourceTotals, rowProviderId);
-    const providerWindow = findLocalHistoryWindow(provider.windows, window.windowId);
-    const total = modelDistributionTotalWindow(sourceTotals, window.windowId, scopeProviderId);
+    const rows = modelRowsForSourceWindow(sourceTotals, window.windowId, scopeProviderId);
+    const row = rows.find(candidate => modelRowKey(candidate) === rowKey);
+    const total = modelDistributionTotal(rows);
+    const sorted = rows.slice().sort((a, b) => b.totalTokens - a.totalTokens);
+    const rank = row ? sorted.findIndex(candidate => modelRowKey(candidate) === rowKey) + 1 : 999;
     const key = `${sourceTotals.sourceMode}-${window.windowId}`;
+    const tokens = row?.totalTokens ?? 0;
+    const messages = row?.totalAssistantMessages ?? 0;
     return [
-      `data-model-value-${esc(key)}="${esc(formatTokenCount(providerWindow.totalTokens))}"`,
-      `data-model-messages-${esc(key)}="${esc(formatMessageCount(providerWindow.totalAssistantMessages))}"`,
-      `data-model-percent-${esc(key)}="${esc(formatDistributionPercent(providerWindow.totalTokens, total.totalTokens))}"`,
+      `data-model-visible-${esc(key)}="${row && tokens > 0 && rank <= 8 ? 'true' : 'false'}"`,
+      `data-model-rank-${esc(key)}="${esc(String(rank))}"`,
+      `data-model-tokens-${esc(key)}="${esc(String(tokens))}"`,
+      `data-model-value-${esc(key)}="${esc(formatTokenCount(tokens))}"`,
+      `data-model-messages-${esc(key)}="${esc(formatMessageCount(messages))}"`,
+      `data-model-percent-${esc(key)}="${esc(formatDistributionPercent(tokens, total.totalTokens))}"`,
+      `data-model-width-${esc(key)}="${esc(distributionWidth(tokens, total.totalTokens))}"`,
     ].join(' ');
   })).join(' ');
 }
 
-function renderModelPlaceholderDistribution(
+function renderModelBreakdownDistribution(
   model: DashboardModel,
   defaultWindowId: DashboardLocalHistoryWindow['windowId'],
   provider?: DashboardProviderCard,
 ): string {
   const scope = provider ? provider.providerId : 'overview';
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const rows = modelDistributionRowsForSource(selectedSource, provider?.providerId);
-  const selectedTotal = modelDistributionTotalWindow(selectedSource, defaultWindowId, provider?.providerId);
-  const donutRows = rows.map(row => {
-    const window = findLocalHistoryWindow(row.windows, defaultWindowId);
-    return {
-      providerId: row.providerId,
-      totalTokens: window.totalTokens,
-    };
-  });
-  const rowHtml = rows.map(row => {
-    const window = findLocalHistoryWindow(row.windows, defaultWindowId);
-    const percent = formatDistributionPercent(window.totalTokens, selectedTotal.totalTokens);
+  const selectedRows = modelRowsForSourceWindow(selectedSource, defaultWindowId, provider?.providerId);
+  const selectedTotal = modelDistributionTotal(selectedRows);
+  const allRows = modelRowsForCard(model, provider?.providerId);
+  const rowHtml = allRows.map(row => {
+    const key = modelRowKey(row);
+    const selectedRow = selectedRows.find(candidate => modelRowKey(candidate) === key);
+    const tokens = selectedRow?.totalTokens ?? 0;
+    const messages = selectedRow?.totalAssistantMessages ?? 0;
+    const percent = formatDistributionPercent(tokens, selectedTotal.totalTokens);
+    const width = distributionWidth(tokens, selectedTotal.totalTokens);
+    const rank = selectedRows.findIndex(candidate => modelRowKey(candidate) === key) + 1;
+    const visible = tokens > 0 && rank > 0 && rank <= 8;
     return `
-      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-provider-row="${esc(row.providerId)}" ${modelDistributionRowAttributes(model, row.providerId, provider?.providerId)} title="${esc(`${row.label} model-level backend pending`)}">
+      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-row="${esc(key)}" ${modelDistributionRowAttributes(model, key, provider?.providerId)} ${visible ? '' : 'hidden'} style="order: ${esc(String(rank > 0 ? rank : 999))}" title="${esc(formatMessageCount(messages))}">
         <span class="usage-model-swatch"></span>
-        <span class="usage-model-name">${esc(row.label)} models pending</span>
-        <span class="usage-model-value">${esc(formatTokenCount(window.totalTokens))}</span>
+        <span class="usage-model-provider">${esc(row.providerLabel)}</span>
+        <span class="usage-model-name">${esc(row.modelLabel)}</span>
+        <span class="usage-model-bar" aria-hidden="true"><span class="usage-model-bar-fill" style="width: ${esc(width)}%"></span></span>
+        <span class="usage-model-value">${esc(formatTokenCount(tokens))}</span>
+        <span class="usage-model-count">${esc(formatMessageCount(messages))}</span>
         <span class="usage-model-percent">${esc(percent)}</span>
       </div>`;
   }).join('\n');
   const title = provider ? `${provider.label} model breakdown` : 'Model breakdown';
+  const rowBody = rowHtml || '<div class="usage-model-empty-inline">No model breakdown available.</div>';
 
   return `
-    <div class="usage-model-distribution" data-model-placeholder="${esc(scope)}" ${modelDistributionCardAttributes(model, provider?.providerId)}>
+    <div class="usage-model-distribution" data-model-breakdown="${esc(scope)}" ${modelDistributionCardAttributes(model, provider?.providerId)}>
       <div class="usage-model-distribution-head">
         <div>
           <div class="usage-model-distribution-title">${esc(title)}</div>
-          <div class="usage-model-distribution-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - model-level backend pending</div>
+          <div class="usage-model-distribution-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - selected history window</div>
         </div>
-        ${stateChip('PENDING', 'pending')}
+        ${sourceModeChip(model.defaultSourceMode)}
       </div>
       <div class="usage-model-empty calm-state">
-        <div class="calm-state-header">No model aggregate for this selection</div>
-        <div class="calm-state-copy">Provider aggregate totals are still shown when available.</div>
+        <div class="calm-state-header">No model breakdown available.</div>
+        <div class="calm-state-copy">Safe aggregate model totals will appear here when local history or snapshots provide them.</div>
       </div>
       <div class="usage-model-distribution-body">
-        <div class="usage-model-donut" data-model-donut="${esc(scope)}" style="background: ${esc(modelDonutGradient(donutRows, selectedTotal.totalTokens))}">
+        <div class="usage-model-donut" data-model-donut="${esc(scope)}" style="background: ${esc(modelDonutGradient(selectedRows, selectedTotal.totalTokens))}">
           <div class="usage-model-donut-core">
             <span class="usage-model-donut-total">${esc(formatTokenCount(selectedTotal.totalTokens))}</span>
             <span class="usage-model-donut-label">${esc(formatMessageCount(selectedTotal.totalAssistantMessages))}</span>
           </div>
         </div>
         <div class="usage-model-legend">
-          ${rowHtml}
-          <div class="usage-model-placeholder-note">Model-level rows are placeholders until PromptFuel stores safe per-model aggregates.</div>
+          ${rowBody}
         </div>
       </div>
     </div>`;
@@ -937,30 +976,6 @@ function renderSourceModeSelector(model: DashboardModel): string {
   </div>`;
 }
 
-function renderSourceHistorySummary(
-  model: DashboardModel,
-  defaultWindowId: string,
-): string {
-  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const selectedWindow = findLocalHistoryWindow(selectedSource.windows, defaultWindowId);
-
-  return `
-  <div class="overview">
-    <div class="overview-row">
-      <span class="overview-label">Usage history source</span>
-      <span class="overview-value source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span>
-    </div>
-    <div class="overview-row">
-      <span class="overview-label">Usage history tokens</span>
-      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens')} ${localHistoryDataAttributes(selectedSource.windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
-    </div>
-    <div class="overview-row">
-      <span class="overview-label">Usage history messages</span>
-      <span class="overview-value local-history-summary-value" data-local-value="messages" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages')} ${localHistoryDataAttributes(selectedSource.windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
-    </div>
-  </div>`;
-}
-
 function renderProviderCards(model: DashboardModel, providers: DashboardProviderCard[], defaultWindowId: string): string {
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
   const cards = providers.map(p => {
@@ -1008,47 +1023,18 @@ function renderProviderTab(model: DashboardModel, providerId: string): string {
   <section class="tab-panel" id="tab-${esc(provider.providerId)}" data-dashboard-tab-panel="${esc(provider.providerId)}" role="tabpanel" aria-labelledby="tab-button-${esc(provider.providerId)}" hidden>
     ${renderProviderLiveQuotaSection(model, provider)}
 
-    ${sectionHeader(`${provider.label} usage history (secondary)`, sourceModeChip(model.defaultSourceMode), 'Local history and imported snapshot aggregates stay separate from live quota.')}
-    ${renderSourceHistorySummaryForProvider(model, provider, model.defaultLocalHistoryWindowId)}
-
     ${sectionHeader(`${provider.label} history chart`, sourceModeChip(model.defaultSourceMode), 'Aggregate history windows use provider-coded chart colors.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId, provider)}
 
     ${sectionHeader(`${provider.label} usage distribution`, sourceModeChip(model.defaultSourceMode), 'Visual summary follows the selected history source and window.')}
     ${renderProviderUsageDistributionVisuals(model, provider, model.defaultLocalHistoryWindowId)}
 
-    ${sectionHeader(`${provider.label} model breakdown`, stateChip('PENDING', 'pending'), 'Provider aggregate placeholder until model-level history is available.')}
-    ${renderModelPlaceholderDistribution(model, model.defaultLocalHistoryWindowId, provider)}
+    ${sectionHeader(`${provider.label} model breakdown`, sourceModeChip(model.defaultSourceMode), 'Safe aggregate model totals for this provider.')}
+    ${renderModelBreakdownDistribution(model, model.defaultLocalHistoryWindowId, provider)}
 
     ${sectionHeader(`${provider.label} provider usage history details`, stateChip('LOCAL', 'local'), 'Windowed local history details for this provider.')}
     ${renderProviderCards(model, [provider], model.defaultLocalHistoryWindowId)}
   </section>`;
-}
-
-function renderSourceHistorySummaryForProvider(
-  model: DashboardModel,
-  provider: DashboardProviderCard,
-  defaultWindowId: string,
-): string {
-  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const selectedProvider = findSourceProvider(selectedSource, provider.providerId);
-  const selectedWindow = findLocalHistoryWindow(selectedProvider.windows, defaultWindowId);
-
-  return `
-  <div class="overview">
-    <div class="overview-row">
-      <span class="overview-label">Usage history source</span>
-      <span class="overview-value source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span>
-    </div>
-    <div class="overview-row">
-      <span class="overview-label">Usage history tokens</span>
-      <span class="overview-value local-history-summary-value" data-local-value="tokens" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens', provider.providerId)} ${localHistoryDataAttributes(selectedProvider.windows, 'tokens')}>${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
-    </div>
-    <div class="overview-row">
-      <span class="overview-label">Usage history messages</span>
-      <span class="overview-value local-history-summary-value" data-local-value="messages" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages', provider.providerId)} ${localHistoryDataAttributes(selectedProvider.windows, 'messages')}>${esc(String(selectedWindow.totalAssistantMessages))}</span>
-    </div>
-  </div>`;
 }
 
 function renderSourceModeCopy(model: DashboardModel): string {
@@ -1757,6 +1743,9 @@ export function buildDashboardHtml(
   .usage-model-distribution.is-empty .usage-model-empty {
     display: block;
   }
+  .usage-model-distribution.is-empty .usage-model-distribution-body {
+    display: none;
+  }
   .usage-model-distribution {
     border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
     border-radius: 6px;
@@ -1809,11 +1798,15 @@ export function buildDashboardHtml(
   }
   .usage-model-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(54px, auto) minmax(90px, 1.4fr) minmax(80px, 1fr) auto auto auto;
     gap: 8px;
     align-items: center;
     font-size: 11px;
     border-radius: 4px;
+    min-width: 0;
+  }
+  .usage-model-row[hidden] {
+    display: none;
   }
   .usage-model-swatch {
     width: 8px;
@@ -1833,13 +1826,45 @@ export function buildDashboardHtml(
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .usage-model-provider {
+    color: var(--vscode-descriptionForeground, #999999);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .usage-model-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(127,127,127,0.16);
+    overflow: hidden;
+  }
+  .usage-model-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--vscode-focusBorder, #007acc);
+    transition: width 0.25s;
+  }
+  .provider-claude .usage-model-bar-fill {
+    background: var(--pf-provider-claude);
+  }
+  .provider-codex .usage-model-bar-fill {
+    background-color: var(--pf-provider-codex);
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.38) 0, rgba(255,255,255,0.38) 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px);
+  }
   .usage-model-value,
+  .usage-model-count,
   .usage-model-percent {
     font-family: var(--vscode-editor-font-family, monospace);
     white-space: nowrap;
   }
+  .usage-model-count,
   .usage-model-percent {
     color: var(--vscode-descriptionForeground, #999999);
+  }
+  .usage-model-empty-inline {
+    color: var(--vscode-descriptionForeground, #999999);
+    font-size: 12px;
   }
   .live-quota-section {
     margin-top: 8px;
@@ -2068,6 +2093,14 @@ export function buildDashboardHtml(
       flex-direction: column;
       gap: 2px;
     }
+    .usage-model-row {
+      grid-template-columns: auto minmax(54px, auto) minmax(0, 1fr) auto;
+    }
+    .usage-model-bar,
+    .usage-model-count,
+    .usage-model-percent {
+      grid-column: 3 / -1;
+    }
     .distribution-total {
       text-align: left;
     }
@@ -2102,7 +2135,7 @@ export function buildDashboardHtml(
       ${sourceModeChip(model.defaultSourceMode)}
     </div>
   </div>
-  <div class="disclaimer">Live quota is shown first when provider APIs are available. Usage history is secondary and can use local history, imported snapshots, or both. ${esc(renderSourceModeCopy(model))}</div>
+  <div class="disclaimer">Live quota is shown first when provider APIs are available. Totals can use local history, imported snapshots, or both. ${esc(renderSourceModeCopy(model))}</div>
 
   <div class="tabs" role="tablist" aria-label="Dashboard provider views">
     <button type="button" class="tab-btn active" id="tab-button-overview" data-dashboard-tab="overview" role="tab" aria-controls="tab-overview" aria-selected="true">Overview</button>
@@ -2125,17 +2158,14 @@ export function buildDashboardHtml(
   <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
     ${renderLiveQuotaSection(model)}
 
-    ${sectionHeader('Usage history (secondary)', sourceModeChip(model.defaultSourceMode), 'Local history and imported snapshot aggregates stay separate from live quota.')}
-    ${renderSourceHistorySummary(model, model.defaultLocalHistoryWindowId)}
-
     ${sectionHeader('History chart', sourceModeChip(model.defaultSourceMode), 'Aggregate history windows use provider-coded chart colors.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId)}
 
     ${sectionHeader('Usage distribution', sourceModeChip(model.defaultSourceMode), 'Visual summaries follow the selected history source and window.')}
     ${renderUsageDistributionVisuals(model, model.defaultLocalHistoryWindowId)}
 
-    ${sectionHeader('Model breakdown', stateChip('PENDING', 'pending'), 'Provider aggregate placeholder until model-level history is available.')}
-    ${renderModelPlaceholderDistribution(model, model.defaultLocalHistoryWindowId)}
+    ${sectionHeader('Model breakdown', sourceModeChip(model.defaultSourceMode), 'Safe aggregate model totals follow the selected history source and window.')}
+    ${renderModelBreakdownDistribution(model, model.defaultLocalHistoryWindowId)}
 
     ${sectionHeader('Provider usage history details', stateChip('LOCAL', 'local'), 'Provider totals follow the selected history source and window.')}
     ${renderProviderCards(model, model.providers, model.defaultLocalHistoryWindowId)}
@@ -2285,7 +2315,7 @@ export function buildDashboardHtml(
     }
     function updateModelDistributionVisuals() {
       var key = activeSourceMode + '-' + activeWindowId;
-      Array.prototype.forEach.call(document.querySelectorAll('[data-model-placeholder]'), function(card) {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-model-breakdown]'), function(card) {
         var isEmpty = card.getAttribute('data-model-empty-' + key) === 'true';
         var totalLabel = card.getAttribute('data-model-total-label-' + key);
         var totalMessages = card.getAttribute('data-model-total-messages-' + key);
@@ -2303,31 +2333,36 @@ export function buildDashboardHtml(
         if (donut && gradient !== null) {
           donut.style.background = gradient;
         }
-        Array.prototype.forEach.call(card.querySelectorAll('[data-model-provider-row]'), function(row) {
+        Array.prototype.forEach.call(card.querySelectorAll('[data-model-row]'), function(row) {
+          var visible = row.getAttribute('data-model-visible-' + key) === 'true';
+          var rank = row.getAttribute('data-model-rank-' + key) || '999';
           var value = row.getAttribute('data-model-value-' + key) || '0 tokens';
           var messages = row.getAttribute('data-model-messages-' + key) || '0 messages';
           var percent = row.getAttribute('data-model-percent-' + key) || '0%';
+          var width = row.getAttribute('data-model-width-' + key) || '0';
           var valueEl = row.querySelector('.usage-model-value');
+          var countEl = row.querySelector('.usage-model-count');
           var percentEl = row.querySelector('.usage-model-percent');
+          var fillEl = row.querySelector('.usage-model-bar-fill');
+          row.hidden = !visible;
+          row.style.order = rank;
+          row.setAttribute('title', messages);
           if (valueEl) {
             valueEl.textContent = value;
-            valueEl.setAttribute('title', messages);
+          }
+          if (countEl) {
+            countEl.textContent = messages;
           }
           if (percentEl) {
             percentEl.textContent = percent;
+          }
+          if (fillEl) {
+            fillEl.style.width = width + '%';
           }
         });
       });
     }
     function updateHistoryValues() {
-      Array.prototype.forEach.call(document.querySelectorAll('.local-history-summary-value'), function(el) {
-        var valueKind = el.getAttribute('data-local-value');
-        if (valueKind === 'tokens') {
-          el.textContent = el.getAttribute('data-tokens-' + activeSourceMode + '-' + activeWindowId) || '0 tokens';
-        } else if (valueKind === 'messages') {
-          el.textContent = el.getAttribute('data-messages-' + activeSourceMode + '-' + activeWindowId) || '0';
-        }
-      });
       Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
         var tokens = el.getAttribute('data-tokens-' + activeSourceMode + '-' + activeWindowId);
         var messages = el.getAttribute('data-messages-' + activeSourceMode + '-' + activeWindowId);

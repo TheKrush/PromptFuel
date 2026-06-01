@@ -10,6 +10,13 @@ import {
   mergeTokenUsageIntoLocalHistoryWindows,
   parseTimestampEpochMs,
 } from '../core/usageAggregate';
+import {
+  ModelUsageAggregate,
+  ModelUsageWindowAggregateMap,
+  createEmptyModelUsageWindowAggregateMap,
+  mergeModelTokenUsage,
+  mergeModelTokenUsageIntoLocalHistoryWindows,
+} from '../core/modelUsage';
 import { fileEndsWithLineBreak, normalizeJsonlLine } from './jsonlLine';
 
 const MAX_DEPTH = 4;
@@ -43,10 +50,18 @@ export interface ClaudeUsageParseOptions {
 export async function parseClaudeUsage(
   projectsRoot: string,
   options: ClaudeUsageParseOptions = {},
-): Promise<{ aggregate: AggregateUsage; localHistoryWindows: LocalHistoryWindowAggregateMap; stats: ClaudeParseStats }> {
+): Promise<{
+  aggregate: AggregateUsage;
+  localHistoryWindows: LocalHistoryWindowAggregateMap;
+  modelAggregates: ModelUsageAggregate[];
+  localHistoryModelWindows: ModelUsageWindowAggregateMap;
+  stats: ClaudeParseStats;
+}> {
   const result = {
     aggregate: createEmptyAggregate(),
     localHistoryWindows: createEmptyLocalHistoryWindowAggregateMap(),
+    modelAggregates: [] as ModelUsageAggregate[],
+    localHistoryModelWindows: createEmptyModelUsageWindowAggregateMap(),
     stats: createEmptyStats(),
     nowMs: options.nowMs ?? Date.now(),
   };
@@ -69,6 +84,8 @@ async function parseSingleFile(
   result: {
     aggregate: AggregateUsage;
     localHistoryWindows: LocalHistoryWindowAggregateMap;
+    modelAggregates: ModelUsageAggregate[];
+    localHistoryModelWindows: ModelUsageWindowAggregateMap;
     stats: ClaudeParseStats;
     nowMs: number;
   },
@@ -121,11 +138,22 @@ async function parseSingleFile(
     }
 
     result.stats.recordsMatched += 1;
+    const timestampEpochMs = parseTimestampEpochMs(record.timestamp);
+    const modelLabel = extractClaudeModel(record);
     mergeTokenUsage(result.aggregate, usage);
+    mergeModelTokenUsage(result.modelAggregates, 'claude', modelLabel, usage);
     mergeTokenUsageIntoLocalHistoryWindows(
       result.localHistoryWindows,
       usage,
-      parseTimestampEpochMs(record.timestamp),
+      timestampEpochMs,
+      result.nowMs,
+    );
+    mergeModelTokenUsageIntoLocalHistoryWindows(
+      result.localHistoryModelWindows,
+      'claude',
+      modelLabel,
+      usage,
+      timestampEpochMs,
       result.nowMs,
     );
   }
@@ -160,6 +188,11 @@ function extractClaudeUsage(record: ClaudeJsonlRecord): ClaudeUsageFields | unde
     cacheCreationInputTokens: readTokenCount(usage.cache_creation_input_tokens),
     cacheReadInputTokens: readTokenCount(usage.cache_read_input_tokens),
   };
+}
+
+function extractClaudeModel(record: ClaudeJsonlRecord): unknown {
+  const message = asRecord(record.message);
+  return message?.model;
 }
 
 async function findJsonlFiles(root: string): Promise<string[]> {

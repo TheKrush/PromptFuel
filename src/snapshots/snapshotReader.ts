@@ -13,6 +13,12 @@ import {
   type LocalHistoryWindowId,
   LOCAL_HISTORY_WINDOW_IDS,
 } from '../core/usageAggregate';
+import {
+  sortModelUsageAggregates,
+  sanitizeModelLabel,
+  type ModelUsageAggregate,
+  type ModelUsageWindowAggregateMap,
+} from '../core/modelUsage';
 
 export interface SnapshotDiagnostics {
   info(message: string): void;
@@ -209,6 +215,8 @@ function validateSnapshotProvider(
   }
 
   const windowTotals = readWindowTotals(value.windowTotals);
+  const modelAggregates = readModelTotals(value.modelTotals ?? value.modelAggregates, value.providerId);
+  const modelWindowTotals = readModelWindowTotals(value.modelWindowTotals, value.providerId);
   const sourceLabel = sanitizeSourceLabel(value.sourceLabel);
 
   return {
@@ -216,6 +224,8 @@ function validateSnapshotProvider(
     generatedAtEpochMs,
     aggregate,
     ...(windowTotals ? { windowTotals } : {}),
+    ...(modelAggregates.length > 0 ? { modelAggregates } : {}),
+    ...(modelWindowTotals ? { modelWindowTotals } : {}),
     ...(sourceLabel ? { sourceLabel } : {}),
   };
 }
@@ -234,6 +244,91 @@ function readWindowTotals(value: unknown): Partial<LocalHistoryWindowAggregateMa
   }
 
   return Object.keys(windows).length > 0 ? windows : undefined;
+}
+
+function readModelWindowTotals(
+  value: unknown,
+  providerId: ProviderId,
+): Partial<ModelUsageWindowAggregateMap> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const windows: Partial<ModelUsageWindowAggregateMap> = {};
+  for (const windowId of LOCAL_HISTORY_WINDOW_IDS) {
+    const models = readModelTotals(value[windowId], providerId, windowId);
+    if (models.length > 0) {
+      windows[windowId as LocalHistoryWindowId] = models;
+    }
+  }
+
+  return Object.keys(windows).length > 0 ? windows : undefined;
+}
+
+function readModelTotals(
+  value: unknown,
+  providerId: ProviderId,
+  windowId?: LocalHistoryWindowId,
+): ModelUsageAggregate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const models: ModelUsageAggregate[] = [];
+  for (const entry of value) {
+    const model = readModelTotal(entry, providerId, windowId);
+    if (model) {
+      models.push(model);
+    }
+  }
+
+  return sortModelUsageAggregates(models);
+}
+
+function readModelTotal(
+  value: unknown,
+  providerId: ProviderId,
+  windowId?: LocalHistoryWindowId,
+): ModelUsageAggregate | undefined {
+  if (!isRecord(value) || hasUnexpectedModelTotalFields(value)) {
+    return undefined;
+  }
+
+  if (typeof value.providerId === 'string' && value.providerId !== providerId) {
+    return undefined;
+  }
+
+  const modelLabel = sanitizeModelLabel(value.modelLabel ?? value.model);
+  const totalTokens = readNonNegativeInteger(value.totalTokens);
+  const totalAssistantMessages = readNonNegativeInteger(
+    value.totalAssistantMessages ?? value.messages ?? value.turns,
+  ) ?? 0;
+
+  if (!modelLabel || totalTokens === undefined) {
+    return undefined;
+  }
+
+  return {
+    providerId,
+    modelLabel,
+    totalTokens,
+    totalAssistantMessages,
+    source: 'snapshot',
+    ...(windowId ? { windowId } : {}),
+  };
+}
+
+function hasUnexpectedModelTotalFields(value: Record<string, unknown>): boolean {
+  const allowedFields = new Set([
+    'providerId',
+    'modelLabel',
+    'model',
+    'totalTokens',
+    'totalAssistantMessages',
+    'messages',
+    'turns',
+  ]);
+  return Object.keys(value).some(key => !allowedFields.has(key));
 }
 
 function readAggregate(value: unknown): AggregateUsage | undefined {

@@ -5,6 +5,12 @@ import {
   type AggregateUsage,
   type LocalHistoryWindowAggregateMap,
 } from './usageAggregate';
+import {
+  cloneModelUsageAggregates,
+  cloneModelUsageWindowAggregates,
+  type ModelUsageAggregate,
+  type ModelUsageWindowAggregateMap,
+} from './modelUsage';
 
 export const PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -13,6 +19,8 @@ export interface PromptFuelSnapshotProviderAggregate {
   generatedAtEpochMs: number;
   aggregate: AggregateUsage;
   windowTotals?: Partial<LocalHistoryWindowAggregateMap>;
+  modelAggregates?: ModelUsageAggregate[];
+  modelWindowTotals?: Partial<ModelUsageWindowAggregateMap>;
   sourceLabel?: string;
 }
 
@@ -37,6 +45,8 @@ export function cloneSnapshotState(state: PromptFuelSnapshotState): PromptFuelSn
       generatedAtEpochMs: provider.generatedAtEpochMs,
       aggregate: cloneAggregate(provider.aggregate),
       ...(provider.windowTotals ? { windowTotals: cloneWindowTotals(provider.windowTotals) } : {}),
+      ...(provider.modelAggregates ? { modelAggregates: cloneModelUsageAggregates(provider.modelAggregates) } : {}),
+      ...(provider.modelWindowTotals ? { modelWindowTotals: cloneModelUsageWindowAggregates(provider.modelWindowTotals) } : {}),
       ...(provider.sourceLabel ? { sourceLabel: provider.sourceLabel } : {}),
     })),
     snapshotCount: state.snapshotCount,
