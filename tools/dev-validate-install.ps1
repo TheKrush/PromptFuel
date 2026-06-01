@@ -58,6 +58,7 @@ if (-not $SkipCompile) {
 
     Invoke-Step "Compile TypeScript" {
         npm run compile
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 } else {
     Write-Host ""
@@ -66,28 +67,22 @@ if (-not $SkipCompile) {
 
 Invoke-Step "Validate manifest" {
     npm run validate:manifest
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 if (-not $SkipSmoke) {
-    $requiredOutputs = @(
-        "out\extension.js",
-        "out\config.js",
-        "out\dataFolder.js",
-        "out\core\providers.js",
-        "out\core\quotaTypes.js",
-        "out\core\configDefaults.js",
-        "out\core\formatQuota.js"
-    )
-    $missingOutputs = $requiredOutputs | Where-Object { -not (Test-Path (Join-Path $repoRoot $_)) }
-    if ($missingOutputs) {
+    $mainRelative = $packageJson.main -replace '^\./', '' -replace '/', '\'
+    $mainPath = Join-Path $repoRoot $mainRelative
+    if (-not (Test-Path $mainPath)) {
         Write-Host ""
-        Write-Host "Compiled output is missing. Run npm run compile first, or run dev-validate-install.ps1 without -SkipCompile." -ForegroundColor Red
-        Write-Host "Missing: $($missingOutputs -join ', ')" -ForegroundColor Red
+        Write-Host "Compiled entrypoint missing: $mainRelative" -ForegroundColor Red
+        Write-Host "Run npm run compile first, or run dev-validate-install.ps1 without -SkipCompile." -ForegroundColor Red
         exit 1
     }
 
-    Invoke-Step "Smoke: core" {
-        npm run smoke:core
+    Invoke-Step "Smoke" {
+        npm run smoke
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 }
 
@@ -98,6 +93,7 @@ Invoke-Step "Clean old VSIX files" {
 
 Invoke-Step "Package VSIX" {
     npx @vscode/vsce package --no-dependencies --out $VsixOut
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 if (-not $SkipInstall) {
@@ -116,6 +112,7 @@ if (-not $SkipInstall) {
 
     Invoke-Step "Install VSIX into VS Code" {
         & $codeCommandPath --install-extension $VsixOut --force
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
     Write-Host ""

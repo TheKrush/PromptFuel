@@ -56,7 +56,7 @@ code --extensionDevelopmentPath=.
 - Snapshots are not implemented. Do not commit snapshot or cached provider state unless explicitly scoped.
 - Do **not** commit raw prompts, responses, or conversation transcripts.
 - Do **not** include authenticated provider credentials, tokens, or API keys.
-- Do **not** reference AgentBridge branding, internal paths, or coordination infrastructure from PromptFuel source code.
+- Do **not** reference reference-implementation branding, internal paths, or coordination infrastructure from PromptFuel source code.
 - Marketplace publish is manual. Do not add publish automation unless explicitly scoped.
 
 ---

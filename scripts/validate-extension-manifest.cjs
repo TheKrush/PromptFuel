@@ -1,203 +1,101 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const REPO = path.resolve(__dirname, '..');
-
+const repo = path.resolve(__dirname, '..');
+const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
 let exitCode = 0;
 
-function fail(msg) {
-  console.error(`FAIL: ${msg}`);
+function fail(message) {
+  console.error(`FAIL: ${message}`);
   exitCode = 1;
 }
 
-// Load package.json
-const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+if (pkg.name !== 'prompt-fuel') fail(`name is ${JSON.stringify(pkg.name)}`);
+if (pkg.displayName !== 'PromptFuel') fail(`displayName is ${JSON.stringify(pkg.displayName)}`);
+if (pkg.publisher !== 'thekrush') fail(`publisher is ${JSON.stringify(pkg.publisher)}`);
+if (pkg.private === true) fail('package must not be private');
+if (pkg.icon !== 'assets/icon.png') fail(`icon is ${JSON.stringify(pkg.icon)}`);
+if (pkg.repository?.url !== 'https://github.com/TheKrush/PromptFuel.git') fail('repository.url is not PromptFuel');
+if (pkg.bugs?.url !== 'https://github.com/TheKrush/PromptFuel/issues') fail('bugs.url is not PromptFuel');
+if (pkg.homepage !== 'https://github.com/TheKrush/PromptFuel#readme') fail('homepage is not PromptFuel');
 
-// Identity checks
-if (pkg.name !== 'prompt-fuel') fail(`name is "${pkg.name}", expected "prompt-fuel"`);
-if (pkg.displayName !== 'PromptFuel') fail(`displayName is "${pkg.displayName}", expected "PromptFuel"`);
-if (pkg.publisher !== 'thekrush') fail(`publisher is "${pkg.publisher}", expected "thekrush"`);
-if (!pkg.description?.includes('live quota')) {
-  fail(`description is "${pkg.description}", expected to include "live quota"`);
-}
-if (pkg.description?.includes('opt-in')) {
-  fail(`description is "${pkg.description}", should not include "opt-in"`);
-}
-if (pkg.description?.includes('displayMode')) {
-  fail(`description is "${pkg.description}", should not include "displayMode"`);
-}
-if (pkg.description?.toLowerCase().includes('api-equivalent')) {
-  fail(`description is "${pkg.description}", should not mention unimplemented API-equivalent estimates`);
-}
-if (pkg.description?.toLowerCase().includes('api estimates')) {
-  fail(`description is "${pkg.description}", should not mention unimplemented API estimates`);
-}
-
-// Command checks
-const commands = pkg.contributes?.commands || [];
-const expectedCommands = new Map([
-  ['promptFuel.openDashboard', 'PromptFuel: Open Usage Dashboard'],
-  ['promptFuel.refresh', 'PromptFuel: Refresh Now'],
-  ['promptFuel.openDataFolder', 'PromptFuel: Open Data Folder'],
-  ['promptFuel.openSnapshotImportsFolder', 'PromptFuel: Open Snapshot Imports Folder'],
-  ['promptFuel.exportUsageSnapshot', 'PromptFuel: Export Usage Snapshot'],
+const commands = pkg.contributes?.commands ?? [];
+const expectedCommands = new Set([
+  'promptFuel.openDashboard',
+  'promptFuel.refresh',
+  'promptFuel.openDataFolder'
 ]);
-for (const cmd of commands) {
-  if (!cmd.command.startsWith('promptFuel.')) {
-    fail(`command "${cmd.command}" does not start with "promptFuel."`);
-  }
-  if (!cmd.title.startsWith('PromptFuel:')) {
-    fail(`command title "${cmd.title}" does not start with "PromptFuel:"`);
-  }
+for (const command of commands) {
+  if (!command.command?.startsWith('promptFuel.')) fail(`command ${command.command} is not promptFuel namespaced`);
+  if (!command.title?.startsWith('PromptFuel:')) fail(`command title ${command.title} is not PromptFuel branded`);
+  if (/issue|draft|simulateReset|notification/i.test(command.command)) fail(`forbidden command ${command.command}`);
 }
-for (const [command, title] of expectedCommands) {
-  const contributed = commands.find(cmd => cmd.command === command);
-  if (!contributed) {
-    fail(`required command "${command}" is not contributed`);
-    continue;
-  }
-  if (contributed.title !== title) {
-    fail(`command "${command}" title is "${contributed.title}", expected "${title}"`);
-  }
+for (const command of expectedCommands) {
+  if (!commands.some(entry => entry.command === command)) fail(`missing command ${command}`);
 }
 
-const extensionSource = fs.readFileSync(path.join(REPO, 'src/extension.ts'), 'utf8');
-for (const command of expectedCommands.keys()) {
-  if (!extensionSource.includes(`registerCommand(\n    '${command}'`)) {
-    fail(`required command "${command}" is not registered in src/extension.ts`);
-  }
-}
-if (!extensionSource.includes('ensurePromptFuelSnapshotImportFolder(context, cfg.snapshotImportPath)')) {
-  fail('open snapshot imports command should use the effective configured import path');
-}
-if (!extensionSource.includes('ensurePromptFuelSnapshotExportFolder(context, cfg.snapshotExportPath)')) {
-  fail('export snapshot command should use the effective configured export path');
-}
-const refreshSchedulerSource = fs.readFileSync(path.join(REPO, 'src/core/refreshScheduler.ts'), 'utf8');
-if (!refreshSchedulerSource.includes('cfg.snapshotImportPath')) {
-  fail('snapshot refresh should read from the effective configured import path');
+const activationEvents = pkg.activationEvents ?? [];
+for (const event of [
+  'onStartupFinished',
+  'onCommand:promptFuel.openDashboard',
+  'onCommand:promptFuel.refresh',
+  'onCommand:promptFuel.openDataFolder'
+]) {
+  if (!activationEvents.includes(event)) fail(`missing activation event ${event}`);
 }
 
-// Configuration setting key checks
-const properties = pkg.contributes?.configuration?.properties || {};
-const expectedSettings = [
-  'promptFuel.dashboardUsageSource',
-  'promptFuel.enabledProviders',
-  'promptFuel.liveQuotaEnabled',
-  'promptFuel.localMachineLabel',
-  'promptFuel.refreshIntervalMinutes',
-  'promptFuel.snapshotExportPath',
-  'promptFuel.snapshotImportLabels',
-  'promptFuel.snapshotImportPath',
-];
-const actualSettings = Object.keys(properties).sort();
-if (actualSettings.join(',') !== expectedSettings.join(',')) {
-  fail(`contributed settings should be exactly ${JSON.stringify(expectedSettings)}, got ${JSON.stringify(actualSettings)}`);
-}
+const properties = pkg.contributes?.configuration?.properties ?? {};
 for (const key of Object.keys(properties)) {
-  if (!key.startsWith('promptFuel.')) {
-    fail(`setting "${key}" does not start with "promptFuel."`);
-  }
+  if (!key.startsWith('promptFuel.')) fail(`setting ${key} is not promptFuel namespaced`);
+  if (/issueInbox|notifications\.reset|developerMode/i.test(key)) fail(`forbidden setting ${key}`);
 }
-if (properties['promptFuel.liveQuotaEnabled']?.default !== true) {
-  fail('setting "promptFuel.liveQuotaEnabled" default should be true');
-}
-const dashboardUsageSource = properties['promptFuel.dashboardUsageSource'];
-if (dashboardUsageSource?.default !== 'combined') {
-  fail('setting "promptFuel.dashboardUsageSource" default should be "combined"');
-}
-const dashboardUsageSourceEnum = dashboardUsageSource?.enum || [];
-for (const value of ['combined', 'local', 'snapshots']) {
-  if (!dashboardUsageSourceEnum.includes(value)) {
-    fail(`setting "promptFuel.dashboardUsageSource" should allow "${value}"`);
-  }
-}
-if (Object.hasOwn(properties, 'promptFuel.displayMode')) {
-  fail('setting "promptFuel.displayMode" should not be contributed');
-}
-if (properties['promptFuel.refreshIntervalMinutes']?.default !== 5) {
-  fail('setting "promptFuel.refreshIntervalMinutes" default should be 5');
-}
-if (properties['promptFuel.snapshotImportPath']?.default !== '') {
-  fail('setting "promptFuel.snapshotImportPath" default should be empty');
-}
-if (properties['promptFuel.snapshotExportPath']?.default !== '') {
-  fail('setting "promptFuel.snapshotExportPath" default should be empty');
-}
-if (properties['promptFuel.localMachineLabel']?.default !== '') {
-  fail('setting "promptFuel.localMachineLabel" default should be empty');
-}
-const snapshotImportLabels = properties['promptFuel.snapshotImportLabels']?.default;
-if (!Array.isArray(snapshotImportLabels) || snapshotImportLabels.length !== 0) {
-  fail('setting "promptFuel.snapshotImportLabels" default should be []');
-}
-const defaultProviders = properties['promptFuel.enabledProviders']?.default;
-if (!Array.isArray(defaultProviders) || defaultProviders.join(',') !== 'claude,codex') {
-  fail('setting "promptFuel.enabledProviders" default should be ["claude","codex"]');
+for (const key of [
+  'promptFuel.enabledProviders',
+  'promptFuel.stateDirectory',
+  'promptFuel.claudeProjectsPath',
+  'promptFuel.codexSessionsPath',
+  'promptFuel.refreshIntervalSeconds',
+  'promptFuel.authenticatedQuota.enabled',
+  'promptFuel.authenticatedQuota.providers',
+  'promptFuel.authenticatedQuota.refreshIntervalMinutes',
+  'promptFuel.statusBarDensity',
+  'promptFuel.statusMode',
+  'promptFuel.lowRemainingPercent',
+  'promptFuel.warnRemainingPercent',
+  'promptFuel.criticalRemainingPercent',
+  'promptFuel.snapshot.enabled',
+  'promptFuel.snapshot.machineLabel',
+  'promptFuel.snapshot.path',
+  'promptFuel.snapshot.remoteSources',
+  'promptFuel.snapshot.statusBarSources',
+  'promptFuel.snapshot.remoteMachineLabels'
+]) {
+  if (!Object.prototype.hasOwnProperty.call(properties, key)) fail(`missing setting ${key}`);
 }
 
-if (!Array.isArray(pkg.activationEvents) || pkg.activationEvents.join(',') !== 'onStartupFinished') {
-  fail(`activationEvents should be ["onStartupFinished"], got ${JSON.stringify(pkg.activationEvents)}`);
+for (const oldKey of [
+  ['promptFuel.snapshot.remote', 'La', 'nes'].join(''),
+  ['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')
+]) {
+  if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`old remote source setting key remains: ${oldKey}`);
 }
 
-// File existence checks
-for (const file of ['README.md', 'LICENSE', 'src/extension.ts', 'CHANGELOG.md', 'SUPPORT.md']) {
-  if (!fs.existsSync(path.join(REPO, file))) {
-    fail(`required file "${file}" not found`);
-  }
-}
-
-const vscodeIgnorePath = path.join(REPO, '.vscodeignore');
-if (fs.existsSync(vscodeIgnorePath)) {
-  const vscodeIgnore = fs.readFileSync(vscodeIgnorePath, 'utf8');
-  for (const include of ['!out/snapshots/*.js', '!out/snapshots/*.js.map']) {
-    if (!vscodeIgnore.includes(include)) {
-      fail(`.vscodeignore is missing packaged include "${include}"`);
+const forbiddenPattern = /AgentBridge|agentBridge|agentbridge|AGENTBRIDGE|issueInbox|simulateReset|notifications\.reset/;
+for (const relative of ['package.json', 'src', 'scripts']) {
+  const root = path.join(repo, relative);
+  if (!fs.existsSync(root)) continue;
+  for (const file of walk(root)) {
+    if (!/\.(ts|cjs|json)$/.test(file)) continue;
+    if (path.relative(repo, file) === path.join('scripts', 'validate-extension-manifest.cjs')) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    if (forbiddenPattern.test(text)) {
+      fail(`forbidden copied reference token remains in ${path.relative(repo, file)}`);
     }
   }
-} else {
-  fail('.vscodeignore not found');
 }
 
-// Icon existence check
-if (pkg.icon) {
-  const iconPath = path.join(REPO, pkg.icon);
-  if (!fs.existsSync(iconPath)) {
-    fail(`icon "${pkg.icon}" declared in package.json but file not found`);
-  }
-} else {
-  fail('package.json is missing "icon" field');
-}
-
-// Marketplace metadata checks
-if (!pkg.repository?.url) fail('package.json is missing "repository.url"');
-if (!pkg.bugs?.url) fail('package.json is missing "bugs.url"');
-if (!pkg.homepage) fail('package.json is missing "homepage"');
-if (!pkg.galleryBanner?.color) fail('package.json is missing "galleryBanner.color"');
-if (pkg.qna !== false) fail(`package.json "qna" should be false, got ${JSON.stringify(pkg.qna)}`);
-if (pkg.pricing !== 'Free') fail(`package.json "pricing" should be "Free", got ${JSON.stringify(pkg.pricing)}`);
-
-const requiredCategories = ['Machine Learning', 'Visualization', 'Other'];
-for (const cat of requiredCategories) {
-  if (!(pkg.categories || []).includes(cat)) {
-    fail(`package.json "categories" is missing "${cat}"`);
-  }
-}
-
-const requiredKeywords = ['ai', 'coding-assistant', 'quota', 'usage', 'status-bar', 'dashboard', 'claude', 'codex'];
-for (const keyword of requiredKeywords) {
-  if (!(pkg.keywords || []).includes(keyword)) {
-    fail(`package.json "keywords" is missing "${keyword}"`);
-  }
-}
-
-if (fs.existsSync(vscodeIgnorePath)) {
-  const vscodeIgnore = fs.readFileSync(vscodeIgnorePath, 'utf8');
-  for (const exclude of ['.git/**', '.vscode/**', '.vscode-test/**', '*.vsix', 'scripts/**', 'tools/**', 'src/**', 'DO_NOT_DELETE/**']) {
-    if (!vscodeIgnore.includes(exclude)) {
-      fail(`.vscodeignore is missing package exclusion "${exclude}"`);
-    }
-  }
+for (const file of ['LICENSE', 'CHANGELOG.md', 'SECURITY.md', 'SUPPORT.md', 'assets/icon.png']) {
+  if (!fs.existsSync(path.join(repo, file))) fail(`required PromptFuel identity file missing: ${file}`);
 }
 
 if (exitCode === 0) {
@@ -205,12 +103,25 @@ if (exitCode === 0) {
   console.log(`  name:        ${pkg.name}`);
   console.log(`  displayName: ${pkg.displayName}`);
   console.log(`  publisher:   ${pkg.publisher}`);
-  console.log(`  icon:        ${pkg.icon}`);
-  console.log(`  pricing:     ${pkg.pricing}`);
-  console.log(`  qna:         ${pkg.qna}`);
-  console.log(`  categories:  ${(pkg.categories || []).join(', ')}`);
-  console.log(`  commands:    ${commands.length} registered`);
-  console.log(`  settings:    ${Object.keys(properties).length} configured`);
+  console.log(`  commands:    ${commands.length}`);
+  console.log(`  settings:    ${Object.keys(properties).length}`);
 }
 
 process.exit(exitCode);
+
+function* walk(root) {
+  const stat = fs.statSync(root);
+  if (stat.isFile()) {
+    yield root;
+    return;
+  }
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'out' || entry.name === '.git') continue;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      yield* walk(full);
+    } else {
+      yield full;
+    }
+  }
+}

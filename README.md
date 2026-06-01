@@ -4,25 +4,25 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 
 ## Features
 
-- **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when provider APIs are available.
-- **Codex and Claude live quota support** - PromptFuel attempts live quota reads for configured providers from existing provider auth state.
+- **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when authenticated quota refresh is enabled and provider APIs are available.
+- **Codex and Claude live quota support** - PromptFuel can attempt live quota reads for configured providers from existing provider auth state.
 - **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
 - **Local history secondary** - local Claude and Codex aggregate history remains visible in the dashboard and tooltip, but does not replace live quota as the primary status.
 - **Dashboard tabs** - the dashboard includes Overview, Claude, and Codex tabs.
-- **Combined dashboard usage by default** - Overview uses local history plus imported snapshots unless `promptFuel.dashboardUsageSource` is changed.
+- **Combined dashboard usage by default** - Overview uses local history plus compatible machine snapshots when snapshot reading is enabled.
 - **Range-driven history** - the History range controls the chart, summary cards, usage distribution, and model distribution below it.
-- **Snapshot imports and exports** - open an import folder, drop in aggregate-only snapshot JSON, or export a compatible aggregate snapshot for another install.
-- **Cross-machine imports** - read compatible aggregate snapshot files from other installs, including safe source labels such as machine/source names.
+- **Machine snapshots** - write a sanitized machine snapshot locally, optionally copy it to a shared snapshot folder, and read compatible snapshots from that folder.
+- **Cross-machine imports** - automatically discover compatible snapshot files from other installs, including safe configured machine labels and provider sources.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
 ## Privacy & Data
 
-- **Local history stays local.** Live quota reads are enabled by default when supported/configured and may contact provider services using existing provider auth state; set `promptFuel.liveQuotaEnabled` to `false` to turn them off.
+- **Local history stays local.** Authenticated live quota reads are opt-in and may contact provider services using existing provider auth state when `promptFuel.authenticatedQuota.enabled` is enabled.
 - **No raw prompts, responses, or transcripts are collected or displayed.**
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
 - **No telemetry** is sent by PromptFuel.
 - Local history parsing uses aggregate metadata only.
-- Snapshot imports are aggregate-only JSON; safe source labels may be displayed, while private labels, local paths, filenames, usernames, and raw provider payloads are not product data.
+- Snapshot files are sanitized JSON; safe machine/source labels may be displayed, while local paths, filenames, usernames, and raw provider payloads are not product data.
 - Live quota reads use existing provider OAuth state when available; PromptFuel does not provide its own auth UI.
 - You can inspect PromptFuel's extension storage via **PromptFuel: Open Data Folder**.
 
@@ -33,80 +33,71 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 | `promptFuel.openDashboard` | PromptFuel: Open Usage Dashboard |
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
-| `promptFuel.openSnapshotImportsFolder` | PromptFuel: Open Snapshot Imports Folder |
-| `promptFuel.exportUsageSnapshot` | PromptFuel: Export Usage Snapshot |
 
-## Snapshot Imports
+## Machine Snapshots
 
-Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files or compatible aggregate snapshot files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
+PromptFuel can write a sanitized snapshot for the current machine and read compatible snapshots from a configured folder. This keeps multi-machine visibility across remote sources without exposing raw paths in the dashboard, status bar, or tooltip.
 
-By default, PromptFuel uses an import folder under its extension storage. Set `promptFuel.snapshotImportPath` to a local folder to read snapshots from that folder instead. Empty string means use the default storage folder. The command opens the effective import folder.
+Set `promptFuel.snapshot.path` to a local or shared folder that contains compatible `*-latest.json` snapshot files. When the setting is empty, PromptFuel uses its default local snapshot/state behavior. When the setting is present, PromptFuel reads compatible snapshots from that folder and automatically discovers remote machine sources from the snapshot payloads.
 
-Snapshots are aggregate-only JSON files. They should contain provider totals for `claude` and/or `codex`; do not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, or source filenames.
+Enable `promptFuel.snapshot.enabled` to write this machine's sanitized snapshot under the PromptFuel state directory. If `promptFuel.snapshot.path` is set, the same sanitized latest snapshot and archive data are also copied to that folder. Set `promptFuel.snapshot.machineLabel` to a safe label such as `desktop`, `laptop`, `workstation`, or `build-agent`; this label is included in the snapshot payload and can appear in supported dashboard/status surfaces.
 
-Imported snapshots appear in the dashboard source modes:
+Snapshots are aggregate-only JSON files. They may contain provider quota windows, safe daily history buckets, and model breakdowns for `claude` and/or `codex`; they must not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, or source filenames.
 
-| Source mode | Dashboard data |
-| --- | --- |
-| Local only | Local history only |
-| Snapshots only | Imported aggregate snapshots only |
-| Combined | Local history plus imported aggregate snapshots |
-
-Live quota remains separate and is not affected by the selected dashboard source mode.
-
-Set `promptFuel.dashboardUsageSource` to `combined`, `local`, or `snapshots` to choose the usage source for dashboard Today and historical sections. The default is `combined`; live quota remains independent, and the History range selector drives the historical chart, summary, usage distribution, and model distribution.
-
-PromptFuel imports supported versioned snapshot shapes automatically. It preserves existing PromptFuel schema v1 aggregate snapshots and also accepts the current AgentBridge-compatible schema 2 shape, including safe daily history buckets, model breakdowns, and source/machine labels when present. Safe labels such as `PHOENIX`, `WATCHER`, `DESKTOP-123`, `Laptop`, or `Workstation` may appear in the dashboard and tooltip; unsafe labels are replaced with a generic imported-snapshot label. Local paths, filenames, usernames, raw payloads, secrets, and tokens are never displayed.
-
-Minimal generic snapshot example:
+Minimal machine snapshot example:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAtEpochMs": 1767225600000,
-  "providers": [
+  "machine": {
+    "label": "desktop"
+  },
+  "providerUsage": [
     {
-      "providerId": "claude",
-      "generatedAtEpochMs": 1767225600000,
-      "aggregate": {
-        "totalInputTokens": 1000,
-        "totalOutputTokens": 500,
-        "totalCacheCreationInputTokens": 0,
-        "totalCacheReadInputTokens": 0,
-        "totalTokens": 1500,
-        "totalAssistantMessages": 3
-      }
-    },
-    {
-      "providerId": "codex",
-      "generatedAtEpochMs": 1767225600000,
-      "aggregate": {
-        "totalInputTokens": 800,
-        "totalOutputTokens": 400,
-        "totalCacheCreationInputTokens": 0,
-        "totalCacheReadInputTokens": 0,
-        "totalTokens": 1200,
-        "totalAssistantMessages": 2
-      }
+      "provider": "claude",
+      "laneLabel": "Claude",
+      "sevenDayUsedPercent": 40,
+      "fiveHourUsedPercent": 20,
+      "lastUpdatedEpochMs": 1767225600000,
+      "stale": false,
+      "source": "localSession",
+      "sourceConfidence": "apiEquivalentEstimate"
     }
-  ]
+  ],
+  "exportMeta": {
+    "extensionVersion": "0.6.0",
+    "schemaVersion": 2
+  }
 }
 ```
 
-Malformed snapshot files, unsupported schema versions, unknown providers, and private source labels are ignored. Snapshot recent-window totals are used only when the snapshot provides them; otherwise those recent windows contribute 0 while All local history uses the snapshot aggregate total.
+Malformed snapshot files, unsupported schema versions, unknown providers, private source fields, raw paths, and secret-like payloads are ignored. Snapshot recent-window totals and history buckets are used only when the snapshot provides safe compatible fields.
 
-## Snapshot Exports
+### Remote Machine Sources
 
-Run **PromptFuel: Export Usage Snapshot** to write a latest-version aggregate snapshot. By default, PromptFuel writes to its default snapshot folder. Set `promptFuel.snapshotExportPath` to a local folder to write exports there instead. Empty string means use the default storage folder.
+When `promptFuel.snapshot.path` points to a shared folder, PromptFuel discovers compatible snapshots from other machines automatically. You can selectively display those remote sources in the dashboard and status bar.
 
-Exported snapshots are aggregate-only and use the latest compatible snapshot schema. They do not include prompts, responses, transcripts, raw provider payloads, filenames, local paths, usernames, machine names, secrets, auth tokens, or API keys.
+**Settings:**
+- `promptFuel.snapshot.remoteSources` — list of `machineLabel/provider` entries to show as provider cards in the dashboard. Example: `["desktop/claude", "laptop/codex"]`.
+- `promptFuel.snapshot.statusBarSources` — same format, but controls what appears in the status bar.
+- `promptFuel.snapshot.remoteMachineLabels` — optional display aliases for machine labels. Example: `{ "desktop": "Home Desktop", "laptop": "Work Laptop" }`.
+
+**Worked example:**
+
+1. Machine **desktop** has `promptFuel.snapshot.enabled: true` and `promptFuel.snapshot.machineLabel: "desktop"`. It writes sanitized snapshots to the shared folder.
+2. Machine **laptop** has `promptFuel.snapshot.path` set to the same shared folder. It discovers `desktop-latest.json` automatically.
+3. On the laptop, set `promptFuel.snapshot.remoteSources: ["desktop/claude", "desktop/codex"]` to see the desktop's Claude and Codex usage in the dashboard.
+4. Optionally set `promptFuel.snapshot.remoteMachineLabels: { "desktop": "Home Desktop" }` for friendlier display names.
+
+Remote sources appear alongside local providers in the dashboard with a "snapshot-backed" indicator showing their age.
 
 ## Current Limitations
 
 - Live quota can be unavailable when provider quota data, provider auth state, or provider endpoints are unavailable.
 - PromptFuel does not include its own provider sign-in flow.
-- Dashboard charts, notifications, additional providers, and Marketplace publish automation are not part of the MVP.
-- Snapshot imports are read from JSON files placed in the imports folder; there is no in-dashboard upload flow yet.
+- Notifications, additional providers, in-dashboard snapshot upload, and Marketplace publish automation are not part of the MVP.
+- Snapshot files are read from `promptFuel.snapshot.path`; there is no in-dashboard upload flow yet.
 - Local history and snapshots are aggregate-only and may not include every provider-side detail.
 
 ## Settings
@@ -114,11 +105,25 @@ Exported snapshots are aggregate-only and use the latest compatible snapshot sch
 | Setting | Description | Default |
 | --- | --- | --- |
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
-| `promptFuel.refreshIntervalMinutes` | Auto-refresh interval (0 to disable) | `5` |
-| `promptFuel.liveQuotaEnabled` | Attempt live quota from provider APIs; set to `false` to opt out | `true` |
-| `promptFuel.dashboardUsageSource` | Dashboard usage source: `combined`, `local`, or `snapshots`; live quota stays independent | `"combined"` |
-| `promptFuel.snapshotImportPath` | Optional local folder for aggregate snapshot imports; empty uses PromptFuel extension storage | `""` |
-| `promptFuel.snapshotExportPath` | Optional local folder for aggregate snapshot exports; empty uses PromptFuel extension storage | `""` |
+| `promptFuel.stateDirectory` | Directory for shared usage state; empty uses the platform default | `""` |
+| `promptFuel.claudeProjectsPath` | Claude projects root for safe Today aggregation; empty uses `~/.claude/projects` | `""` |
+| `promptFuel.codexSessionsPath` | Codex sessions root; empty uses `~/.codex/sessions` | `""` |
+| `promptFuel.refreshIntervalSeconds` | Fallback refresh interval in seconds | `300` |
+| `promptFuel.statusBarDensity` | Status bar display density: `standard` (countdown + full labels) or `compact` (shorter) | `"standard"` |
+| `promptFuel.statusMode` | Show quota percentages as remaining allowance or used amount | `"remaining"` |
+| `promptFuel.lowRemainingPercent` | Low remaining threshold | `50` |
+| `promptFuel.warnRemainingPercent` | Warning remaining threshold | `30` |
+| `promptFuel.criticalRemainingPercent` | Critical remaining threshold | `10` |
+| `promptFuel.authenticatedQuota.enabled` | Enable opt-in authenticated live quota refresh | `false` |
+| `promptFuel.authenticatedQuota.providers` | Providers allowed to use authenticated live quota refresh | `["claude", "codex"]` |
+| `promptFuel.authenticatedQuota.refreshIntervalMinutes` | Minimum interval in minutes for periodic authenticated quota refresh | `5` |
+| `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
+| `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
+| `promptFuel.snapshot.includeHistoryBuckets` | Include sanitized history buckets in written snapshots | `true` |
+| `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |
+| `promptFuel.snapshot.remoteSources` | Remote machine sources to show as provider cards in the dashboard (`machineLabel/provider`, e.g. `desktop/claude`) | `[]` |
+| `promptFuel.snapshot.statusBarSources` | Remote machine sources to show in the status bar (`machineLabel/provider`, e.g. `laptop/codex`) | `[]` |
+| `promptFuel.snapshot.remoteMachineLabels` | Map from machine labels to display aliases (e.g. `{ "desktop": "Home Desktop" }`) | `{}` |
 
 ## Development
 
@@ -130,8 +135,7 @@ npm run compile
 Run smoke tests:
 
 ```bash
-npm run smoke:core
-npm run smoke:providers
+npm run smoke
 ```
 
 Validate manifest:

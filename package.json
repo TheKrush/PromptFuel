@@ -45,7 +45,10 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCommand:promptFuel.openDashboard",
+    "onCommand:promptFuel.refresh",
+    "onCommand:promptFuel.openDataFolder"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -63,12 +66,8 @@
         "title": "PromptFuel: Open Data Folder"
       },
       {
-        "command": "promptFuel.openSnapshotImportsFolder",
-        "title": "PromptFuel: Open Snapshot Imports Folder"
-      },
-      {
-        "command": "promptFuel.exportUsageSnapshot",
-        "title": "PromptFuel: Export Usage Snapshot"
+        "command": "promptFuel.upgradeSnapshotFiles",
+        "title": "PromptFuel: Upgrade Snapshot Files to Current Schema"
       }
     ],
     "configuration": {
@@ -76,63 +75,148 @@
       "properties": {
         "promptFuel.enabledProviders": {
           "type": "array",
+          "default": [
+            "claude",
+            "codex"
+          ],
           "items": {
-            "type": "string",
             "enum": [
               "claude",
               "codex"
             ]
           },
+          "description": "Providers to track in the status bar and dashboard."
+        },
+        "promptFuel.stateDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for shared usage state. Empty uses %LOCALAPPDATA%/PromptFuel on Windows or ~/.prompt-fuel elsewhere."
+        },
+        "promptFuel.claudeProjectsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Claude projects root for safe assistant-message Today aggregation. Empty uses ~/.claude/projects."
+        },
+        "promptFuel.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 10,
+          "description": "Fallback refresh interval. Event/file changes update faster when available."
+        },
+        "promptFuel.authenticatedQuota.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in live authenticated quota refresh using existing Claude/Codex product session credentials. No live calls are made when disabled."
+        },
+        "promptFuel.authenticatedQuota.providers": {
+          "type": "array",
           "default": [
             "claude",
             "codex"
           ],
-          "description": "AI coding assistant providers to track and display in PromptFuel."
+          "items": {
+            "enum": [
+              "claude",
+              "codex"
+            ]
+          },
+          "description": "Providers allowed to use authenticated live quota refresh when authenticated quota refresh is enabled."
         },
-        "promptFuel.refreshIntervalMinutes": {
+        "promptFuel.authenticatedQuota.refreshIntervalMinutes": {
           "type": "number",
           "default": 5,
-          "minimum": 0,
-          "maximum": 1440,
-          "description": "Auto-refresh interval in minutes. Set to 0 to disable auto-refresh."
+          "minimum": 1,
+          "description": "Minimum interval in minutes for periodic authenticated quota refresh calls. Manual refresh can bypass the timer but still respects short failure backoff."
         },
-        "promptFuel.liveQuotaEnabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Fetch live 5h/7d quota from provider APIs. Requires existing Claude/Codex OAuth credentials."
-        },
-        "promptFuel.dashboardUsageSource": {
+        "promptFuel.codexSessionsPath": {
           "type": "string",
+          "default": "",
+          "description": "Codex sessions root. Empty uses ~/.codex/sessions."
+        },
+        "promptFuel.statusMode": {
+          "type": "string",
+          "default": "remaining",
           "enum": [
-            "combined",
-            "local",
-            "snapshots"
+            "remaining",
+            "used"
           ],
-          "default": "combined",
-          "description": "Data source used by dashboard usage sections. Live quota remains independent."
+          "description": "Show percentages as remaining allowance or consumed usage."
         },
-        "promptFuel.snapshotImportPath": {
+        "promptFuel.statusBarDensity": {
+          "type": "string",
+          "default": "standard",
+          "enum": [
+            "standard",
+            "compact"
+          ],
+          "enumDescriptions": [
+            "Standard: provider name, quota windows, and countdown.",
+            "Compact: shorter display with provider name and quota windows, no countdown."
+          ],
+          "description": "Status bar display density. Standard shows countdowns and full labels. Compact is shorter."
+        },
+        "promptFuel.lowRemainingPercent": {
+          "type": "number",
+          "default": 50,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Show low icon when either 5h or 7d remaining percentage is at or below this value."
+        },
+        "promptFuel.warnRemainingPercent": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Show warning icon when either 5h or 7d remaining percentage is at or below this value."
+        },
+        "promptFuel.criticalRemainingPercent": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Show critical icon when either 5h or 7d remaining percentage is at or below this value."
+        },
+        "promptFuel.snapshot.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable opt-in local machine snapshot writer. When enabled, writes a sanitized snapshot to {stateDirectory}/snapshots/{machine}-latest.json on each refresh."
+        },
+        "promptFuel.snapshot.machineLabel": {
           "type": "string",
           "default": "",
-          "description": "Optional local folder for aggregate snapshot imports. Empty uses PromptFuel extension storage."
+          "description": "Configured machine/source label for the snapshot. Used as the machine identity in the snapshot payload and as the filename component. Must not be a raw hostname. Defaults to 'unknown' if empty."
         },
-        "promptFuel.snapshotExportPath": {
+        "promptFuel.snapshot.path": {
           "type": "string",
           "default": "",
-          "description": "Optional local folder for aggregate snapshot exports. Empty uses PromptFuel extension storage."
+          "description": "Folder for compatible machine snapshots. When set, PromptFuel reads *-latest.json snapshots from this folder and, when snapshot writing is enabled, copies this machine's sanitized snapshot there."
         },
-        "promptFuel.localMachineLabel": {
-          "type": "string",
-          "default": "",
-          "description": "Machine name used when exporting usage snapshots and for deduplicating imported snapshots from this machine. Overrides the auto-detected hostname. Set this to a stable label (e.g., 'PHOENIX') that matches the machine label in any snapshot files you import."
-        },
-        "promptFuel.snapshotImportLabels": {
+        "promptFuel.snapshot.remoteSources": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "description": "Allowlist of machine labels to import from the snapshot import folder. When non-empty, only snapshots from these machine labels are read; all others are ignored. The local machine (localMachineLabel or auto-detected hostname) is always excluded regardless of this list. Example: [\"WATCHER\"] to import only WATCHER snapshots."
+          "description": "Opt-in list of remote machine sources to show as provider cards in the Usage dashboard. Each entry is machineLabel/provider (e.g. 'desktop/claude')."
+        },
+        "promptFuel.snapshot.statusBarSources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Opt-in list of remote machine sources to show in the status bar. Each entry is machineLabel/provider (e.g. 'laptop/codex')."
+        },
+        "promptFuel.snapshot.remoteMachineLabels": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_-]+$": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "default": {},
+          "description": "Mapping from machine labels to display aliases used in dashboard and status bar labels (e.g. { \"desktop\": \"Home Desktop\" })."
         }
       }
     }
@@ -141,23 +225,23 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "echo 'lint: not yet configured'",
     "validate": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1 -SkipInstall",
     "validate:install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1",
     "validate:manifest": "node scripts/validate-extension-manifest.cjs",
-    "smoke:core": "node scripts/smoke-core.cjs",
-    "smoke:providers": "node scripts/smoke-providers.cjs",
-    "package": "npx --yes @vscode/vsce package --no-dependencies",
-    "test": "node ./out/test/runTest.js"
+    "smoke": "npm run smoke:ci",
+    "smoke:ci": "npm run smoke:surface && npm run smoke:display && npm run smoke:dashboard && npm run smoke:snapshots && npm run smoke:codex",
+    "smoke:surface": "node scripts/smoke-extension-surface.cjs",
+    "smoke:display": "node scripts/smoke-usage-threshold-levels.cjs && node scripts/smoke-status-tooltip.cjs && node scripts/smoke-model-breakdown-hover.cjs",
+    "smoke:dashboard": "node scripts/smoke-dashboard-hide-disabled-providers.cjs && node scripts/smoke-chart-binning.cjs && node scripts/smoke-chart-tooltip.cjs && node scripts/smoke-layout-toggle.cjs && node scripts/smoke-dashboard-pricing-cards.cjs",
+    "smoke:snapshots": "node scripts/smoke-remote-sources.cjs && node scripts/smoke-remote-history-merge.cjs",
+    "smoke:codex": "node scripts/smoke-codex-correlated-day-bucket-scanner.cjs",
+
+    "test:unit": "node --test out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/configThresholds.test.js out/test/displayFormat.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js",
+    "package": "npx --yes @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
-    "@types/glob": "^8.1.0",
-    "@types/mocha": "^10.0.7",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.94.0",
-    "@vscode/test-electron": "^2.5.2",
-    "glob": "^11.0.0",
-    "mocha": "^10.7.0",
     "typescript": "^5.5.0"
   }
 }

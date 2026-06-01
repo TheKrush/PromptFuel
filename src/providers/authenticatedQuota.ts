@@ -2,57 +2,82 @@ import * as fs from 'node:fs/promises';
 import * as https from 'node:https';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {
-  availabilityFromFreshness,
-  getGenericQuotaUnavailableMessage,
-  type LiveQuotaFreshness,
-  type LiveQuotaStatus,
-  type LiveQuotaWindow,
-} from '../core/liveQuotaTypes';
-import type { ProviderId } from '../core/providers';
-import type { LiveQuotaReader } from './liveQuotaReader';
+import { AuthenticatedQuotaStatus, LimitWindow, ProviderName, ProviderUsageState } from '../types';
+import { isStale } from '../usageTime';
+import { USER_AGENT } from '../version';
 
+const CACHE_FILE = 'authenticated-quota-cache.json';
 const SOCKET_TIMEOUT_MS = 5000;
 const HARD_DEADLINE_MS = 10000;
 const MAX_RESPONSE_BYTES = 128 * 1024;
 
-// --- Public API ---
-
-export async function createAuthenticatedReader(
-  providerId: string,
-): Promise<LiveQuotaReader> {
-  const id = providerId as ProviderId;
-  if (id === 'claude') {
-    return {
-      providerId: 'claude',
-      read: fetchClaudeLiveQuota,
-    };
-  }
-  if (id === 'codex') {
-    return {
-      providerId: 'codex',
-      read: fetchCodexLiveQuota,
-    };
-  }
-  return {
-    providerId,
-    read: async () => ({
-      providerId,
-      windows: [],
-      status: 'unavailable',
-      freshness: 'unavailable',
-      sanitizedMessage: getGenericQuotaUnavailableMessage(),
-    }),
-  };
+export interface AuthenticatedQuotaFetchOutcome {
+  provider: ProviderName;
+  state: ProviderUsageState;
+  success: boolean;
+  retryAfterSeconds?: number;
 }
 
-// --- Claude ---
+interface HttpJsonResult {
+  ok: boolean;
+  statusCode?: number;
+  body?: unknown;
+  retryAfterSeconds?: number;
+}
 
-async function fetchClaudeLiveQuota(): Promise<LiveQuotaStatus> {
-  const token = await readClaudeToken();
+export async function readAuthenticatedQuotaCache(stateDirectory: string): Promise<Partial<Record<ProviderName, ProviderUsageState>>> {
+  const file = path.join(stateDirectory, CACHE_FILE);
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const parsed = JSON.parse(raw) as { providers?: ProviderUsageState[] };
+    const result: Partial<Record<ProviderName, ProviderUsageState>> = {};
+    for (const state of parsed.providers ?? []) {
+      if (state.provider === 'claude' || state.provider === 'codex') {
+        result[state.provider] = {
+          ...state,
+          stale: isStale(state.lastUpdatedEpochMs ?? state.lastAuthenticatedRefreshEpochMs),
+          source: state.source ?? 'stale cached authenticated quota'
+        };
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+export async function writeAuthenticatedQuotaCache(
+  stateDirectory: string,
+  states: Partial<Record<ProviderName, ProviderUsageState>>
+): Promise<void> {
+  const providers = Object.values(states)
+    .filter((state): state is ProviderUsageState => Boolean(state))
+    .map(sanitizeAuthenticatedState);
+
+  await fs.mkdir(stateDirectory, { recursive: true });
+  await fs.writeFile(path.join(stateDirectory, CACHE_FILE), JSON.stringify({ providers }, undefined, 2), 'utf8');
+}
+
+export async function fetchAuthenticatedQuota(provider: ProviderName): Promise<AuthenticatedQuotaFetchOutcome> {
+  if (provider === 'claude') {
+    return fetchClaudeQuota();
+  }
+  return fetchCodexQuota();
+}
+
+async function fetchClaudeQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
+  const provider: ProviderName = 'claude';
+  const credentialsPath = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), '.credentials.json');
+  const credential = await readJsonObject(credentialsPath);
+  const oauth = asRecord(credential?.claudeAiOauth);
+  const token = asString(oauth?.accessToken);
+  const expiresAt = toNumber(oauth?.expiresAt);
 
   if (!token) {
-    return errorStatus('claude', 'not_configured');
+    return authFailure(provider, 'not_configured', 'Claude OAuth credentials were not found.');
+  }
+  if (expiresAt !== undefined && expiresAt <= Date.now() + 60_000) {
+    return authFailure(provider, 'auth_expired', 'Claude OAuth token is expired or near expiry.');
   }
 
   const response = await requestJson('https://api.anthropic.com/api/oauth/usage', {
@@ -60,67 +85,51 @@ async function fetchClaudeLiveQuota(): Promise<LiveQuotaStatus> {
     Accept: 'application/json',
     'Content-Type': 'application/json',
     'anthropic-beta': 'oauth-2025-04-20',
+    'User-Agent': USER_AGENT
   });
 
   if (!response.ok) {
-    return errorStatus('claude', response.statusCode === 401 || response.statusCode === 403
-      ? 'auth_expired'
-      : 'http_error');
+    return httpFailure(provider, response);
   }
 
   const body = asRecord(response.body);
-  const fiveHour = parseClaudeWindow('5h', asRecord(body?.five_hour));
-  const sevenDay = parseClaudeWindow('7d', asRecord(body?.seven_day));
-
-  if (!fiveHour && !sevenDay) {
-    return errorStatus('claude', 'parse_error');
+  const fiveHour = parseClaudeWindow(asRecord(body?.five_hour));
+  const sevenDay = parseClaudeWindow(asRecord(body?.seven_day));
+  const sevenDayOpus = parseClaudeWindow(asRecord(body?.seven_day_opus));
+  if (!fiveHour && !sevenDay && !sevenDayOpus) {
+    return authFailure(provider, 'parse_error', 'Claude usage response did not include recognizable 5h/7d/opus windows.');
   }
 
-  return {
-    providerId: 'claude',
-    windows: [fiveHour, sevenDay].filter(Boolean) as LiveQuotaWindow[],
-    freshness: 'live',
-    lastUpdatedEpochMs: Date.now(),
-  };
+  return success(provider, fiveHour, sevenDay, sevenDayOpus, response.statusCode);
 }
 
-async function readClaudeToken(): Promise<string | undefined> {
-  const credentialsPath = path.join(
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
-    '.credentials.json',
-  );
-  const credential = await readJsonObject(credentialsPath);
-  if (!credential) return undefined;
-  const oauth = credential.claudeAiOauth as Record<string, unknown> | undefined;
-  return asString(oauth?.accessToken);
-}
+async function fetchCodexQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
+  const provider: ProviderName = 'codex';
+  const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+  const auth = await readJsonObject(authPath);
+  const tokens = asRecord(auth?.tokens);
+  const token = asString(tokens?.access_token);
+  const accountId = asString(tokens?.account_id);
 
-// --- Codex ---
-
-async function fetchCodexLiveQuota(): Promise<LiveQuotaStatus> {
-  const auth = await readCodexAuth();
-
-  if (!auth.token) {
-    return errorStatus('codex', 'not_configured');
+  if (!token) {
+    return authFailure(provider, 'not_configured', 'Codex ChatGPT OAuth credentials were not found.');
   }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${auth.token}`,
+    Authorization: `Bearer ${token}`,
     Accept: 'application/json',
     Origin: 'https://chatgpt.com',
     Referer: 'https://chatgpt.com/',
-    'User-Agent': 'prompt-fuel',
+    'User-Agent': 'codex-cli'
   };
-  if (auth.accountId) {
-    headers['ChatGPT-Account-Id'] = auth.accountId;
+  if (accountId) {
+    headers['ChatGPT-Account-Id'] = accountId;
   }
 
   const response = await requestJson('https://chatgpt.com/backend-api/wham/usage', headers);
 
   if (!response.ok) {
-    return errorStatus('codex', response.statusCode === 401 || response.statusCode === 403
-      ? 'auth_expired'
-      : 'http_error');
+    return httpFailure(provider, response);
   }
 
   const body = asRecord(response.body);
@@ -129,138 +138,89 @@ async function fetchCodexLiveQuota(): Promise<LiveQuotaStatus> {
   const secondaryWindow = asRecord(rateLimit?.secondary_window) ?? asRecord(rateLimit?.secondary);
   const fiveHour = parseCodexWindow(primaryWindow, 18_000);
   const sevenDay = parseCodexWindow(secondaryWindow, 604_800);
-
   if (!fiveHour && !sevenDay) {
-    return errorStatus('codex', 'parse_error');
+    return authFailure(provider, 'parse_error', 'Codex usage response did not include recognizable 5h/7d windows.');
   }
 
+  return success(provider, fiveHour, sevenDay, undefined, response.statusCode);
+}
+
+function success(
+  provider: ProviderName,
+  fiveHour: LimitWindow | undefined,
+  sevenDay: LimitWindow | undefined,
+  sevenDayOpus: LimitWindow | undefined,
+  statusCode: number | undefined
+): AuthenticatedQuotaFetchOutcome {
+  const now = Date.now();
   return {
-    providerId: 'codex',
-    windows: [fiveHour, sevenDay].filter(Boolean) as LiveQuotaWindow[],
-    freshness: 'live',
-    lastUpdatedEpochMs: Date.now(),
+    provider,
+    success: true,
+    state: {
+      provider,
+      fiveHour,
+      sevenDay,
+      sevenDayOpus,
+      source: 'live authenticated refresh',
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'success',
+      authenticatedHttpStatus: statusCode,
+      stale: false
+    }
   };
 }
 
-interface CodexAuth {
-  token: string;
-  accountId?: string;
-}
-
-async function readCodexAuth(): Promise<CodexAuth> {
-  const authPath = path.join(os.homedir(), '.codex', 'auth.json');
-  const auth = await readJsonObject(authPath);
-  const tokens = asRecord(auth?.tokens);
+function httpFailure(provider: ProviderName, response: HttpJsonResult): AuthenticatedQuotaFetchOutcome {
   return {
-    token: asString(tokens?.access_token) ?? '',
-    accountId: asString(tokens?.account_id),
+    provider,
+    success: false,
+    retryAfterSeconds: response.retryAfterSeconds,
+    state: {
+      provider,
+      source: 'authenticated quota provider',
+      lastAuthenticatedRefreshEpochMs: Date.now(),
+      authenticatedStatus: response.statusCode === undefined
+        ? 'network_error'
+        : response.statusCode === 401 || response.statusCode === 403
+          ? 'auth_expired'
+          : 'http_error',
+      authenticatedHttpStatus: response.statusCode,
+      authenticatedError: response.statusCode ? `HTTP ${response.statusCode}` : 'Network request failed',
+      stale: true,
+      diagnosticSeverity: response.statusCode === 401 || response.statusCode === 403 ? 'warning' : 'info'
+    }
   };
 }
 
-// --- Window parsing ---
-
-function parseClaudeWindow(
-  windowId: '5h' | '7d',
-  window: Record<string, unknown> | undefined,
-): LiveQuotaWindow | undefined {
-  if (!window) {
-    return undefined;
-  }
-  const usedPercentage = normalizePercent(
-    toNumber(window.utilization) ?? toNumber(window.used_percentage) ?? toNumber(window.usedPercent),
-  );
-  const resetsAtEpochSeconds = parseResetEpochSeconds(window.resets_at)
-    ?? parseResetEpochSeconds(window.reset_at)
-    ?? parseResetEpochSeconds(window.resetsAt);
-
-  return buildWindow(windowId, usedPercentage, resetsAtEpochSeconds);
-}
-
-function parseCodexWindow(
-  window: Record<string, unknown> | undefined,
-  expectedSeconds: number,
-): LiveQuotaWindow | undefined {
-  if (!window) {
-    return undefined;
-  }
-  const seconds = toNumber(window.limit_window_seconds);
-  const minutes = toNumber(window.window_minutes);
-  if (seconds !== undefined && seconds !== expectedSeconds) {
-    return undefined;
-  }
-  if (minutes !== undefined && minutes * 60 !== expectedSeconds) {
-    return undefined;
-  }
-
-  const usedPercentage = normalizePercent(
-    toNumber(window.used_percent) ?? toNumber(window.usedPercentage) ?? toNumber(window.utilization),
-  );
-  const resetsAtEpochSeconds = parseResetEpochSeconds(window.reset_at)
-    ?? parseResetEpochSeconds(window.resets_at)
-    ?? parseResetEpochSeconds(window.resetsAtEpochSeconds);
-
-  const windowId = expectedSeconds === 18_000 ? '5h' : '7d';
-  return buildWindow(windowId, usedPercentage, resetsAtEpochSeconds);
-}
-
-function buildWindow(
-  windowId: '5h' | '7d',
-  usedPercentage: number | undefined,
-  resetsAtEpochSeconds: number | undefined,
-): LiveQuotaWindow | undefined {
-  if (usedPercentage === undefined && resetsAtEpochSeconds === undefined) {
-    return undefined;
-  }
-  const remainingPercentage = usedPercentage !== undefined
-    ? Math.max(0, Math.min(100, 100 - usedPercentage))
-    : undefined;
-
+function authFailure(
+  provider: ProviderName,
+  status: AuthenticatedQuotaStatus,
+  message: string
+): AuthenticatedQuotaFetchOutcome {
   return {
-    windowId,
-    usedPercentage,
-    remainingPercentage,
-    resetsAtEpochMs: resetsAtEpochSeconds !== undefined ? resetsAtEpochSeconds * 1000 : undefined,
-    sourceKind: 'authenticated',
-    sourceLabel: 'live API',
-    sourceUpdatedEpochMs: Date.now(),
-    sourceAuthorityRank: 5,
+    provider,
+    success: false,
+    state: {
+      provider,
+      source: 'authenticated quota provider',
+      lastAuthenticatedRefreshEpochMs: Date.now(),
+      authenticatedStatus: status,
+      authenticatedError: message,
+      stale: true,
+      diagnosticSeverity: status === 'not_configured' ? 'info' : 'warning'
+    }
   };
-}
-
-// --- Error status ---
-
-function errorStatus(providerId: string, reason: string): LiveQuotaStatus {
-  const freshness: LiveQuotaFreshness =
-    reason === 'not_configured' ? 'unavailable' : 'error';
-
-  return {
-    providerId,
-    windows: [],
-    status: availabilityFromFreshness(freshness),
-    freshness,
-    lastUpdatedEpochMs: Date.now(),
-    sanitizedMessage: sanitizeError(reason),
-  };
-}
-
-function sanitizeError(reason: string): string {
-  return getGenericQuotaUnavailableMessage();
-}
-
-// --- HTTP client ---
-
-interface HttpJsonResult {
-  ok: boolean;
-  statusCode?: number;
-  body?: unknown;
 }
 
 async function requestJson(endpoint: string, headers: Record<string, string>): Promise<HttpJsonResult> {
   return new Promise(resolve => {
     let settled = false;
-    let hardDeadline: ReturnType<typeof setTimeout> | undefined;
+    let hardDeadline: NodeJS.Timeout | undefined;
     const finish = (result: HttpJsonResult) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       if (hardDeadline) {
         clearTimeout(hardDeadline);
@@ -269,14 +229,7 @@ async function requestJson(endpoint: string, headers: Record<string, string>): P
       resolve(result);
     };
 
-    const url = new URL(endpoint);
-    const req = https.request({
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: 'GET',
-      headers,
-      timeout: SOCKET_TIMEOUT_MS,
-    }, res => {
+    const req = https.request(endpoint, { method: 'GET', headers, timeout: SOCKET_TIMEOUT_MS }, res => {
       const chunks: Buffer[] = [];
       let bytes = 0;
 
@@ -291,19 +244,22 @@ async function requestJson(endpoint: string, headers: Record<string, string>): P
       });
 
       res.on('end', () => {
+        const retryAfterSeconds = parseRetryAfter(res.headers['retry-after']);
         const statusCode = res.statusCode;
         if (!statusCode || statusCode < 200 || statusCode >= 300) {
-          finish({ ok: false, statusCode });
+          finish({ ok: false, statusCode, retryAfterSeconds });
           return;
         }
+
         try {
           finish({
             ok: true,
             statusCode,
             body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+            retryAfterSeconds
           });
         } catch {
-          finish({ ok: false, statusCode });
+          finish({ ok: false, statusCode, retryAfterSeconds });
         }
       });
     });
@@ -326,8 +282,6 @@ async function requestJson(endpoint: string, headers: Record<string, string>): P
   });
 }
 
-// --- JSON file reader ---
-
 async function readJsonObject(filePath: string): Promise<Record<string, unknown> | undefined> {
   try {
     const raw = await fs.readFile(filePath, 'utf8');
@@ -337,7 +291,76 @@ async function readJsonObject(filePath: string): Promise<Record<string, unknown>
   }
 }
 
-// --- Type utilities ---
+export function parseClaudeWindow(window: Record<string, unknown> | undefined): LimitWindow | undefined {
+  if (!window) {
+    return undefined;
+  }
+  return parsedWindow(
+    normalizePercent(toNumber(window.utilization) ?? toNumber(window.used_percentage) ?? toNumber(window.usedPercent)),
+    parseResetEpochSeconds(window.resets_at) ?? parseResetEpochSeconds(window.reset_at) ?? parseResetEpochSeconds(window.resetsAt)
+  );
+}
+
+export function parseCodexWindow(window: Record<string, unknown> | undefined, expectedSeconds: number): LimitWindow | undefined {
+  if (!window) {
+    return undefined;
+  }
+  const seconds = toNumber(window.limit_window_seconds);
+  const minutes = toNumber(window.window_minutes);
+  if (seconds !== undefined && seconds !== expectedSeconds) {
+    return undefined;
+  }
+  if (minutes !== undefined && minutes * 60 !== expectedSeconds) {
+    return undefined;
+  }
+
+  return parsedWindow(
+    normalizePercent(toNumber(window.used_percent) ?? toNumber(window.usedPercentage) ?? toNumber(window.utilization)),
+    parseResetEpochSeconds(window.reset_at) ?? parseResetEpochSeconds(window.resets_at) ?? parseResetEpochSeconds(window.resetsAtEpochSeconds)
+  );
+}
+
+export function parsedWindow(usedPercentage: number | undefined, resetsAtEpochSeconds: number | undefined): LimitWindow | undefined {
+  if (usedPercentage === undefined && resetsAtEpochSeconds === undefined) {
+    return undefined;
+  }
+  return { usedPercentage, resetsAtEpochSeconds };
+}
+
+function sanitizeAuthenticatedState(state: ProviderUsageState): ProviderUsageState {
+  return {
+    provider: state.provider,
+    fiveHour: state.fiveHour,
+    sevenDay: state.sevenDay,
+    sevenDayOpus: state.sevenDayOpus,
+    source: state.source,
+    lastUpdatedEpochMs: state.lastUpdatedEpochMs,
+    lastAuthenticatedRefreshEpochMs: state.lastAuthenticatedRefreshEpochMs,
+    nextAuthenticatedRefreshEpochMs: state.nextAuthenticatedRefreshEpochMs,
+    authenticatedBackoffUntilEpochMs: state.authenticatedBackoffUntilEpochMs,
+    authenticatedStatus: state.authenticatedStatus,
+    authenticatedHttpStatus: state.authenticatedHttpStatus,
+    authenticatedError: state.authenticatedError,
+    stale: state.stale,
+    diagnosticSeverity: state.diagnosticSeverity
+  };
+}
+
+function parseRetryAfter(value: string | string[] | undefined): number | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) {
+    return undefined;
+  }
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds;
+  }
+  const dateMs = Date.parse(raw);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, Math.ceil((dateMs - Date.now()) / 1000));
+  }
+  return undefined;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -363,7 +386,7 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function normalizePercent(value: number | undefined): number | undefined {
+export function normalizePercent(value: number | undefined): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -373,14 +396,7 @@ function normalizePercent(value: number | undefined): number | undefined {
   return Math.max(0, Math.min(100, value));
 }
 
-// --- Test helpers (used by smoke tests only, not part of public API) ---
-export const _test = {
-  parseClaudeWindow: parseClaudeWindow as (windowId: '5h' | '7d', window: Record<string, unknown> | undefined) => LiveQuotaWindow | undefined,
-  parseCodexWindow: parseCodexWindow as (window: Record<string, unknown> | undefined, expectedSeconds: number) => LiveQuotaWindow | undefined,
-  buildWindow,
-};
-
-function parseResetEpochSeconds(value: unknown): number | undefined {
+export function parseResetEpochSeconds(value: unknown): number | undefined {
   const numeric = toNumber(value);
   if (numeric !== undefined) {
     if (numeric > 1_000_000_000_000) return Math.floor(numeric / 1000);

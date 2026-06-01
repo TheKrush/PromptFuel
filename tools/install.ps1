@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [string]$UserDataDir,
+    [string]$ExtensionsDir
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,12 +29,22 @@ $codeCommand = Get-Command "code.cmd" -ErrorAction SilentlyContinue
 if (-not $codeCommand) {
     $fallback = Join-Path $env:LOCALAPPDATA "Programs\Microsoft VS Code\bin\code.cmd"
     if (Test-Path $fallback) {
-        & $fallback --install-extension $vsix.FullName --force
+        $codeCommandPath = $fallback
     } else {
         throw "Could not find code.cmd. Install manually with: code.cmd --install-extension $($vsix.FullName) --force"
     }
 } else {
-    & $codeCommand.Source --install-extension $vsix.FullName --force
+    $codeCommandPath = $codeCommand.Source
+}
+
+$installArgs = @("--install-extension", $vsix.FullName, "--force")
+if ($UserDataDir) { $installArgs += @("--user-data-dir", $UserDataDir) }
+if ($ExtensionsDir) { $installArgs += @("--extensions-dir", $ExtensionsDir) }
+
+& $codeCommandPath @installArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "VS Code install failed with exit code $LASTEXITCODE." -ForegroundColor Red
+    exit $LASTEXITCODE
 }
 
 Write-Host ""
