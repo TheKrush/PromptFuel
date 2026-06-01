@@ -687,6 +687,16 @@ function dashboardTabPanel(html, tabId) {
   return html.slice(sectionStart, sectionEnd + '</section>'.length);
 }
 
+function openingTagByAttribute(html, attr, value) {
+  const marker = `${attr}="${value}"`;
+  const markerIndex = html.indexOf(marker);
+  assert.ok(markerIndex >= 0, `expected ${marker}`);
+  const tagStart = html.lastIndexOf('<div', markerIndex);
+  const tagEnd = html.indexOf('>', markerIndex);
+  assert.ok(tagStart >= 0 && tagEnd >= markerIndex, `expected opening tag for ${marker}`);
+  return html.slice(tagStart, tagEnd + 1);
+}
+
 test('local history windows: aggregates Today, Last 5h, Last 7d, and all history', () => {
   const now = new Date('2026-05-31T20:00:00.000Z').getTime();
   const windows = createEmptyLocalHistoryWindowAggregateMap();
@@ -1006,6 +1016,91 @@ test('dashboard: local history selector labels and values are windowed', () => {
   assert.ok(html.includes('data-messages-last7d="3"'), `expected provider window details`);
 });
 
+test('dashboard: uses full-width AgentBridge-style canvas', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('max-width: none;'), `expected dashboard to avoid a fixed width cap`);
+  assert.ok(html.includes('padding: 16px 20px;'), `expected AgentBridge-style body padding`);
+  assert.ok(!html.includes('max-width: 920px'), `dashboard should not cap content at the old PromptFuel width`);
+  assert.ok(!html.includes('margin: 0 auto;'), `dashboard should not center a narrow fixed-width column`);
+});
+
+test('dashboard: renders AgentBridge-style history chart and provider colors', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 400, messages: 4 },
+          last5h: { tokens: 150, messages: 2 },
+          last7d: { tokens: 700, messages: 7 },
+          all: { tokens: 1000, messages: 10 },
+        }),
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 600, messages: 6 },
+          last5h: { tokens: 300, messages: 3 },
+          last7d: { tokens: 1600, messages: 16 },
+          all: { tokens: 2000, messages: 20 },
+        }),
+      },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('class="usage-history-chart"'), `expected aggregate history chart`);
+  assert.ok(html.includes('data-history-chart="overview"'), `expected overview history chart scope`);
+  assert.ok(html.includes('data-history-window-bar="today"'), `expected history bars per dashboard window`);
+  assert.ok(html.includes('usage-history-bar-segment claude'), `expected Claude chart segment`);
+  assert.ok(html.includes('usage-history-bar-segment codex'), `expected Codex chart segment`);
+  assert.ok(html.includes('--pf-provider-claude: var(--vscode-charts-blue'), `expected AgentBridge Claude blue`);
+  assert.ok(html.includes('--pf-provider-codex: var(--vscode-charts-purple'), `expected AgentBridge Codex purple`);
+  assert.ok(html.includes('repeating-linear-gradient'), `expected Codex hatched visual treatment`);
+  assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected source/window changes to update charts`);
+});
+
+test('dashboard: renders model breakdown placeholders until backend exists', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 10, filesFound: 1 },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 20, filesFound: 1 },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+
+  assert.ok(html.includes('data-model-placeholder="overview"'), `expected overview model placeholder card`);
+  assert.ok(html.includes('class="usage-model-distribution"'), `expected model distribution surface`);
+  assert.ok(html.includes('class="usage-model-donut"'), `expected AgentBridge-style model donut`);
+  assert.ok(html.includes('model-level backend pending'), `expected backend-pending model copy`);
+  assert.ok(html.includes('Claude models pending'), `expected Claude placeholder row`);
+  assert.ok(html.includes('Codex models pending'), `expected Codex placeholder row`);
+  assert.ok(html.includes('Model-level rows are placeholders until PromptFuel stores safe per-model aggregates.'), `expected honest placeholder note`);
+  assert.ok(claudePanel.includes('data-model-placeholder="claude"'), `expected provider tab model placeholder`);
+  assert.ok(claudePanel.includes('Claude models pending'), `expected provider tab model row`);
+});
+
 test('dashboard source modes: buttons render and no-snapshot modes are disabled', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const model = buildDashboardModel(createInitialStatus(['claude']));
@@ -1024,6 +1119,7 @@ test('dashboard source modes: buttons render and no-snapshot modes are disabled'
   assert.ok(html.includes('class="snapshot-empty calm-state"'), `expected calm no-snapshots state`);
   assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots button disabled without snapshots`);
   assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined button disabled without snapshots`);
+  assert.ok(html.includes('aria-label="Snapshots only unavailable"'), `expected disabled source mode to have a visible state label`);
 });
 
 test('dashboard source modes: snapshot copy, summary, and data attributes render when snapshots exist', () => {
@@ -1051,6 +1147,225 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
   assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);
   assert.ok(html.includes('snapshot import'), `expected safe source label`);
+});
+
+test('dashboard visuals: overview provider distribution renders for selected aggregate window', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 100, messages: 1 },
+          last5h: { tokens: 80, messages: 1 },
+          last7d: { tokens: 300, messages: 3 },
+          all: { tokens: 1000, messages: 10 },
+        }),
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 200, messages: 2 },
+          last5h: { tokens: 150, messages: 2 },
+          last7d: { tokens: 600, messages: 6 },
+          all: { tokens: 2000, messages: 20 },
+        }),
+      },
+    ],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    windowTotals: {
+      today: aggregateFixture(50, 1),
+      all: aggregateFixture(500, 5),
+    },
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudeRow = openingTagByAttribute(html, 'data-provider-distribution-row', 'claude');
+  const codexRow = openingTagByAttribute(html, 'data-provider-distribution-row', 'codex');
+
+  assert.ok(html.includes('data-usage-distribution="overview"'), `expected overview usage visual hook`);
+  assert.ok(html.includes('data-distribution-card="provider-overview"'), `expected overview provider distribution card`);
+  assert.ok(html.includes('Provider distribution'), `expected provider distribution title`);
+  assert.ok(html.includes('role="meter"'), `expected distribution bars to expose accessible meter semantics`);
+  assert.ok(html.includes('data-total-label-combined-today="350 tokens"'), `expected selected combined total`);
+  assert.ok(claudeRow.includes('data-value-combined-today="150 tokens"'), `expected Claude combined Today contribution`);
+  assert.ok(codexRow.includes('data-value-combined-today="200 tokens"'), `expected Codex combined Today contribution`);
+});
+
+test('dashboard visuals: selected source mode affects historical distribution only', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const now = Date.now();
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 10,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 100, messages: 1 },
+        last5h: { tokens: 80, messages: 1 },
+        last7d: { tokens: 300, messages: 3 },
+        all: { tokens: 1000, messages: 10 },
+      }),
+    }],
+  );
+  const withSnapshots = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(400, 4),
+    windowTotals: {
+      today: aggregateFixture(40, 1),
+      all: aggregateFixture(400, 4),
+    },
+  }]));
+  const status = applyLiveQuotaResults(withSnapshots, [{
+    providerId: 'claude',
+    windows: [{ windowId: '5h', usedPercentage: 20, remainingPercentage: 80, resetsAtEpochMs: now + 1000 }],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('data-total-label-local-today="100 tokens"'), `expected Local only distribution data`);
+  assert.ok(html.includes('data-total-label-snapshots-today="40 tokens"'), `expected Snapshots only distribution data`);
+  assert.ok(html.includes('data-total-label-combined-today="140 tokens"'), `expected Combined distribution data`);
+  assert.ok(html.includes('data-live-quota-card="claude"'), `expected live quota card to remain separate`);
+  assert.ok(html.includes('80% remaining'), `expected live quota value to remain unchanged by historical visuals`);
+});
+
+test('dashboard visuals: combined mode shows local vs snapshot contribution', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{
+      providerId: 'claude',
+      status: 'ok',
+      totalTokens: 1000,
+      totalAssistantMessages: 10,
+      filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({
+        today: { tokens: 100, messages: 1 },
+        last5h: { tokens: 80, messages: 1 },
+        last7d: { tokens: 300, messages: 3 },
+        all: { tokens: 1000, messages: 10 },
+      }),
+    }],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
+    providerId: 'claude',
+    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+    aggregate: aggregateFixture(500, 5),
+    windowTotals: {
+      today: aggregateFixture(50, 1),
+      all: aggregateFixture(500, 5),
+    },
+  }]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const localRow = openingTagByAttribute(html, 'data-source-contribution-row', 'local');
+  const snapshotRow = openingTagByAttribute(html, 'data-source-contribution-row', 'snapshots');
+
+  assert.ok(html.includes('data-source-contribution="overview"'), `expected overview source contribution card`);
+  assert.ok(localRow.includes('data-value-combined-today="100 tokens"'), `expected local part of Combined mode`);
+  assert.ok(snapshotRow.includes('data-value-combined-today="50 tokens"'), `expected snapshot part of Combined mode`);
+  assert.ok(html.includes('Source contribution'), `expected source contribution title`);
+});
+
+test('dashboard visuals: no snapshot mode handles missing snapshots calmly', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+
+  assert.ok(html.includes('data-source-contribution="overview"'), `expected source contribution visual even without snapshots`);
+  assert.ok(html.includes('No snapshots found'), `expected calm no-snapshot state`);
+  assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots mode disabled`);
+  assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined mode disabled`);
+  assert.ok(html.includes('class="distribution-empty calm-state"'), `expected calm visual empty state`);
+  assert.ok(html.includes('data-total-label-local-today="0 tokens"'), `expected zero local visual total`);
+});
+
+test('dashboard visuals: provider tabs isolate provider-specific visual sections', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const localStatus = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      {
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 10,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 100, messages: 1 },
+          last5h: { tokens: 80, messages: 1 },
+          last7d: { tokens: 300, messages: 3 },
+          all: { tokens: 1000, messages: 10 },
+        }),
+      },
+      {
+        providerId: 'codex',
+        status: 'ok',
+        totalTokens: 2000,
+        totalAssistantMessages: 20,
+        filesFound: 1,
+        localHistoryWindows: localHistoryWindowsFixture({
+          today: { tokens: 200, messages: 2 },
+          last5h: { tokens: 150, messages: 2 },
+          last7d: { tokens: 600, messages: 6 },
+          all: { tokens: 2000, messages: 20 },
+        }),
+      },
+    ],
+  );
+  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([
+    {
+      providerId: 'claude',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(500, 5),
+      windowTotals: { today: aggregateFixture(50, 1), all: aggregateFixture(500, 5) },
+    },
+    {
+      providerId: 'codex',
+      generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
+      aggregate: aggregateFixture(700, 7),
+      windowTotals: { today: aggregateFixture(70, 1), all: aggregateFixture(700, 7) },
+    },
+  ]));
+  const model = buildDashboardModel(status);
+  const mockWebview = { cspSource: 'http://example.com' };
+  const html = buildDashboardHtml(mockWebview, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+  const codexPanel = dashboardTabPanel(html, 'codex');
+
+  assert.ok(claudePanel.includes('data-source-contribution="claude"'), `expected Claude-specific visual`);
+  assert.ok(claudePanel.includes('Claude source contribution'), `expected Claude visual title`);
+  assert.ok(claudePanel.includes('data-total-label-combined-today="150 tokens"'), `expected Claude combined visual total`);
+  assert.ok(!claudePanel.includes('data-source-contribution="codex"'), `Claude panel should not include Codex visual`);
+
+  assert.ok(codexPanel.includes('data-source-contribution="codex"'), `expected Codex-specific visual`);
+  assert.ok(codexPanel.includes('Codex source contribution'), `expected Codex visual title`);
+  assert.ok(codexPanel.includes('data-total-label-combined-today="270 tokens"'), `expected Codex combined visual total`);
+  assert.ok(!codexPanel.includes('data-source-contribution="claude"'), `Codex panel should not include Claude visual`);
 });
 
 test('dashboard source modes: missing snapshot windows are labeled honestly in HTML', () => {
@@ -1084,6 +1399,11 @@ test('dashboard source modes: no raw filenames, paths, internal labels, or priva
 
   assert.ok(!html.includes('.jsonl'), `should not include raw filenames`);
   assert.ok(!html.includes('C:\\'), `should not include raw paths`);
+  assert.ok(!html.includes('AgentBridge'), `should not include internal project labels`);
+  assert.ok(!html.includes('PHOENIX'), `should not include machine labels`);
+  assert.ok(!html.includes('WATCHER'), `should not include machine labels`);
+  assert.ok(!html.includes('CEREBRO'), `should not include machine labels`);
+  assert.ok(!html.includes('X-23'), `should not include machine labels`);
   assert.ok(!html.includes('raw-internal-label'), `should not include private labels`);
   assert.ok(!html.includes('secret-token'), `should not include credential-looking values`);
 });
@@ -1432,6 +1752,7 @@ test('dashboard: live provider card shows live badge and reset countdown', () =>
   assert.ok(html.includes('Codex'), `expected Codex live card`);
   assert.ok(html.includes('LIVE'), `expected live badge`);
   assert.ok(html.includes('class="card-grid live-quota-grid"'), `expected live quota cards to use stable grid class`);
+  assert.ok(html.includes('role="progressbar"'), `expected live quota bars to expose progress semantics`);
   assert.ok(html.includes('85% remaining'), `expected remaining text`);
   assert.ok(html.includes('85% remaining · resets in'), `expected remaining text with reset countdown`);
   assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
