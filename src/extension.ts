@@ -3,7 +3,11 @@ import { getConfig } from './config';
 import { getDataFolderUri } from './dataFolder';
 import { RefreshScheduler } from './core/refreshScheduler';
 import { openDashboardPanel, postDashboardRefreshIfOpen } from './panel/dashboardPanel';
-import { ensurePromptFuelSnapshotImportFolder } from './snapshots/snapshotStorage';
+import {
+  ensurePromptFuelSnapshotExportFolder,
+  ensurePromptFuelSnapshotImportFolder,
+} from './snapshots/snapshotStorage';
+import { exportPromptFuelUsageSnapshot } from './snapshots/snapshotExporter';
 
 let scheduler: RefreshScheduler | undefined;
 
@@ -52,14 +56,36 @@ export function activate(context: vscode.ExtensionContext) {
   const openSnapshotImportsFolder = vscode.commands.registerCommand(
     'promptFuel.openSnapshotImportsFolder',
     async () => {
-      const folderPath = await ensurePromptFuelSnapshotImportFolder(context);
-      const uri = vscode.Uri.file(folderPath);
-      await vscode.commands.executeCommand('revealFileInOS', uri);
-      vscode.window.showInformationMessage('Opened PromptFuel snapshot imports folder. Add PromptFuel snapshot JSON files there, then refresh.');
+      try {
+        const cfg = getConfig();
+        const folderPath = await ensurePromptFuelSnapshotImportFolder(context, cfg.snapshotImportPath);
+        const uri = vscode.Uri.file(folderPath);
+        await vscode.commands.executeCommand('revealFileInOS', uri);
+        vscode.window.showInformationMessage('Opened PromptFuel snapshot imports folder. Add aggregate snapshot JSON files there, then refresh.');
+      } catch {
+        vscode.window.showErrorMessage('PromptFuel could not open the configured snapshot imports folder.');
+      }
     },
   );
 
-  context.subscriptions.push(statusBarItem, outputChannel, openDashboard, refresh, openDataFolder, openSnapshotImportsFolder);
+  const exportUsageSnapshot = vscode.commands.registerCommand(
+    'promptFuel.exportUsageSnapshot',
+    async () => {
+      if (!scheduler) {
+        return;
+      }
+      try {
+        const cfg = getConfig();
+        const folderPath = await ensurePromptFuelSnapshotExportFolder(context, cfg.snapshotExportPath);
+        await exportPromptFuelUsageSnapshot(scheduler.status, folderPath);
+        vscode.window.showInformationMessage('Exported PromptFuel aggregate usage snapshot.');
+      } catch {
+        vscode.window.showErrorMessage('PromptFuel could not export the aggregate usage snapshot.');
+      }
+    },
+  );
+
+  context.subscriptions.push(statusBarItem, outputChannel, openDashboard, refresh, openDataFolder, openSnapshotImportsFolder, exportUsageSnapshot);
 }
 
 function onRefreshed() {

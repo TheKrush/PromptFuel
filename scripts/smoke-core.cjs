@@ -97,11 +97,16 @@ test('CONFIG_DEFAULTS.liveQuotaEnabled default is true', () => {
   assert.strictEqual(CONFIG_DEFAULTS.liveQuotaEnabled, true);
 });
 
+test('CONFIG_DEFAULTS snapshot paths default to empty strings', () => {
+  assert.strictEqual(CONFIG_DEFAULTS.snapshotImportPath, '');
+  assert.strictEqual(CONFIG_DEFAULTS.snapshotExportPath, '');
+});
+
 // === Config: interface shape ===
 
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
-  assert.deepStrictEqual(keys, ['enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes']);
+  assert.deepStrictEqual(keys, ['enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes', 'snapshotExportPath', 'snapshotImportPath']);
 });
 
 // --- manifest and docs ---
@@ -111,6 +116,10 @@ test('package.json contributes snapshot imports folder command', () => {
   assert.ok(commands.some(cmd =>
     cmd.command === 'promptFuel.openSnapshotImportsFolder'
     && cmd.title === 'PromptFuel: Open Snapshot Imports Folder',
+  ));
+  assert.ok(commands.some(cmd =>
+    cmd.command === 'promptFuel.exportUsageSnapshot'
+    && cmd.title === 'PromptFuel: Export Usage Snapshot',
   ));
 });
 
@@ -124,14 +133,22 @@ test('README documents snapshot import command and dashboard source modes', () =
   assert.ok(readme.includes('Local only'), 'expected Local only source mode in README');
   assert.ok(readme.includes('Snapshots only'), 'expected Snapshots only source mode in README');
   assert.ok(readme.includes('Combined'), 'expected Combined source mode in README');
+  assert.ok(readme.includes('AgentBridge-compatible'), 'expected compatible snapshot import docs in README');
+  assert.ok(readme.includes('promptFuel.snapshotImportPath'), 'expected snapshot import path setting in README');
+  assert.ok(readme.includes('promptFuel.snapshotExportPath'), 'expected snapshot export path setting in README');
   assert.ok(/live quota remains separate/i.test(readme), 'expected live quota separation in README');
 });
 
-test('README and command text do not include private/internal labels', () => {
+test('product command text does not include private/internal labels', () => {
   const commandText = packageJson.contributes.commands.map(cmd => `${cmd.command} ${cmd.title}`).join('\n');
-  const publicText = `${readme}\n${commandText}`;
   for (const forbidden of ['AgentBridge', 'PHOENIX', 'WATCHER', 'CEREBRO', 'X-23', 'D:\\', 'keith']) {
-    assert.ok(!publicText.includes(forbidden), `public docs/commands should not include ${forbidden}`);
+    assert.ok(!commandText.includes(forbidden), `commands should not include ${forbidden}`);
+  }
+});
+
+test('README does not include private machine labels or local paths', () => {
+  for (const forbidden of ['PHOENIX', 'WATCHER', 'CEREBRO', 'X-23', 'D:\\', 'keith']) {
+    assert.ok(!readme.includes(forbidden), `README should not include ${forbidden}`);
   }
 });
 

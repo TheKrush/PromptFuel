@@ -40,6 +40,7 @@ const expectedCommands = new Map([
   ['promptFuel.refresh', 'PromptFuel: Refresh Now'],
   ['promptFuel.openDataFolder', 'PromptFuel: Open Data Folder'],
   ['promptFuel.openSnapshotImportsFolder', 'PromptFuel: Open Snapshot Imports Folder'],
+  ['promptFuel.exportUsageSnapshot', 'PromptFuel: Export Usage Snapshot'],
 ]);
 for (const cmd of commands) {
   if (!cmd.command.startsWith('promptFuel.')) {
@@ -66,6 +67,16 @@ for (const command of expectedCommands.keys()) {
     fail(`required command "${command}" is not registered in src/extension.ts`);
   }
 }
+if (!extensionSource.includes('ensurePromptFuelSnapshotImportFolder(context, cfg.snapshotImportPath)')) {
+  fail('open snapshot imports command should use the effective configured import path');
+}
+if (!extensionSource.includes('ensurePromptFuelSnapshotExportFolder(context, cfg.snapshotExportPath)')) {
+  fail('export snapshot command should use the effective configured export path');
+}
+const refreshSchedulerSource = fs.readFileSync(path.join(REPO, 'src/core/refreshScheduler.ts'), 'utf8');
+if (!refreshSchedulerSource.includes('cfg.snapshotImportPath')) {
+  fail('snapshot refresh should read from the effective configured import path');
+}
 
 // Configuration setting key checks
 const properties = pkg.contributes?.configuration?.properties || {};
@@ -73,6 +84,8 @@ const expectedSettings = [
   'promptFuel.enabledProviders',
   'promptFuel.liveQuotaEnabled',
   'promptFuel.refreshIntervalMinutes',
+  'promptFuel.snapshotExportPath',
+  'promptFuel.snapshotImportPath',
 ];
 const actualSettings = Object.keys(properties).sort();
 if (actualSettings.join(',') !== expectedSettings.join(',')) {
@@ -91,6 +104,12 @@ if (Object.hasOwn(properties, 'promptFuel.displayMode')) {
 }
 if (properties['promptFuel.refreshIntervalMinutes']?.default !== 5) {
   fail('setting "promptFuel.refreshIntervalMinutes" default should be 5');
+}
+if (properties['promptFuel.snapshotImportPath']?.default !== '') {
+  fail('setting "promptFuel.snapshotImportPath" default should be empty');
+}
+if (properties['promptFuel.snapshotExportPath']?.default !== '') {
+  fail('setting "promptFuel.snapshotExportPath" default should be empty');
 }
 const defaultProviders = properties['promptFuel.enabledProviders']?.default;
 if (!Array.isArray(defaultProviders) || defaultProviders.join(',') !== 'claude,codex') {

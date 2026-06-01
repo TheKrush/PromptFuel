@@ -44,8 +44,15 @@ const {
 } = require(path.join(OUT, 'snapshots/snapshotReader'));
 const {
   getPromptFuelSnapshotImportFolderPath,
+  getEffectivePromptFuelSnapshotImportFolderPath,
+  getPromptFuelSnapshotExportFolderPathFromContext,
   ensurePromptFuelSnapshotImportFolder,
+  ensurePromptFuelSnapshotExportFolder,
 } = require(path.join(OUT, 'snapshots/snapshotStorage'));
+const {
+  buildPromptFuelUsageSnapshot,
+  exportPromptFuelUsageSnapshot,
+} = require(path.join(OUT, 'snapshots/snapshotExporter'));
 const {
   buildDashboardModel,
 } = require(path.join(OUT, 'panel/dashboardModel'));
@@ -408,6 +415,36 @@ async function main() {
     assert.strictEqual(fs.statSync(ensuredPath).isDirectory(), true);
   });
 
+  await test('snapshotStorage: configured import path overrides default folder', async () => {
+    const storageRoot = path.join(FIXTURE_DIR, 'snapshot-storage-config-root');
+    const configuredPath = path.join(FIXTURE_DIR, 'configured-imports');
+    assert.strictEqual(
+      getEffectivePromptFuelSnapshotImportFolderPath(storageRoot, configuredPath),
+      configuredPath,
+    );
+    const ensuredPath = await ensurePromptFuelSnapshotImportFolder(
+      { globalStorageUri: { fsPath: storageRoot } },
+      configuredPath,
+    );
+    assert.strictEqual(ensuredPath, configuredPath);
+    assert.strictEqual(fs.existsSync(ensuredPath), true);
+  });
+
+  await test('snapshotStorage: configured export path is recognized', async () => {
+    const storageRoot = path.join(FIXTURE_DIR, 'snapshot-export-config-root');
+    const configuredPath = path.join(FIXTURE_DIR, 'configured-exports');
+    assert.strictEqual(
+      getPromptFuelSnapshotExportFolderPathFromContext({ globalStorageUri: { fsPath: storageRoot } }, configuredPath),
+      configuredPath,
+    );
+    const ensuredPath = await ensurePromptFuelSnapshotExportFolder(
+      { globalStorageUri: { fsPath: storageRoot } },
+      configuredPath,
+    );
+    assert.strictEqual(ensuredPath, configuredPath);
+    assert.strictEqual(fs.existsSync(ensuredPath), true);
+  });
+
   await test('readPromptFuelSnapshots: missing storage produces empty snapshot state', async () => {
     const diagnostics = [];
     const result = await readPromptFuelSnapshots({
@@ -474,6 +511,122 @@ async function main() {
     assert.strictEqual(result.state.providers[0].modelAggregates[0].totalTokens, 1800);
     assert.strictEqual(result.state.providers[0].modelWindowTotals.today[0].totalTokens, 500);
     assert.strictEqual(result.state.providers[0].sourceLabel, 'snapshot import');
+  });
+
+  await test('readPromptFuelSnapshots: AgentBridge-compatible v2 snapshot imports aggregate and model windows', async () => {
+    const dir = path.join(snapshotDir, 'agentbridge-v2');
+    await writeFile(dir, 'REMOTE-latest.json', JSON.stringify({
+      schemaVersion: 2,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'WATCHER' },
+      providerUsage: [{
+        provider: 'codex',
+        laneLabel: 'Codex',
+        lastUpdatedEpochMs: snapshotNow,
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        historyBuckets: [{
+          dateKey: '2026-05-31',
+          inputTokens: 1000,
+          outputTokens: 500,
+          cacheCreationTokens: 200,
+          cacheReadTokens: 100,
+          turns: 3,
+          models: [{
+            model: 'gpt-5.4-codex',
+            inputTokens: 600,
+            outputTokens: 300,
+            turns: 2,
+          }],
+        }],
+      }],
+      exportMeta: {
+        extensionVersion: '0.4.29',
+        schemaVersion: 2,
+        includeAnalytics: true,
+      },
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['codex'], nowMs: snapshotNow });
+    assert.strictEqual(result.state.snapshotCount, 1);
+    assert.strictEqual(result.state.providers.length, 1);
+    const provider = result.state.providers[0];
+    assert.strictEqual(provider.providerId, 'codex');
+    assert.strictEqual(provider.aggregate.totalTokens, 1800);
+    assert.strictEqual(provider.aggregate.totalAssistantMessages, 3);
+    assert.strictEqual(provider.windowTotals.today.totalTokens, 1800);
+    assert.strictEqual(provider.windowTotals.last7d.totalTokens, 1800);
+    assert.strictEqual(provider.modelAggregates[0].modelLabel, 'gpt-5.4-codex');
+    assert.strictEqual(provider.modelAggregates[0].totalTokens, 900);
+    assert.strictEqual(provider.modelWindowTotals.today[0].totalTokens, 900);
+    assert.strictEqual(provider.sourceLabel, 'snapshot');
+  });
+
+  await test('readPromptFuelSnapshots: versioned imports accept PromptFuel v1 and compatible v2 together', async () => {
+    const dir = path.join(snapshotDir, 'multi-version');
+    await writeFile(dir, 'promptfuel-v1.json', JSON.stringify({
+      schemaVersion: PROMPTFUEL_SNAPSHOT_SCHEMA_VERSION,
+      generatedAtEpochMs: snapshotNow,
+      providers: [{
+        providerId: 'claude',
+        aggregate: {
+          totalTokens: 1200,
+          totalAssistantMessages: 2,
+        },
+      }],
+    }));
+    await writeFile(dir, 'compatible-v2.json', JSON.stringify({
+      schemaVersion: 2,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'WATCHER' },
+      providerUsage: [{
+        provider: 'codex',
+        laneLabel: 'Codex',
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        historyBuckets: [{ dateKey: '2026-05-31', inputTokens: 300, outputTokens: 200, turns: 1 }],
+      }],
+      exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude', 'codex'], nowMs: snapshotNow });
+    assert.strictEqual(result.state.snapshotCount, 2);
+    assert.strictEqual(result.state.providers.find(p => p.providerId === 'claude').aggregate.totalTokens, 1200);
+    assert.strictEqual(result.state.providers.find(p => p.providerId === 'codex').aggregate.totalTokens, 500);
+  });
+
+  await test('readPromptFuelSnapshots: AgentBridge-compatible archive months import history buckets', async () => {
+    const dir = path.join(snapshotDir, 'agentbridge-archive');
+    const archiveDir = path.join(dir, 'archive', 'WATCHER');
+    await writeFile(archiveDir, '2026-05.json', JSON.stringify({
+      schemaVersion: 2,
+      archiveSchemaVersion: 1,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'WATCHER' },
+      month: '2026-05',
+      providers: [{
+        provider: 'claude',
+        historyBuckets: [{
+          dateKey: '2026-05-30',
+          inputTokens: 700,
+          outputTokens: 300,
+          messages: 2,
+          models: [{ model: 'claude-sonnet-4-20250514', inputTokens: 700, outputTokens: 300, messages: 2 }],
+        }],
+      }],
+      exportMeta: {
+        extensionVersion: '0.4.29',
+        schemaVersion: 2,
+        includeAnalytics: true,
+        exportKind: 'historyBucketsArchive',
+        archiveSchemaVersion: 1,
+      },
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['claude'], nowMs: snapshotNow });
+    assert.strictEqual(result.state.snapshotCount, 1);
+    assert.strictEqual(result.state.providers[0].aggregate.totalTokens, 1000);
+    assert.strictEqual(result.state.providers[0].windowTotals.last7d.totalTokens, 1000);
+    assert.strictEqual(result.state.providers[0].modelAggregates[0].modelLabel, 'claude-sonnet-4-20250514');
   });
 
   await test('readPromptFuelSnapshots: malformed model aggregate entries are ignored', async () => {
@@ -615,6 +768,87 @@ async function main() {
     assert.ok(!combinedUiStrings.includes('.jsonl'), 'filenames should not be emitted');
     assert.ok(!combinedUiStrings.includes('credential-value'), 'credential-looking values should not be emitted');
     assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, undefined);
+  });
+
+  await test('snapshots: compatible machine/source labels do not appear in dashboard/status/tooltip output', async () => {
+    const dir = path.join(snapshotDir, 'label-sanitization');
+    await writeFile(dir, 'WATCHER-latest.json', JSON.stringify({
+      schemaVersion: 2,
+      generatedAtEpochMs: snapshotNow,
+      machine: { label: 'WATCHER' },
+      providerUsage: [{
+        provider: 'codex',
+        laneLabel: 'WATCHER Codex',
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        historyBuckets: [{ dateKey: '2026-05-31', inputTokens: 100, outputTokens: 50, turns: 1 }],
+      }],
+      exportMeta: { extensionVersion: '0.4.29', schemaVersion: 2, includeAnalytics: true },
+    }));
+    const result = await readPromptFuelSnapshots({ snapshotDir: dir, enabledProviderIds: ['codex'], nowMs: snapshotNow });
+    const status = applySnapshotReadResults(createInitialStatus(['codex']), result.state);
+    const dashboard = buildDashboardModel(status);
+    const combinedUiStrings = [
+      formatStatusBarText(status),
+      formatTooltip(status),
+      JSON.stringify(dashboard),
+    ].join('\n');
+    assert.ok(!combinedUiStrings.includes('WATCHER'), 'private machine label should not be emitted');
+    assert.ok(!combinedUiStrings.includes('WATCHER Codex'), 'private lane label should not be emitted');
+    assert.strictEqual(dashboard.snapshotAggregate.providers[0].sourceLabel, 'snapshot');
+  });
+
+  await test('snapshot export: writes latest compatible aggregate-only schema to configured folder', async () => {
+    const dir = path.join(snapshotDir, 'export-latest');
+    const status = applyRefreshResults(
+      createInitialStatus(['claude']),
+      [{
+        providerId: 'claude',
+        status: 'ok',
+        totalTokens: 1000,
+        totalAssistantMessages: 2,
+        filesFound: 1,
+        localHistoryWindows: {
+          today: {
+            totalInputTokens: 400,
+            totalOutputTokens: 300,
+            totalCacheCreationInputTokens: 200,
+            totalCacheReadInputTokens: 100,
+            totalTokens: 1000,
+            totalAssistantMessages: 2,
+          },
+          last5h: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheCreationInputTokens: 0, totalCacheReadInputTokens: 0, totalTokens: 0, totalAssistantMessages: 0 },
+          last7d: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheCreationInputTokens: 0, totalCacheReadInputTokens: 0, totalTokens: 0, totalAssistantMessages: 0 },
+          all: { totalInputTokens: 400, totalOutputTokens: 300, totalCacheCreationInputTokens: 200, totalCacheReadInputTokens: 100, totalTokens: 1000, totalAssistantMessages: 2 },
+        },
+        modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+        localHistoryModelWindows: {
+          today: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+          last5h: [],
+          last7d: [],
+          all: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 2 }],
+        },
+      }],
+    );
+    const filePath = await exportPromptFuelUsageSnapshot(status, dir, snapshotNow);
+    assert.strictEqual(path.dirname(filePath), dir);
+    const exported = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    assert.strictEqual(exported.schemaVersion, 2);
+    assert.strictEqual(exported.machine.label, 'promptfuel');
+    assert.strictEqual(exported.providerUsage[0].provider, 'claude');
+    assert.strictEqual(exported.providerUsage[0].historyBuckets[0].inputTokens, 400);
+    assert.strictEqual(exported.providerUsage[0].historyBuckets[0].models[0].model, 'claude-sonnet-4-20250514');
+    const serialized = JSON.stringify(exported);
+    for (const forbidden of ['.jsonl', 'D:\\', 'keith', 'PHOENIX', 'WATCHER', 'token', 'secret']) {
+      assert.ok(!serialized.includes(forbidden), `export should not include ${forbidden}`);
+    }
+  });
+
+  await test('snapshot export: builder always emits latest compatible schema version', async () => {
+    const exported = buildPromptFuelUsageSnapshot(createInitialStatus(['claude']), snapshotNow);
+    assert.strictEqual(exported.schemaVersion, 2);
+    assert.strictEqual(exported.exportMeta.schemaVersion, 2);
   });
 
   // ===== statusModel: hasAnyLoaded / hasAnyError =====

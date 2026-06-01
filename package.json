@@ -65,6 +65,10 @@
       {
         "command": "promptFuel.openSnapshotImportsFolder",
         "title": "PromptFuel: Open Snapshot Imports Folder"
+      },
+      {
+        "command": "promptFuel.exportUsageSnapshot",
+        "title": "PromptFuel: Export Usage Snapshot"
       }
     ],
     "configuration": {
@@ -96,6 +100,16 @@
           "type": "boolean",
           "default": true,
           "description": "Fetch live 5h/7d quota from provider APIs. Requires existing Claude/Codex OAuth credentials."
+        },
+        "promptFuel.snapshotImportPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional local folder for aggregate snapshot imports. Empty uses PromptFuel extension storage."
+        },
+        "promptFuel.snapshotExportPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional local folder for aggregate snapshot exports. Empty uses PromptFuel extension storage."
         }
       }
     }

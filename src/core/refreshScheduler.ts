@@ -94,7 +94,7 @@ export class RefreshScheduler {
     let snapshotState: PromptFuelSnapshotState = createEmptySnapshotState();
 
     const snapshotRead = readPromptFuelSnapshots({
-      snapshotDir: getPromptFuelSnapshotImportFolderPathFromContext(this.context),
+      snapshotDir: getPromptFuelSnapshotImportFolderPathFromContext(this.context, cfg.snapshotImportPath),
       enabledProviderIds: cfg.enabledProviders,
       diagnostics: this.diagnostics,
     }).then(result => result.state).catch(() => {

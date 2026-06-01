@@ -29,5 +29,24 @@ export function getConfig(): PromptFuelConfig {
     ? rawLiveQuota
     : CONFIG_DEFAULTS.liveQuotaEnabled;
 
-  return { enabledProviders, refreshIntervalMinutes, liveQuotaEnabled };
+  const snapshotImportPath = readConfiguredPath(
+    cfg.get<string>('snapshotImportPath', CONFIG_DEFAULTS.snapshotImportPath),
+    CONFIG_DEFAULTS.snapshotImportPath,
+  );
+  const snapshotExportPath = readConfiguredPath(
+    cfg.get<string>('snapshotExportPath', CONFIG_DEFAULTS.snapshotExportPath),
+    CONFIG_DEFAULTS.snapshotExportPath,
+  );
+
+  return {
+    enabledProviders,
+    refreshIntervalMinutes,
+    liveQuotaEnabled,
+    snapshotImportPath,
+    snapshotExportPath,
+  };
+}
+
+function readConfiguredPath(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value.trim() : fallback;
 }

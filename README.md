@@ -11,7 +11,8 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **Dashboard tabs** - the dashboard includes Overview, Claude, and Codex tabs.
 - **Local-history windows** - switch usage history between Today, Last 5h, Last 7d, and All local history.
 - **Source modes** - switch dashboard usage history between Local only, Snapshots only, and Combined when imported snapshots are available.
-- **Snapshot imports** - open an import folder and drop in aggregate-only snapshot JSON for dashboard history.
+- **Snapshot imports and exports** - open an import folder, drop in aggregate-only snapshot JSON, or export a compatible aggregate snapshot for another install.
+- **AgentBridge-compatible imports** - read compatible aggregate snapshot files directly while keeping product UI labels generic.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
 ## Privacy & Data
@@ -33,10 +34,13 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
 | `promptFuel.openSnapshotImportsFolder` | PromptFuel: Open Snapshot Imports Folder |
+| `promptFuel.exportUsageSnapshot` | PromptFuel: Export Usage Snapshot |
 
 ## Snapshot Imports
 
-Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
+Run **PromptFuel: Open Snapshot Imports Folder** from the Command Palette to open the folder where PromptFuel looks for imported usage snapshots. Add PromptFuel snapshot JSON files or AgentBridge-compatible aggregate snapshot files there, then run **PromptFuel: Refresh Now** or wait for the next refresh.
+
+By default, PromptFuel uses an import folder under its extension storage. Set `promptFuel.snapshotImportPath` to a local folder to read snapshots from that folder instead. Empty string means use the default storage folder. The command opens the effective import folder.
 
 Snapshots are aggregate-only JSON files. They should contain provider totals for `claude` and/or `codex`; do not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, machine names, or source filenames.
 
@@ -49,6 +53,8 @@ Imported snapshots appear in the dashboard source modes:
 | Combined | Local history plus imported aggregate snapshots |
 
 Live quota remains separate and is not affected by the selected dashboard source mode.
+
+PromptFuel imports supported versioned snapshot shapes automatically. It preserves existing PromptFuel schema v1 aggregate snapshots and also accepts the current AgentBridge-compatible aggregate schema, including safe daily history buckets and model breakdowns when present. Snapshot source and machine labels are normalized to generic public labels in the product UI.
 
 Minimal generic snapshot example:
 
@@ -87,6 +93,12 @@ Minimal generic snapshot example:
 
 Malformed snapshot files, unsupported schema versions, unknown providers, and private source labels are ignored. Snapshot recent-window totals are used only when the snapshot provides them; otherwise those recent windows contribute 0 while All local history uses the snapshot aggregate total.
 
+## Snapshot Exports
+
+Run **PromptFuel: Export Usage Snapshot** to write a latest-version aggregate snapshot. By default, PromptFuel writes to its default snapshot folder. Set `promptFuel.snapshotExportPath` to a local folder to write exports there instead. Empty string means use the default storage folder.
+
+Exported snapshots are aggregate-only and use the latest compatible snapshot schema. They do not include prompts, responses, transcripts, raw provider payloads, filenames, local paths, usernames, machine names, secrets, auth tokens, or API keys.
+
 ## Current Limitations
 
 - Live quota can be unavailable when provider quota data, provider auth state, or provider endpoints are unavailable.
@@ -102,6 +114,8 @@ Malformed snapshot files, unsupported schema versions, unknown providers, and pr
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
 | `promptFuel.refreshIntervalMinutes` | Auto-refresh interval (0 to disable) | `5` |
 | `promptFuel.liveQuotaEnabled` | Attempt live quota from provider APIs; set to `false` to opt out | `true` |
+| `promptFuel.snapshotImportPath` | Optional local folder for aggregate snapshot imports; empty uses PromptFuel extension storage | `""` |
+| `promptFuel.snapshotExportPath` | Optional local folder for aggregate snapshot exports; empty uses PromptFuel extension storage | `""` |
 
 ## Development
 
