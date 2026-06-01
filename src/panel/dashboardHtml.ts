@@ -559,7 +559,7 @@ function buildHistoryRangeView(
       totalAssistantMessages,
       totalCacheTokens,
       providerSegments,
-      modelAggregates: sortDashboardModelRows(filterDominatedUnknownModels(binModelRows)),
+      modelAggregates: sortDashboardModelRows(binModelRows),
     };
   });
   const totalTokens = binned.reduce((sum, point) => sum + point.totalTokens, 0);
@@ -777,16 +777,17 @@ function renderHistoryModelSegments(
   models: ReadonlyArray<DashboardModelUsageAggregate>,
   totalTokens: number,
 ): string {
-  if (totalTokens <= 0 || !models || models.length === 0) {
-    return '';
+  const activeModels = (models ?? []).filter(m => m.totalTokens > 0).slice(0, 8);
+  if (activeModels.length === 0) {
+    return totalTokens > 0
+      ? `<div class="usage-history-bar-segment" style="height: 100%; background: rgba(127,127,127,0.28)"></div>`
+      : '';
   }
-  return models
-    .filter(model => model.totalTokens > 0)
-    .slice(0, 8)
-    .map(model => {
-      const height = distributionWidth(model.totalTokens, totalTokens);
-      return `<div class="usage-history-bar-segment" style="height: ${esc(height)}%; background: ${modelColorVar(model.modelLabel)}"></div>`;
-    }).join('');
+  const modelTotal = activeModels.reduce((sum, m) => sum + m.totalTokens, 0);
+  return activeModels.map(model => {
+    const pct = (model.totalTokens / modelTotal) * 100;
+    return `<div class="usage-history-bar-segment" style="height: ${pct.toFixed(1)}%; background: ${modelColorVar(model.modelLabel)}"></div>`;
+  }).join('');
 }
 
 function formatModelProviderLabel(row: DashboardModelUsageAggregate): string {
@@ -1012,7 +1013,7 @@ function renderModelBreakdownDistribution(
         <div class="usage-model-donut" data-model-donut="${esc(scope)}" style="background: ${esc(modelDonutGradient(selectedRows, selectedTotal.totalTokens))}">
           <div class="usage-model-donut-core">
             <span class="usage-model-donut-total">${esc(formatTokenCount(selectedTotal.totalTokens))}</span>
-            <span class="usage-model-donut-label">${esc(formatMessageCount(selectedTotal.totalAssistantMessages))}</span>
+            <span class="usage-model-donut-label">TOTAL</span>
           </div>
         </div>
         <div class="usage-model-legend">
@@ -1825,7 +1826,7 @@ export function buildDashboardHtml(
   .usage-history-bar-fill {
     width: 100%;
     min-height: 2px;
-    background: rgba(127,127,127,0.22);
+    background: transparent;
     border-radius: 3px 3px 0 0;
     display: flex;
     flex-direction: column-reverse;
@@ -1911,8 +1912,8 @@ export function buildDashboardHtml(
     padding-top: 12px;
   }
   .usage-model-donut {
-    width: 112px;
-    height: 112px;
+    width: 160px;
+    height: 160px;
     border-radius: 50%;
     position: relative;
     flex: 0 0 auto;
@@ -1920,7 +1921,7 @@ export function buildDashboardHtml(
   }
   .usage-model-donut-core {
     position: absolute;
-    inset: 28px;
+    inset: 36px;
     border-radius: 50%;
     background: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
     display: flex;
@@ -1932,12 +1933,16 @@ export function buildDashboardHtml(
   }
   .usage-model-donut-total {
     font-weight: 700;
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 1.2;
   }
   .usage-model-donut-label {
     color: var(--vscode-descriptionForeground, #999999);
-    font-size: 9px;
+    font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
   }
   .usage-model-legend {
     flex: 1 1 auto;
@@ -2614,14 +2619,10 @@ export function buildDashboardHtml(
         var totalMessages = card.getAttribute('data-model-total-messages-' + key);
         var gradient = card.getAttribute('data-model-gradient-' + key);
         var totalEl = card.querySelector('.usage-model-donut-total');
-        var totalMessagesEl = card.querySelector('.usage-model-donut-label');
         var donut = card.querySelector('.usage-model-donut');
         card.classList.toggle('is-empty', isEmpty);
         if (totalEl && totalLabel !== null) {
           totalEl.textContent = totalLabel;
-        }
-        if (totalMessagesEl && totalMessages !== null) {
-          totalMessagesEl.textContent = totalMessages;
         }
         if (donut && gradient !== null) {
           donut.style.background = gradient;
