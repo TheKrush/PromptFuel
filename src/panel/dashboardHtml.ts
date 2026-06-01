@@ -791,14 +791,11 @@ function renderHistoryModelSegments(
 }
 
 function formatModelProviderLabel(row: DashboardModelUsageAggregate): string {
-  const sourceSummary = formatSnapshotSourceLabels(row.sourceLabels, 2);
-  if (!sourceSummary) {
-    return row.providerLabel;
-  }
-  if (row.sourceMode === 'combined') {
-    return `${row.providerLabel} + ${row.providerLabel} (${sourceSummary})`;
-  }
-  return `${row.providerLabel} (${sourceSummary})`;
+  return row.providerLabel;
+}
+
+function formatTokenCountShort(tokens: number): string {
+  return formatTokenCount(tokens).replace(/ tokens$/, '');
 }
 
 function formatModelRowTitle(base: string, row: DashboardModelUsageAggregate): string {
@@ -1012,7 +1009,7 @@ function renderModelBreakdownDistribution(
       <div class="usage-model-distribution-body">
         <div class="usage-model-donut" data-model-donut="${esc(scope)}" style="background: ${esc(modelDonutGradient(selectedRows, selectedTotal.totalTokens))}">
           <div class="usage-model-donut-core">
-            <span class="usage-model-donut-total">${esc(formatTokenCount(selectedTotal.totalTokens))}</span>
+            <span class="usage-model-donut-total">${esc(formatTokenCountShort(selectedTotal.totalTokens))}</span>
             <span class="usage-model-donut-label">TOTAL</span>
           </div>
         </div>
@@ -2622,7 +2619,7 @@ export function buildDashboardHtml(
         var donut = card.querySelector('.usage-model-donut');
         card.classList.toggle('is-empty', isEmpty);
         if (totalEl && totalLabel !== null) {
-          totalEl.textContent = totalLabel;
+          totalEl.textContent = totalLabel.replace(' tokens', '');
         }
         if (donut && gradient !== null) {
           donut.style.background = gradient;

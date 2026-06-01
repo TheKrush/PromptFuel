@@ -1348,8 +1348,8 @@ test('dashboard source modes: safe snapshot source labels appear in summary, con
   const html = buildDashboardHtml(mockWebview, model);
 
   assert.ok(html.includes('Snapshot sources'), `expected snapshot source summary label`);
-  assert.ok(html.includes('WATCHER'), `expected safe source label in dashboard html`);
-  assert.ok(html.includes('Codex + Codex (WATCHER)'), `expected combined model row source context`);
+  assert.ok(html.includes('WATCHER'), `expected safe source label in dashboard footer/summary`);
+  assert.ok(!html.includes('Codex + Codex (WATCHER)'), `machine source labels should not appear in model provider column`);
   assert.ok(!html.includes('Imported snapshots (WATCHER)'), `source contribution card with snapshot label should not render`);
 });
 
