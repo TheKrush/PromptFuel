@@ -2,6 +2,7 @@ import { PromptFuelStatus } from '../core/statusModel';
 import { ProviderQuotaState } from '../core/quotaTypes';
 import { KNOWN_PROVIDERS, PROVIDER_LABELS, isKnownProvider, type ProviderId } from '../core/providers';
 import type { LiveQuotaFreshness } from '../core/liveQuotaTypes';
+import { CONFIG_DEFAULTS, type DashboardUsageSource } from '../core/configDefaults';
 import {
   sanitizeSnapshotSourceLabel,
   uniqueSnapshotSourceLabels,
@@ -25,7 +26,7 @@ import {
 } from '../core/modelUsage';
 import type { PromptFuelSnapshotProviderAggregate } from '../core/snapshotTypes';
 
-export type DashboardSourceMode = 'local' | 'snapshots' | 'combined';
+export type DashboardSourceMode = DashboardUsageSource;
 
 export const DASHBOARD_SOURCE_MODES: ReadonlyArray<DashboardSourceMode> = [
   'local',
@@ -44,6 +45,8 @@ export interface DashboardLocalHistoryWindow {
   label: string;
   totalTokens: number;
   totalAssistantMessages: number;
+  totalCacheCreationInputTokens?: number;
+  totalCacheReadInputTokens?: number;
 }
 
 export interface DashboardHistoryProviderSegment {
@@ -58,7 +61,9 @@ export interface DashboardHistoryPoint {
   label: string;
   totalTokens: number;
   totalAssistantMessages: number;
+  totalCacheTokens?: number;
   providerSegments: DashboardHistoryProviderSegment[];
+  modelAggregates: DashboardModelUsageAggregate[];
 }
 
 export interface DashboardModelUsageAggregate {
@@ -174,7 +179,10 @@ export interface DashboardModel {
   defaultSourceMode: DashboardSourceMode;
 }
 
-export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
+export function buildDashboardModel(
+  status: PromptFuelStatus,
+  dashboardUsageSource: DashboardSourceMode = CONFIG_DEFAULTS.dashboardUsageSource,
+): DashboardModel {
   let totalTokens = 0;
   let totalAssistantMessages = 0;
   const combinedWindows = createEmptyLocalHistoryWindowTotals();
@@ -188,6 +196,7 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
       tokens,
       messages,
     );
+    const localHistoryModelWindows = cloneFullModelWindowMap(state.localHistoryModelWindows, state.modelAggregates);
 
     if (state.status === 'loaded') {
       totalTokens += tokens;
@@ -204,17 +213,22 @@ export function buildDashboardModel(status: PromptFuelStatus): DashboardModel {
       parseErrors: errors,
       localHistoryWindows: providerWindows,
       historyPoints: isKnownProvider(state.providerId)
-        ? buildLocalHistoryPoints(state.providerId, PROVIDER_LABELS[state.providerId], providerWindows)
+        ? buildLocalHistoryPoints(
+          state.providerId,
+          PROVIDER_LABELS[state.providerId],
+          providerWindows,
+          toDashboardModelWindows('local', localHistoryModelWindows),
+        )
         : [],
       modelAggregates: cloneModelUsageAggregates(state.modelAggregates) ?? [],
-      localHistoryModelWindows: cloneFullModelWindowMap(state.localHistoryModelWindows, state.modelAggregates),
+      localHistoryModelWindows,
     };
   });
 
   const snapshotAggregate = buildDashboardSnapshotAggregate(status.snapshotState.providers, status.snapshotState.snapshotCount, status.snapshotLastReadMs);
   const snapshotsAvailable = snapshotAggregate.snapshotCount > 0 && snapshotAggregate.providers.length > 0;
   const sourceModes = buildSourceModeOptions(snapshotsAvailable);
-  const defaultSourceMode: DashboardSourceMode = snapshotsAvailable ? 'combined' : 'local';
+  const defaultSourceMode = normalizeDashboardSourceMode(dashboardUsageSource);
   const sourceModeTotals = buildSourceModeTotals(cards, snapshotAggregate, combinedWindows);
 
   const liveQuotaCards: DashboardLiveQuotaCard[] = status.liveQuotaStates.map(s => ({
@@ -261,6 +275,8 @@ function buildLocalHistoryWindowCards(
         label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
         totalTokens: aggregate.totalTokens,
         totalAssistantMessages: aggregate.totalAssistantMessages,
+        totalCacheCreationInputTokens: aggregate.totalCacheCreationInputTokens,
+        totalCacheReadInputTokens: aggregate.totalCacheReadInputTokens,
       };
     }
 
@@ -289,6 +305,8 @@ function mergeDashboardWindowTotals(
   for (const window of windows) {
     totals[window.windowId].totalTokens += window.totalTokens;
     totals[window.windowId].totalAssistantMessages += window.totalAssistantMessages;
+    totals[window.windowId].totalCacheCreationInputTokens += window.totalCacheCreationInputTokens ?? 0;
+    totals[window.windowId].totalCacheReadInputTokens += window.totalCacheReadInputTokens ?? 0;
   }
 }
 
@@ -335,6 +353,10 @@ function buildDashboardSnapshotProviderCard(
   };
 }
 
+function normalizeDashboardSourceMode(value: DashboardSourceMode): DashboardSourceMode {
+  return DASHBOARD_SOURCE_MODES.includes(value) ? value : CONFIG_DEFAULTS.dashboardUsageSource;
+}
+
 function safeSnapshotSourceLabel(value: string | undefined): string | undefined {
   return sanitizeSnapshotSourceLabel(value);
 }
@@ -358,37 +380,57 @@ function buildLocalHistoryPoints(
   providerId: ProviderId,
   label: string,
   windows: DashboardLocalHistoryWindow[],
+  modelWindows: DashboardModelUsageWindowMap,
 ): DashboardHistoryPoint[] {
   const today = windows.find(window => window.windowId === 'today');
   if (!today || (today.totalTokens <= 0 && today.totalAssistantMessages <= 0)) {
     return [];
   }
   const dateKey = localDateKey(Date.now());
-  return [buildHistoryPoint(dateKey, providerId, label, today.totalTokens, today.totalAssistantMessages)];
+  const cacheTokens = (today.totalCacheCreationInputTokens ?? 0) + (today.totalCacheReadInputTokens ?? 0);
+  return [buildHistoryPoint(
+    dateKey,
+    providerId,
+    label,
+    today.totalTokens,
+    today.totalAssistantMessages,
+    modelWindows.today,
+    cacheTokens > 0 ? cacheTokens : undefined,
+  )];
 }
 
 function buildSnapshotHistoryPoints(
   provider: PromptFuelSnapshotProviderAggregate,
 ): DashboardHistoryPoint[] {
   const label = PROVIDER_LABELS[provider.providerId];
+  const sourceLabel = safeSnapshotSourceLabel(provider.sourceLabel);
+  const laneLabel = sourceLabel ? `${label} (${sourceLabel})` : label;
   if (provider.historyBuckets && provider.historyBuckets.length > 0) {
-    return provider.historyBuckets.map(bucket => buildHistoryPoint(
-      bucket.dateKey,
-      provider.providerId,
-      label,
-      bucket.aggregate.totalTokens,
-      bucket.aggregate.totalAssistantMessages,
-    ));
+    return provider.historyBuckets.map(bucket => {
+      const bucketCache = (bucket.aggregate.totalCacheCreationInputTokens ?? 0) + (bucket.aggregate.totalCacheReadInputTokens ?? 0);
+      return buildHistoryPoint(
+        bucket.dateKey,
+        provider.providerId,
+        laneLabel,
+        bucket.aggregate.totalTokens,
+        bucket.aggregate.totalAssistantMessages,
+        toDashboardModelRows('snapshots', 'all', bucket.modelAggregates),
+        bucketCache > 0 ? bucketCache : undefined,
+      );
+    });
   }
 
   const today = provider.windowTotals?.today;
   if (today && (today.totalTokens > 0 || today.totalAssistantMessages > 0)) {
+    const todayCache = (today.totalCacheCreationInputTokens ?? 0) + (today.totalCacheReadInputTokens ?? 0);
     return [buildHistoryPoint(
       localDateKey(provider.generatedAtEpochMs),
       provider.providerId,
-      label,
+      laneLabel,
       today.totalTokens,
       today.totalAssistantMessages,
+      toDashboardModelRows('snapshots', 'today', provider.modelWindowTotals?.today),
+      todayCache > 0 ? todayCache : undefined,
     )];
   }
 
@@ -401,18 +443,22 @@ function buildHistoryPoint(
   label: string,
   totalTokens: number,
   totalAssistantMessages: number,
+  modelAggregates?: DashboardModelUsageAggregate[],
+  totalCacheTokens?: number,
 ): DashboardHistoryPoint {
   return {
     dateKey,
     label: dateKey.slice(5),
     totalTokens,
     totalAssistantMessages,
+    ...(totalCacheTokens !== undefined ? { totalCacheTokens } : {}),
     providerSegments: [{
       providerId,
       label,
       totalTokens,
       totalAssistantMessages,
     }],
+    modelAggregates: cloneDashboardModelUsageAggregates(modelAggregates),
   };
 }
 
@@ -430,12 +476,15 @@ function combineHistoryPoints(points: DashboardHistoryPoint[]): DashboardHistory
         totalTokens: point.totalTokens,
         totalAssistantMessages: point.totalAssistantMessages,
         providerSegments: point.providerSegments.map(segment => ({ ...segment })),
+        modelAggregates: cloneDashboardModelUsageAggregates(point.modelAggregates),
       });
       continue;
     }
     existing.totalTokens += point.totalTokens;
     existing.totalAssistantMessages += point.totalAssistantMessages;
+    existing.totalCacheTokens = (existing.totalCacheTokens ?? 0) + (point.totalCacheTokens ?? 0);
     mergeHistorySegments(existing.providerSegments, point.providerSegments);
+    mergeDashboardModelRows(existing.modelAggregates, point.modelAggregates);
   }
   return Array.from(byDate.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 }
@@ -445,13 +494,44 @@ function mergeHistorySegments(
   source: DashboardHistoryProviderSegment[],
 ): void {
   for (const segment of source) {
-    const existing = target.find(candidate => candidate.providerId === segment.providerId);
+    const existing = target.find(candidate =>
+      candidate.providerId === segment.providerId &&
+      candidate.label === segment.label
+    );
     if (existing) {
       existing.totalTokens += segment.totalTokens;
       existing.totalAssistantMessages += segment.totalAssistantMessages;
     } else {
       target.push({ ...segment });
     }
+  }
+}
+
+function cloneDashboardModelUsageAggregates(
+  rows: ReadonlyArray<DashboardModelUsageAggregate> | undefined,
+): DashboardModelUsageAggregate[] {
+  return (rows ?? []).map(row => ({ ...row, sourceLabels: row.sourceLabels.slice() }));
+}
+
+function mergeDashboardModelRows(
+  target: DashboardModelUsageAggregate[],
+  source: ReadonlyArray<DashboardModelUsageAggregate> | undefined,
+): void {
+  for (const row of source ?? []) {
+    const existing = target.find(candidate =>
+      candidate.providerId === row.providerId &&
+      candidate.modelLabel.toLowerCase() === row.modelLabel.toLowerCase()
+    );
+    if (existing) {
+      existing.totalTokens += row.totalTokens;
+      existing.totalAssistantMessages += row.totalAssistantMessages;
+      existing.sourceLabels = uniqueSnapshotSourceLabels([
+        ...existing.sourceLabels,
+        ...row.sourceLabels,
+      ]);
+      continue;
+    }
+    target.push({ ...row, sourceLabels: row.sourceLabels.slice() });
   }
 }
 
@@ -514,6 +594,15 @@ function toDashboardModelUsage(
   };
 }
 
+function toDashboardModelRows(
+  sourceMode: DashboardSourceMode,
+  windowId: LocalHistoryWindowId,
+  models: ReadonlyArray<ModelUsageAggregate> | undefined,
+): DashboardModelUsageAggregate[] {
+  return sortModelUsageAggregates(models ?? [])
+    .map(model => toDashboardModelUsage(sourceMode, windowId, model));
+}
+
 function getProvidedSnapshotWindowIds(
   windows: Partial<LocalHistoryWindowAggregateMap> | undefined,
 ): LocalHistoryWindowId[] {
@@ -533,7 +622,7 @@ function buildSourceModeOptions(snapshotsAvailable: boolean): DashboardSourceMod
   return DASHBOARD_SOURCE_MODES.map(sourceMode => ({
     sourceMode,
     label: DASHBOARD_SOURCE_MODE_LABELS[sourceMode],
-    available: sourceMode === 'local' || snapshotsAvailable,
+    available: sourceMode !== 'snapshots' || snapshotsAvailable,
   }));
 }
 
@@ -733,6 +822,8 @@ function combineWindowCards(
       label: LOCAL_HISTORY_WINDOW_LABELS[windowId],
       totalTokens: (leftWindow?.totalTokens ?? 0) + (rightWindow?.totalTokens ?? 0),
       totalAssistantMessages: (leftWindow?.totalAssistantMessages ?? 0) + (rightWindow?.totalAssistantMessages ?? 0),
+      totalCacheCreationInputTokens: (leftWindow?.totalCacheCreationInputTokens ?? 0) + (rightWindow?.totalCacheCreationInputTokens ?? 0),
+      totalCacheReadInputTokens: (leftWindow?.totalCacheReadInputTokens ?? 0) + (rightWindow?.totalCacheReadInputTokens ?? 0),
     };
   });
 }

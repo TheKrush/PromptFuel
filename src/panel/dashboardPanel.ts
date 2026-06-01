@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getConfig } from '../config';
 import { PromptFuelStatus } from '../core/statusModel';
 import { buildDashboardModel } from './dashboardModel';
 import { buildDashboardHtml } from './dashboardHtml';
@@ -53,7 +54,7 @@ function updatePanel(
   webviewPanel: vscode.WebviewPanel,
   status: PromptFuelStatus,
 ): void {
-  const model = buildDashboardModel(status);
+  const model = buildDashboardModel(status, getConfig().dashboardUsageSource);
   webviewPanel.webview.html = buildDashboardHtml(webviewPanel.webview, model);
 }
 

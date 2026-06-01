@@ -101,6 +101,16 @@
           "default": true,
           "description": "Fetch live 5h/7d quota from provider APIs. Requires existing Claude/Codex OAuth credentials."
         },
+        "promptFuel.dashboardUsageSource": {
+          "type": "string",
+          "enum": [
+            "combined",
+            "local",
+            "snapshots"
+          ],
+          "default": "combined",
+          "description": "Data source used by dashboard usage sections. Live quota remains independent."
+        },
         "promptFuel.snapshotImportPath": {
           "type": "string",
           "default": "",

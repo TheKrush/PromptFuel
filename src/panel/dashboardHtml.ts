@@ -414,9 +414,11 @@ interface DashboardHistoryRangeView {
   label: string;
   granularityLabel: string;
   points: DashboardHistoryPoint[];
+  modelRows: DashboardModelUsageAggregate[];
   maxTotalTokens: number;
   totalTokens: number;
   totalAssistantMessages: number;
+  totalCacheTokens: number;
   activeBinCount: number;
   unavailableReason?: string;
 }
@@ -516,7 +518,10 @@ function mergeHistoryProviderSegments(
   source: DashboardHistoryProviderSegment[],
 ): void {
   for (const segment of source) {
-    const existing = target.find(candidate => candidate.providerId === segment.providerId);
+    const existing = target.find(candidate =>
+      candidate.providerId === segment.providerId &&
+      candidate.label === segment.label
+    );
     if (existing) {
       existing.totalTokens += segment.totalTokens;
       existing.totalAssistantMessages += segment.totalAssistantMessages;
@@ -531,26 +536,33 @@ function buildHistoryRangeView(
   rangeKey: DashboardHistoryRangeKey,
 ): DashboardHistoryRangeView {
   const bins = buildHistoryBins(rangeKey);
+  const modelRows: DashboardModelUsageAggregate[] = [];
   const binned = bins.map(bin => {
     const matching = points.filter(point => pointInBin(point, bin.start, bin.end));
     const providerSegments: DashboardHistoryProviderSegment[] = [];
     let totalTokens = 0;
     let totalAssistantMessages = 0;
+    let totalCacheTokens = 0;
     for (const point of matching) {
       totalTokens += point.totalTokens;
       totalAssistantMessages += point.totalAssistantMessages;
+      totalCacheTokens += point.totalCacheTokens ?? 0;
       mergeHistoryProviderSegments(providerSegments, point.providerSegments);
+      mergeDashboardModelRows(modelRows, point.modelAggregates);
     }
     return {
       dateKey: formatDateKey(bin.start),
       label: bin.label,
       totalTokens,
       totalAssistantMessages,
+      totalCacheTokens,
       providerSegments,
+      modelAggregates: [],
     };
   });
   const totalTokens = binned.reduce((sum, point) => sum + point.totalTokens, 0);
   const totalAssistantMessages = binned.reduce((sum, point) => sum + point.totalAssistantMessages, 0);
+  const totalCacheTokens = binned.reduce((sum, point) => sum + (point.totalCacheTokens ?? 0), 0);
   const activeBinCount = binned.filter(point => point.totalTokens > 0 || point.totalAssistantMessages > 0).length;
 
   return {
@@ -558,12 +570,72 @@ function buildHistoryRangeView(
     label: historyRangeLabel(rangeKey),
     granularityLabel: historyRangeMeta(rangeKey),
     points: binned,
+    modelRows: sortDashboardModelRows(filterDominatedUnknownModels(modelRows)),
     maxTotalTokens: binned.reduce((max, point) => Math.max(max, point.totalTokens), 0),
     totalTokens,
     totalAssistantMessages,
+    totalCacheTokens,
     activeBinCount,
     unavailableReason: activeBinCount > 0 ? undefined : `No usage records in the ${historyRangeLabel(rangeKey)} range.`,
   };
+}
+
+function mergeDashboardModelRows(
+  target: DashboardModelUsageAggregate[],
+  source: ReadonlyArray<DashboardModelUsageAggregate> | undefined,
+): void {
+  for (const row of source ?? []) {
+    const existing = target.find(candidate =>
+      candidate.providerId === row.providerId &&
+      candidate.modelLabel.toLowerCase() === row.modelLabel.toLowerCase()
+    );
+    if (existing) {
+      existing.totalTokens += row.totalTokens;
+      existing.totalAssistantMessages += row.totalAssistantMessages;
+      existing.sourceLabels = uniqueLabels([
+        ...existing.sourceLabels,
+        ...row.sourceLabels,
+      ]);
+      continue;
+    }
+    target.push({ ...row, sourceLabels: row.sourceLabels.slice() });
+  }
+}
+
+function sortDashboardModelRows(rows: DashboardModelUsageAggregate[]): DashboardModelUsageAggregate[] {
+  return rows.slice().sort((a, b) => {
+    const tokenDelta = b.totalTokens - a.totalTokens;
+    if (tokenDelta !== 0) {
+      return tokenDelta;
+    }
+    const providerDelta = a.providerLabel.localeCompare(b.providerLabel);
+    return providerDelta !== 0 ? providerDelta : a.modelLabel.localeCompare(b.modelLabel);
+  });
+}
+
+function filterDominatedUnknownModels(rows: DashboardModelUsageAggregate[]): DashboardModelUsageAggregate[] {
+  const hasNamedModel = rows.some(row => row.modelLabel.toLowerCase() !== 'unknown model');
+  return hasNamedModel
+    ? rows.filter(row => row.modelLabel.toLowerCase() !== 'unknown model')
+    : rows;
+}
+
+function uniqueLabels(labels: ReadonlyArray<string>): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const label of labels) {
+    const trimmed = label.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(trimmed);
+  }
+  return unique;
 }
 
 function historyPointsForSource(
@@ -583,6 +655,14 @@ function buildHistoryRangeViews(
   return DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => buildHistoryRangeView(points, rangeKey));
 }
 
+function historyRangeViewForSource(
+  sourceTotals: DashboardSourceModeTotals,
+  rangeKey: DashboardHistoryRangeKey,
+  providerId?: string,
+): DashboardHistoryRangeView {
+  return buildHistoryRangeView(historyPointsForSource(sourceTotals, providerId), rangeKey);
+}
+
 function historyChartAttributes(
   model: DashboardModel,
   providerId?: string,
@@ -594,6 +674,7 @@ function historyChartAttributes(
         `data-history-source-label-${esc(sourceTotals.sourceMode)}="${esc(sourceTotals.label)}"`,
         `data-history-total-label-${esc(key)}="${esc(formatTokenCount(view.totalTokens))}"`,
         `data-history-selected-messages-${esc(key)}="${esc(formatMessageCount(view.totalAssistantMessages))}"`,
+        `data-history-cache-label-${esc(key)}="${view.totalCacheTokens > 0 ? esc(formatTokenCount(view.totalCacheTokens)) : ''}"`,
         `data-history-range-meta-${esc(key)}="${esc(view.granularityLabel)}"`,
         `data-history-empty-${esc(key)}="${view.totalTokens <= 0 && view.totalAssistantMessages <= 0 ? 'true' : 'false'}"`,
       ].join(' ');
@@ -623,12 +704,25 @@ function renderUsageHistoryChart(
       const bars = view.points.map(point => {
         const height = historyWindowBarHeight(point.totalTokens, view.maxTotalTokens);
         const isEmpty = point.totalTokens <= 0 && point.totalAssistantMessages <= 0;
-        const providerSegments = renderHistoryProviderSegments(point.providerSegments, point.totalTokens);
+        const providerSegmentsHtml = renderHistoryProviderSegments(point.providerSegments, point.totalTokens);
+        const tipData = esc(JSON.stringify({
+          kind: 'history',
+          title: point.label,
+          tokens: formatTokenCount(point.totalTokens),
+          messages: formatMessageCount(point.totalAssistantMessages),
+          cache: point.totalCacheTokens ? formatTokenCount(point.totalCacheTokens) : '',
+          source: groupKey.split('-')[0],
+          segments: point.providerSegments.filter(s => s.totalTokens > 0).map(s => ({
+            label: s.label,
+            provider: s.providerId,
+            tokens: formatTokenCount(s.totalTokens),
+          })),
+        }));
         return `
       <div class="usage-history-bin">
-        <div class="usage-history-bar${isEmpty ? ' empty' : ''}" data-history-bin-bar="${esc(point.dateKey)}" role="meter" aria-label="${esc(`${point.label} usage history`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(height)}" title="${esc(`${point.label}: ${formatTokenCount(point.totalTokens)} - ${formatMessageCount(point.totalAssistantMessages)}`)}">
+        <div class="usage-history-bar${isEmpty ? ' empty' : ''}" data-history-bin-bar="${esc(point.dateKey)}" tabindex="0" data-pf-tip="${tipData}" role="meter" aria-label="${esc(`${point.label}: ${formatTokenCount(point.totalTokens)}, ${formatMessageCount(point.totalAssistantMessages)}`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(height)}">
           <div class="usage-history-bar-fill stacked" style="height: ${esc(height)}%">
-            ${providerSegments}
+            ${providerSegmentsHtml}
           </div>
         </div>
         <div class="usage-history-bin-label">${esc(point.label)}</div>
@@ -648,6 +742,7 @@ function renderUsageHistoryChart(
           <div class="history-summary-card"><span>History</span><strong>${esc(String(view.activeBinCount))} active ${view.key === '1Y' ? 'weeks' : view.key === 'ALL' ? 'months' : 'days'}</strong></div>
           <div class="history-summary-card"><span>Tokens</span><strong>${esc(formatTokenCount(view.totalTokens))}</strong></div>
           <div class="history-summary-card"><span>Activity</span><strong>${esc(formatMessageCount(view.totalAssistantMessages))}</strong></div>
+          ${view.totalCacheTokens > 0 ? `<div class="history-summary-card"><span>Cache</span><strong>${esc(formatTokenCount(view.totalCacheTokens))}</strong></div>` : ''}
         </div>
       </div>`;
     })).join('\n');
@@ -691,224 +786,6 @@ function renderHistoryProviderSegments(
     }).join('');
 }
 
-function distributionTotalAttributes(
-  totals: DashboardSourceModeTotals[],
-  providerId?: string,
-): string {
-  return totals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const selectedWindow = providerId
-      ? findLocalHistoryWindow(findSourceProvider(sourceTotals, providerId).windows, window.windowId)
-      : window;
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
-    const isEmpty = selectedWindow.totalTokens <= 0 && selectedWindow.totalAssistantMessages <= 0;
-    return [
-      `data-total-label-${esc(key)}="${esc(formatTokenCount(selectedWindow.totalTokens))}"`,
-      `data-total-messages-${esc(key)}="${esc(formatMessageCount(selectedWindow.totalAssistantMessages))}"`,
-      `data-empty-${esc(key)}="${isEmpty ? 'true' : 'false'}"`,
-    ].join(' ');
-  })).join(' ');
-}
-
-function providerDistributionRowAttributes(
-  totals: DashboardSourceModeTotals[],
-  providerId: string,
-): string {
-  return totals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const totalWindow = window;
-    const providerWindow = findLocalHistoryWindow(findSourceProvider(sourceTotals, providerId).windows, window.windowId);
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
-    const percent = formatDistributionPercent(providerWindow.totalTokens, totalWindow.totalTokens);
-    return [
-      `data-value-${esc(key)}="${esc(formatTokenCount(providerWindow.totalTokens))}"`,
-      `data-messages-${esc(key)}="${esc(formatMessageCount(providerWindow.totalAssistantMessages))}"`,
-      `data-percent-${esc(key)}="${esc(percent)}"`,
-      `data-width-${esc(key)}="${esc(distributionWidth(providerWindow.totalTokens, totalWindow.totalTokens))}"`,
-    ].join(' ');
-  })).join(' ');
-}
-
-function renderProviderDistributionVisual(
-  model: DashboardModel,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-): string {
-  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const selectedWindow = findLocalHistoryWindow(selectedSource.windows, defaultWindowId);
-  const rows = selectedSource.providers.map(provider => {
-    const providerWindow = findLocalHistoryWindow(provider.windows, defaultWindowId);
-    const percent = formatDistributionPercent(providerWindow.totalTokens, selectedWindow.totalTokens);
-    const width = distributionWidth(providerWindow.totalTokens, selectedWindow.totalTokens);
-    return `
-      <div class="distribution-row provider-${esc(provider.providerId)}" data-provider-distribution-row="${esc(provider.providerId)}" ${providerDistributionRowAttributes(model.sourceModeTotals, provider.providerId)}>
-        <div class="distribution-row-header">
-          <span class="distribution-label">${esc(provider.label)}</span>
-          <span class="distribution-percent">${esc(percent)}</span>
-        </div>
-        <div class="distribution-bar" role="meter" aria-label="${esc(`${provider.label} token share`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(width)}">
-          <div class="distribution-fill" style="width: ${esc(width)}%"></div>
-        </div>
-        <div class="distribution-row-meta">
-          <span class="distribution-value">${esc(formatTokenCount(providerWindow.totalTokens))}</span>
-          <span class="distribution-messages">${esc(formatMessageCount(providerWindow.totalAssistantMessages))}</span>
-        </div>
-      </div>`;
-  }).join('\n');
-
-  return `
-    <div class="distribution-card" data-distribution-card="provider-overview" ${distributionTotalAttributes(model.sourceModeTotals)}>
-      <div class="distribution-card-header">
-        <div>
-          <div class="distribution-card-title">Provider distribution</div>
-          <div class="distribution-card-copy"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - selected history window</div>
-        </div>
-        <div class="distribution-total">
-          <span class="distribution-total-value">${esc(formatTokenCount(selectedWindow.totalTokens))}</span>
-          <span class="distribution-total-messages">${esc(formatMessageCount(selectedWindow.totalAssistantMessages))}</span>
-        </div>
-      </div>
-      <div class="distribution-empty calm-state">
-        <div class="calm-state-header">No provider data for this selection</div>
-        <div class="calm-state-copy">Try another history window or source mode.</div>
-      </div>
-      <div class="distribution-list">
-        ${rows}
-      </div>
-    </div>`;
-}
-
-function sourceContributionValue(
-  model: DashboardModel,
-  sourceMode: string,
-  windowId: DashboardLocalHistoryWindow['windowId'],
-  sourceKind: 'local' | 'snapshots',
-  providerId?: string,
-): DashboardLocalHistoryWindow {
-  if (sourceMode === 'local' && sourceKind === 'snapshots') {
-    return { windowId, label: 'Imported snapshots', totalTokens: 0, totalAssistantMessages: 0 };
-  }
-  if (sourceMode === 'snapshots' && sourceKind === 'local') {
-    return { windowId, label: 'Local history', totalTokens: 0, totalAssistantMessages: 0 };
-  }
-
-  const totals = findSourceModeTotals(model.sourceModeTotals, sourceKind);
-  if (providerId) {
-    return findLocalHistoryWindow(findSourceProvider(totals, providerId).windows, windowId);
-  }
-  return findLocalHistoryWindow(totals.windows, windowId);
-}
-
-function sourceContributionTotal(
-  model: DashboardModel,
-  sourceMode: string,
-  windowId: DashboardLocalHistoryWindow['windowId'],
-  providerId?: string,
-): DashboardLocalHistoryWindow {
-  const local = sourceContributionValue(model, sourceMode, windowId, 'local', providerId);
-  const snapshots = sourceContributionValue(model, sourceMode, windowId, 'snapshots', providerId);
-  return {
-    windowId,
-    label: 'Selected source',
-    totalTokens: local.totalTokens + snapshots.totalTokens,
-    totalAssistantMessages: local.totalAssistantMessages + snapshots.totalAssistantMessages,
-  };
-}
-
-function sourceContributionTotalAttributes(
-  model: DashboardModel,
-  providerId?: string,
-): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const total = sourceContributionTotal(model, sourceTotals.sourceMode, window.windowId, providerId);
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
-    const isEmpty = total.totalTokens <= 0 && total.totalAssistantMessages <= 0;
-    return [
-      `data-total-label-${esc(key)}="${esc(formatTokenCount(total.totalTokens))}"`,
-      `data-total-messages-${esc(key)}="${esc(formatMessageCount(total.totalAssistantMessages))}"`,
-      `data-empty-${esc(key)}="${isEmpty ? 'true' : 'false'}"`,
-    ].join(' ');
-  })).join(' ');
-}
-
-function sourceContributionRowAttributes(
-  model: DashboardModel,
-  sourceKind: 'local' | 'snapshots',
-  providerId?: string,
-): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const value = sourceContributionValue(model, sourceTotals.sourceMode, window.windowId, sourceKind, providerId);
-    const total = sourceContributionTotal(model, sourceTotals.sourceMode, window.windowId, providerId);
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
-    const percent = formatDistributionPercent(value.totalTokens, total.totalTokens);
-    return [
-      `data-value-${esc(key)}="${esc(formatTokenCount(value.totalTokens))}"`,
-      `data-messages-${esc(key)}="${esc(formatMessageCount(value.totalAssistantMessages))}"`,
-      `data-percent-${esc(key)}="${esc(percent)}"`,
-      `data-width-${esc(key)}="${esc(distributionWidth(value.totalTokens, total.totalTokens))}"`,
-    ].join(' ');
-  })).join(' ');
-}
-
-function renderSourceContributionVisual(
-  model: DashboardModel,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-  provider?: DashboardProviderCard,
-): string {
-  const scope = provider ? provider.providerId : 'overview';
-  const total = sourceContributionTotal(model, model.defaultSourceMode, defaultWindowId, provider?.providerId);
-  const rows: Array<{ kind: 'local' | 'snapshots'; label: string }> = [
-    { kind: 'local', label: 'Local history' },
-    { kind: 'snapshots', label: snapshotContributionLabel(model, provider?.providerId) },
-  ];
-  const renderedRows = rows.map(row => {
-    const value = sourceContributionValue(model, model.defaultSourceMode, defaultWindowId, row.kind, provider?.providerId);
-    const percent = formatDistributionPercent(value.totalTokens, total.totalTokens);
-    const width = distributionWidth(value.totalTokens, total.totalTokens);
-    return `
-      <div class="distribution-row source-${esc(row.kind)}" data-source-contribution-row="${esc(row.kind)}" ${sourceContributionRowAttributes(model, row.kind, provider?.providerId)}>
-        <div class="distribution-row-header">
-          <span class="distribution-label">${esc(row.label)}</span>
-          <span class="distribution-percent">${esc(percent)}</span>
-        </div>
-        <div class="distribution-bar" role="meter" aria-label="${esc(`${row.label} token share`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(width)}">
-          <div class="distribution-fill" style="width: ${esc(width)}%"></div>
-        </div>
-        <div class="distribution-row-meta">
-          <span class="distribution-value">${esc(formatTokenCount(value.totalTokens))}</span>
-          <span class="distribution-messages">${esc(formatMessageCount(value.totalAssistantMessages))}</span>
-        </div>
-      </div>`;
-  }).join('\n');
-
-  return `
-    <div class="distribution-card" data-distribution-card="source-${esc(scope)}" data-source-contribution="${esc(scope)}" ${sourceContributionTotalAttributes(model, provider?.providerId)}>
-      <div class="distribution-card-header">
-        <div>
-          <div class="distribution-card-title">${provider ? `${esc(provider.label)} source contribution` : 'Source contribution'}</div>
-          <div class="distribution-card-copy">Local and snapshot aggregate contributions for the selected window.</div>
-        </div>
-        <div class="distribution-total">
-          <span class="distribution-total-value">${esc(formatTokenCount(total.totalTokens))}</span>
-          <span class="distribution-total-messages">${esc(formatMessageCount(total.totalAssistantMessages))}</span>
-        </div>
-      </div>
-      <div class="distribution-empty calm-state">
-        <div class="calm-state-header">No source data for this selection</div>
-        <div class="calm-state-copy">The selected source and window do not have aggregate usage.</div>
-      </div>
-      <div class="distribution-list">
-        ${renderedRows}
-      </div>
-    </div>`;
-}
-
-function snapshotContributionLabel(model: DashboardModel, providerId?: string): string {
-  const snapshotTotals = findSourceModeTotals(model.sourceModeTotals, 'snapshots');
-  const labels = providerId
-    ? findSourceProvider(snapshotTotals, providerId).sourceLabels
-    : snapshotTotals.sourceLabels;
-  const formatted = formatSnapshotSourceLabels(labels, 2);
-  return formatted ? `Imported snapshots (${formatted})` : 'Imported snapshots';
-}
-
 function formatModelProviderLabel(row: DashboardModelUsageAggregate): string {
   const sourceSummary = formatSnapshotSourceLabels(row.sourceLabels, 2);
   if (!sourceSummary) {
@@ -925,6 +802,20 @@ function formatModelRowTitle(base: string, row: DashboardModelUsageAggregate): s
   return sourceSummary ? `${base} - Snapshots: ${sourceSummary}` : base;
 }
 
+const MODEL_SERIES_COLOR_COUNT = 12;
+
+function modelColorIndex(label: string): number {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = Math.imul(31, hash) + label.charCodeAt(i) | 0;
+  }
+  return Math.abs(hash) % MODEL_SERIES_COLOR_COUNT;
+}
+
+function modelColorVar(label: string): string {
+  return `var(--pf-model-${modelColorIndex(label)})`;
+}
+
 function providerColorVar(providerId: string): string {
   if (providerId === 'claude') {
     return 'var(--pf-provider-claude)';
@@ -936,7 +827,7 @@ function providerColorVar(providerId: string): string {
 }
 
 function modelDonutGradient(
-  rows: Array<{ providerId: string; totalTokens: number }>,
+  rows: Array<{ modelLabel: string; totalTokens: number }>,
   totalTokens: number,
 ): string {
   if (totalTokens <= 0) {
@@ -950,7 +841,7 @@ function modelDonutGradient(
       const start = cursor;
       const end = Math.min(100, cursor + (row.totalTokens / totalTokens) * 100);
       cursor = end;
-      return `${providerColorVar(row.providerId)} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+      return `${modelColorVar(row.modelLabel)} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
     });
 
   if (parts.length === 0) {
@@ -964,19 +855,19 @@ function modelDonutGradient(
   return `conic-gradient(${parts.join(', ')})`;
 }
 
-function modelRowsForSourceWindow(
+function modelRowsForSourceRange(
   sourceTotals: DashboardSourceModeTotals,
-  windowId: string,
+  rangeKey: DashboardHistoryRangeKey,
   providerId?: string,
 ): DashboardModelUsageAggregate[] {
-  const rows = sourceTotals.modelWindows[windowId as DashboardLocalHistoryWindow['windowId']] ?? [];
+  const rangeRows = historyRangeViewForSource(sourceTotals, rangeKey, providerId).modelRows;
+  const fallbackWindow = rangeKey === '1W' ? 'last7d' : 'all';
+  const fallbackRows = sourceTotals.modelWindows[fallbackWindow] ?? [];
+  const rows = rangeRows.length > 0 ? rangeRows : fallbackRows;
   const scopedRows = providerId
     ? rows.filter(row => row.providerId === providerId)
     : rows;
-  const hasNamedModel = scopedRows.some(row => row.modelLabel.toLowerCase() !== 'unknown model');
-  return hasNamedModel
-    ? scopedRows.filter(row => row.modelLabel.toLowerCase() !== 'unknown model')
-    : scopedRows;
+  return filterDominatedUnknownModels(scopedRows);
 }
 
 function modelRowKey(row: Pick<DashboardModelUsageAggregate, 'providerId' | 'modelLabel'>): string {
@@ -998,8 +889,8 @@ function modelRowsForCard(
 ): DashboardModelUsageAggregate[] {
   const rowsByKey = new Map<string, DashboardModelUsageAggregate>();
   for (const sourceTotals of model.sourceModeTotals) {
-    for (const window of sourceTotals.windows) {
-      for (const row of modelRowsForSourceWindow(sourceTotals, window.windowId, providerId)) {
+    for (const rangeKey of DASHBOARD_HISTORY_RANGE_KEYS) {
+      for (const row of modelRowsForSourceRange(sourceTotals, rangeKey, providerId)) {
         const key = modelRowKey(row);
         const existing = rowsByKey.get(key);
         if (!existing || row.totalTokens > existing.totalTokens) {
@@ -1022,10 +913,10 @@ function modelDistributionCardAttributes(
   model: DashboardModel,
   providerId?: string,
 ): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const rows = modelRowsForSourceWindow(sourceTotals, window.windowId, providerId);
+  return model.sourceModeTotals.flatMap(sourceTotals => DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => {
+    const rows = modelRowsForSourceRange(sourceTotals, rangeKey, providerId);
     const total = modelDistributionTotal(rows);
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
+    const key = `${sourceTotals.sourceMode}-${rangeKey}`;
     const isEmpty = total.totalTokens <= 0 && total.totalAssistantMessages <= 0;
     return [
       `data-model-total-label-${esc(key)}="${esc(formatTokenCount(total.totalTokens))}"`,
@@ -1041,13 +932,13 @@ function modelDistributionRowAttributes(
   rowKey: string,
   scopeProviderId?: string,
 ): string {
-  return model.sourceModeTotals.flatMap(sourceTotals => sourceTotals.windows.map(window => {
-    const rows = modelRowsForSourceWindow(sourceTotals, window.windowId, scopeProviderId);
+  return model.sourceModeTotals.flatMap(sourceTotals => DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => {
+    const rows = modelRowsForSourceRange(sourceTotals, rangeKey, scopeProviderId);
     const row = rows.find(candidate => modelRowKey(candidate) === rowKey);
     const total = modelDistributionTotal(rows);
     const sorted = rows.slice().sort((a, b) => b.totalTokens - a.totalTokens);
     const rank = row ? sorted.findIndex(candidate => modelRowKey(candidate) === rowKey) + 1 : 999;
-    const key = `${sourceTotals.sourceMode}-${window.windowId}`;
+    const key = `${sourceTotals.sourceMode}-${rangeKey}`;
     const tokens = row?.totalTokens ?? 0;
     const messages = row?.totalAssistantMessages ?? 0;
     const providerLabel = row ? formatModelProviderLabel(row) : '';
@@ -1068,12 +959,12 @@ function modelDistributionRowAttributes(
 
 function renderModelBreakdownDistribution(
   model: DashboardModel,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
+  _defaultWindowId: DashboardLocalHistoryWindow['windowId'],
   provider?: DashboardProviderCard,
 ): string {
   const scope = provider ? provider.providerId : 'overview';
   const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const selectedRows = modelRowsForSourceWindow(selectedSource, defaultWindowId, provider?.providerId);
+  const selectedRows = modelRowsForSourceRange(selectedSource, DEFAULT_HISTORY_RANGE_KEY, provider?.providerId);
   const selectedTotal = modelDistributionTotal(selectedRows);
   const allRows = modelRowsForCard(model, provider?.providerId);
   const rowHtml = allRows.map(row => {
@@ -1086,10 +977,11 @@ function renderModelBreakdownDistribution(
     const rank = selectedRows.findIndex(candidate => modelRowKey(candidate) === key) + 1;
     const visible = tokens > 0 && rank > 0 && rank <= 8;
     const providerLabel = formatModelProviderLabel(selectedRow ?? row);
-    const title = formatModelRowTitle(formatMessageCount(messages), selectedRow ?? row);
+    const modelTitle = formatModelRowTitle(formatMessageCount(messages), selectedRow ?? row);
+    const tipData = esc(JSON.stringify({ kind: 'model', label: row.modelLabel, provider: row.providerLabel }));
     return `
-      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-row="${esc(key)}" ${modelDistributionRowAttributes(model, key, provider?.providerId)} ${visible ? '' : 'hidden'} style="order: ${esc(String(rank > 0 ? rank : 999))}" title="${esc(title)}">
-        <span class="usage-model-swatch"></span>
+      <div class="usage-model-row provider-${esc(row.providerId)}" data-model-row="${esc(key)}" ${modelDistributionRowAttributes(model, key, provider?.providerId)} ${visible ? '' : 'hidden'} style="order: ${esc(String(rank > 0 ? rank : 999))}; --model-color: ${modelColorVar(row.modelLabel)}" tabindex="0" data-pf-tip="${tipData}" aria-label="${esc(modelTitle)}">
+        <span class="usage-model-swatch" aria-hidden="true"></span>
         <span class="usage-model-provider">${esc(providerLabel)}</span>
         <span class="usage-model-name">${esc(row.modelLabel)}</span>
         <span class="usage-model-bar" aria-hidden="true"><span class="usage-model-bar-fill" style="width: ${esc(width)}%"></span></span>
@@ -1106,7 +998,7 @@ function renderModelBreakdownDistribution(
       <div class="usage-model-distribution-head">
         <div>
           <div class="usage-model-distribution-title">${esc(title)}</div>
-          <div class="usage-model-distribution-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - selected history window</div>
+          <div class="usage-model-distribution-meta"><span class="source-mode-label-value" data-source-label-local="Local only" data-source-label-snapshots="Snapshots only" data-source-label-combined="Combined">${esc(selectedSource.label)}</span> - selected history range</div>
         </div>
         ${sourceModeChip(model.defaultSourceMode)}
       </div>
@@ -1162,7 +1054,10 @@ function renderTodaySection(
     const today = provider
       ? findLocalHistoryWindow(findSourceProvider(sourceTotals, provider.providerId).windows, 'today')
       : findLocalHistoryWindow(sourceTotals.windows, 'today');
-    const modelRows = modelRowsForSourceWindow(sourceTotals, 'today', provider?.providerId);
+    const todayModels = sourceTotals.modelWindows.today ?? [];
+    const modelRows = provider
+      ? todayModels.filter(row => row.providerId === provider.providerId)
+      : todayModels;
     const topModels = modelRows
       .filter(row => row.totalTokens > 0)
       .slice(0, 3)
@@ -1182,6 +1077,14 @@ function renderTodaySection(
       </div>`;
     }
 
+    const cacheTokens = (today.totalCacheCreationInputTokens ?? 0) + (today.totalCacheReadInputTokens ?? 0);
+    const cacheCard = cacheTokens > 0
+      ? `<div class="today-card">
+            <span class="metric-label">Cache</span>
+            <span class="today-card-value">${esc(formatTokenCount(cacheTokens))}</span>
+            <span class="today-card-copy">Prompt cache activity</span>
+          </div>`
+      : '';
     return `
       <div class="today-source-group" data-today-source-group="${esc(sourceTotals.sourceMode)}"${hidden}>
         <div class="today-card-grid">
@@ -1195,11 +1098,7 @@ function renderTodaySection(
             <span class="today-card-value">${esc(formatMessageCount(today.totalAssistantMessages))}</span>
             <span class="today-card-copy">${esc(laneLabel)}</span>
           </div>
-          <div class="today-card">
-            <span class="metric-label">Source</span>
-            <span class="today-card-value">${esc(sourceTotals.label)}</span>
-            <span class="today-card-copy">${esc(laneLabel)}</span>
-          </div>
+          ${cacheCard}
         </div>
         <div class="snapshot-note">${esc(`${title} - ${laneLabel}`)}</div>
       </div>
@@ -1212,27 +1111,6 @@ function renderTodaySection(
     </div>`;
 }
 
-function renderUsageDistributionVisuals(
-  model: DashboardModel,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-): string {
-  return `
-  <div class="visual-grid" data-usage-distribution="overview">
-    ${renderProviderDistributionVisual(model, defaultWindowId)}
-    ${renderSourceContributionVisual(model, defaultWindowId)}
-  </div>`;
-}
-
-function renderProviderUsageDistributionVisuals(
-  model: DashboardModel,
-  provider: DashboardProviderCard,
-  defaultWindowId: DashboardLocalHistoryWindow['windowId'],
-): string {
-  return `
-  <div class="visual-grid provider-visual-grid" data-usage-distribution="${esc(provider.providerId)}">
-    ${renderSourceContributionVisual(model, defaultWindowId, provider)}
-  </div>`;
-}
 
 function renderLocalHistoryWindowSelector(model: DashboardModel): string {
   const buttons = model.localHistoryWindows.map(w => {
@@ -1260,42 +1138,18 @@ function renderSourceModeSelector(model: DashboardModel): string {
   </div>`;
 }
 
-function renderProviderCards(model: DashboardModel, providers: DashboardProviderCard[], defaultWindowId: string): string {
-  const selectedSource = findSourceModeTotals(model.sourceModeTotals, model.defaultSourceMode);
-  const cards = providers.map(p => {
-    const sourceProvider = findSourceProvider(selectedSource, p.providerId);
-    const providerSelectedWindow = findLocalHistoryWindow(sourceProvider.windows, defaultWindowId);
-    const badgeClass = statusBadgeClass(sourceProvider.status);
-    return `
-    <div class="provider-card" data-provider-local-detail="${esc(p.providerId)}">
-      <div class="provider-header card-header">
-        <div>
-          <span class="provider-label">${esc(p.label)}</span>
-          <span class="card-kicker">Usage history</span>
-        </div>
-        <span class="badge source-provider-status ${esc(badgeClass)}" ${sourceProviderStatusAttributes(model.sourceModeTotals, p.providerId)}>${esc(statusBadgeLabel(sourceProvider.status))}</span>
-      </div>
-      <div class="provider-metrics">
-        <div class="metric">
-          <span class="metric-label">Tokens</span>
-          <span class="metric-value provider-window-value" ${sourceModeDataAttributes(model.sourceModeTotals, 'tokens', p.providerId)} ${localHistoryDataAttributes(sourceProvider.windows, 'tokens')}>${esc(formatTokenCount(providerSelectedWindow.totalTokens))}</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Messages</span>
-          <span class="metric-value provider-window-value" ${sourceModeDataAttributes(model.sourceModeTotals, 'messages', p.providerId)} ${localHistoryDataAttributes(sourceProvider.windows, 'messages')}>${esc(String(providerSelectedWindow.totalAssistantMessages))}</span>
-        </div>
-        ${p.parseErrors > 0 ? `
-        <div class="metric">
-          <span class="metric-label">Local history parse</span>
-          <span class="metric-value errors">${esc(formatParseErrorText(p.parseErrors))}</span>
-        </div>
-        ` : ''}
-      </div>
-    </div>`;
-  }).join('\n');
-
-  return `<div class="card-grid provider-grid">${cards}</div>`;
+function sourceModeRangeDataAttributes(
+  totals: DashboardSourceModeTotals[],
+  value: 'tokens' | 'messages',
+  providerId?: string,
+): string {
+  return totals.flatMap(sourceTotals => DASHBOARD_HISTORY_RANGE_KEYS.map(rangeKey => {
+    const view = historyRangeViewForSource(sourceTotals, rangeKey, providerId);
+    const raw = value === 'tokens' ? formatTokenCount(view.totalTokens) : String(view.totalAssistantMessages);
+    return `data-${value}-${esc(sourceTotals.sourceMode)}-${esc(rangeKey)}="${esc(raw)}"`;
+  })).join(' ');
 }
+
 
 function renderProviderTab(model: DashboardModel, providerId: string): string {
   const provider = model.providers.find(p => p.providerId === providerId);
@@ -1303,36 +1157,55 @@ function renderProviderTab(model: DashboardModel, providerId: string): string {
     return '';
   }
 
+  const parseErrorNote = provider.parseErrors > 0
+    ? `<div class="parse-error-note">${esc(formatParseErrorText(provider.parseErrors))} in local history</div>`
+    : '';
   return `
   <section class="tab-panel" id="tab-${esc(provider.providerId)}" data-dashboard-tab-panel="${esc(provider.providerId)}" role="tabpanel" aria-labelledby="tab-button-${esc(provider.providerId)}" hidden>
     <div class="usage-section-title">Usage</div>
     ${renderProviderLiveQuotaSection(model, provider)}
 
     ${sectionHeader(`${provider.label} today`, sourceModeChip(model.defaultSourceMode), 'Selected source usage for the local day.')}
+    ${parseErrorNote}
     ${renderTodaySection(model, provider)}
 
     ${sectionHeader(`${provider.label} history`, sourceModeChip(model.defaultSourceMode), 'Range-controlled token trend from daily bins where available.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId, provider)}
 
-    ${sectionHeader(`${provider.label} usage distribution`, sourceModeChip(model.defaultSourceMode), 'Visual summary follows the selected history source and window.')}
-    ${renderProviderUsageDistributionVisuals(model, provider, model.defaultLocalHistoryWindowId)}
-
     ${sectionHeader(`${provider.label} model breakdown`, sourceModeChip(model.defaultSourceMode), 'Safe aggregate model totals for this provider.')}
     ${renderModelBreakdownDistribution(model, model.defaultLocalHistoryWindowId, provider)}
-
-    ${sectionHeader(`${provider.label} provider usage history details`, stateChip('LOCAL', 'local'), 'Windowed local history details for this provider.')}
-    ${renderProviderCards(model, [provider], model.defaultLocalHistoryWindowId)}
   </section>`;
 }
 
 function renderSourceModeCopy(model: DashboardModel): string {
   if (model.snapshotAggregate.snapshotCount === 0 || model.snapshotAggregate.providers.length === 0) {
-    return 'No imported snapshots found. Showing local history only.';
+    return `${model.defaultSourceMode === 'snapshots' ? 'Snapshot source mode is configured; no imported snapshots are currently available.' : 'No imported snapshots found.'} Dashboard usage source: ${DASHBOARD_SOURCE_MODE_LABELS_FOR_COPY[model.defaultSourceMode]}.`;
   }
   const sourceSummary = formatSnapshotSourceLabels(model.snapshotAggregate.sourceLabels);
   return sourceSummary
-    ? `Imported snapshots available from ${sourceSummary}. Choose Local only, Snapshots only, or Combined.`
-    : 'Imported snapshots available. Choose Local only, Snapshots only, or Combined.';
+    ? `Imported snapshots available from ${sourceSummary}. Dashboard usage source: ${DASHBOARD_SOURCE_MODE_LABELS_FOR_COPY[model.defaultSourceMode]}.`
+    : `Imported snapshots available. Dashboard usage source: ${DASHBOARD_SOURCE_MODE_LABELS_FOR_COPY[model.defaultSourceMode]}.`;
+}
+
+const DASHBOARD_SOURCE_MODE_LABELS_FOR_COPY: Record<string, string> = {
+  local: 'Local only',
+  snapshots: 'Snapshots only',
+  combined: 'Combined',
+};
+
+function renderFooterSnapshotSummary(model: DashboardModel): string {
+  const aggregate = model.snapshotAggregate;
+  if (aggregate.snapshotCount === 0 || aggregate.providers.length === 0) {
+    return '<div>Imported snapshots: 0</div>';
+  }
+  const sourceSummary = formatSnapshotSourceLabels(aggregate.sourceLabels);
+  const providerCoverage = Array.from(new Set(aggregate.providers.map(p => p.label))).sort().join(', ');
+  const parts = [
+    `Imported snapshots: ${aggregate.snapshotCount}`,
+    sourceSummary ? `Snapshot sources: ${sourceSummary}` : undefined,
+    providerCoverage ? `Providers: ${providerCoverage}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return `<div>${esc(parts.join(' | '))}</div>`;
 }
 
 function renderSnapshotSummary(model: DashboardModel): string {
@@ -1438,6 +1311,18 @@ export function buildDashboardHtml(
     --pf-provider-claude: var(--vscode-charts-blue, #75beff);
     --pf-provider-codex: var(--vscode-charts-purple, #b180d7);
     --pf-keyline: rgba(127,127,127,0.12);
+    --pf-model-0: var(--vscode-charts-blue, #4f8fd6);
+    --pf-model-1: var(--vscode-charts-yellow, #c79538);
+    --pf-model-2: var(--vscode-charts-purple, #9b7bd3);
+    --pf-model-3: var(--vscode-charts-orange, #c77737);
+    --pf-model-4: #3aa99f;
+    --pf-model-5: #c96f8a;
+    --pf-model-6: #2f9ec2;
+    --pf-model-7: #8da653;
+    --pf-model-8: #6f83d8;
+    --pf-model-9: #a87854;
+    --pf-model-10: #7f9bb3;
+    --pf-model-11: #b76ac4;
   }
   body {
     font-family: var(--vscode-font-family, sans-serif);
@@ -2074,7 +1959,7 @@ export function buildDashboardHtml(
   }
   .usage-model-row {
     display: grid;
-    grid-template-columns: auto minmax(54px, auto) minmax(90px, 1.4fr) minmax(80px, 1fr) auto auto auto;
+    grid-template-columns: 10px 52px minmax(60px, 1fr) 72px 64px 84px 36px;
     gap: 8px;
     align-items: center;
     font-size: 11px;
@@ -2089,13 +1974,8 @@ export function buildDashboardHtml(
     height: 8px;
     border-radius: 50%;
     border: 1px solid rgba(127,127,127,0.2);
-  }
-  .provider-claude .usage-model-swatch {
-    background: var(--pf-provider-claude);
-  }
-  .provider-codex .usage-model-swatch {
-    background-color: var(--pf-provider-codex);
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.38) 0, rgba(255,255,255,0.38) 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px);
+    background: var(--model-color, var(--vscode-focusBorder, #007acc));
+    flex: 0 0 auto;
   }
   .usage-model-name {
     overflow: hidden;
@@ -2118,15 +1998,8 @@ export function buildDashboardHtml(
     display: block;
     height: 100%;
     border-radius: 3px;
-    background: var(--vscode-focusBorder, #007acc);
+    background: var(--model-color, var(--vscode-focusBorder, #007acc));
     transition: width 0.25s;
-  }
-  .provider-claude .usage-model-bar-fill {
-    background: var(--pf-provider-claude);
-  }
-  .provider-codex .usage-model-bar-fill {
-    background-color: var(--pf-provider-codex);
-    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.38) 0, rgba(255,255,255,0.38) 2px, rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px);
   }
   .usage-model-value,
   .usage-model-count,
@@ -2321,7 +2194,7 @@ export function buildDashboardHtml(
   .today-card-grid,
   .history-summary-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
     gap: 12px;
   }
   .today-card,
@@ -2419,6 +2292,136 @@ export function buildDashboardHtml(
     opacity: 0.5;
     cursor: default;
   }
+  .parse-error-note {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999999);
+    margin: -4px 0 10px;
+    padding: 6px 10px;
+    background: rgba(233, 185, 50, 0.08);
+    border: 1px solid rgba(233, 185, 50, 0.25);
+    border-radius: 4px;
+  }
+  .pf-tip {
+    position: fixed;
+    z-index: 50;
+    width: min(260px, calc(100vw - 16px));
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-sideBar-background, #252526));
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-panel-border, rgba(128,128,128,0.4)));
+    border-radius: 6px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.28);
+    color: var(--vscode-foreground, #cccccc);
+    font-size: 11px;
+    line-height: 1.35;
+    pointer-events: none;
+  }
+  .pf-tip.hidden {
+    display: none;
+  }
+  .pf-tip-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid var(--pf-keyline);
+    padding-bottom: 6px;
+    margin-bottom: 7px;
+  }
+  .pf-tip-title {
+    min-width: 0;
+    font-weight: 650;
+    color: var(--vscode-foreground, #cccccc);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pf-tip-source {
+    flex: 0 1 auto;
+    color: var(--vscode-descriptionForeground, #999999);
+    text-align: right;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pf-tip-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 7px;
+  }
+  .pf-tip-stat {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .pf-tip-stat span {
+    color: var(--vscode-descriptionForeground, #999999);
+  }
+  .pf-tip-stat strong {
+    color: var(--vscode-foreground, #cccccc);
+    font-size: 12px;
+  }
+  .pf-tip-list {
+    display: grid;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .pf-tip-list-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: var(--vscode-descriptionForeground, #999999);
+  }
+  .pf-tip-model-row,
+  .pf-tip-provider-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+  .pf-tip-model-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .pf-tip-model-label span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pf-tip-model-row > span:last-child,
+  .pf-tip-provider-row > span:last-child {
+    flex: 0 0 auto;
+    color: var(--vscode-descriptionForeground, #999999);
+  }
+  .pf-tip-swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    border: 1px solid var(--pf-keyline);
+    flex: 0 0 auto;
+  }
+  .pf-tip-provider-row.claude span:first-child::before,
+  .pf-tip-provider-row.codex span:first-child::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: middle;
+    background: var(--vscode-charts-blue, var(--vscode-focusBorder));
+  }
+  .pf-tip-provider-row.codex span:first-child::before {
+    background-color: var(--vscode-charts-purple, #b180d7);
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.38) 0, rgba(255,255,255,.38) 2px, rgba(0,0,0,.18) 2px, rgba(0,0,0,.18) 4px);
+  }
+  .pf-tip-empty {
+    color: var(--vscode-descriptionForeground, #999999);
+  }
   @container (max-width: 720px) {
     .page-header,
     .section-header,
@@ -2432,9 +2435,7 @@ export function buildDashboardHtml(
     }
     .control-panel,
     .card-grid,
-    .visual-grid,
-    .today-card-grid,
-    .history-summary-grid {
+    .visual-grid {
       grid-template-columns: 1fr;
     }
     .overview-row {
@@ -2450,7 +2451,7 @@ export function buildDashboardHtml(
       gap: 2px;
     }
     .usage-model-row {
-      grid-template-columns: auto minmax(54px, auto) minmax(0, 1fr) auto;
+      grid-template-columns: 10px 44px minmax(0, 1fr) auto;
     }
     .usage-model-bar,
     .usage-model-count,
@@ -2499,18 +2500,6 @@ export function buildDashboardHtml(
     <button type="button" class="tab-btn" id="tab-button-codex" data-dashboard-tab="codex" role="tab" aria-controls="tab-codex" aria-selected="false">Codex</button>
   </div>
 
-  <div class="control-panel">
-    <div class="control-group">
-      ${sectionHeader('Usage history source', sourceModeChip(model.defaultSourceMode), 'Choose how local history and imported aggregates combine.')}
-      ${renderSourceModeSelector(model)}
-    </div>
-    <div class="control-group">
-      ${sectionHeader('Local history window', stateChip('LOCAL', 'local'), 'Window controls affect usage history only, not live quota.')}
-      ${renderLocalHistoryWindowSelector(model)}
-      ${renderSnapshotWindowNotes(model)}
-    </div>
-  </div>
-
   <section class="tab-panel" id="tab-overview" data-dashboard-tab-panel="overview" role="tabpanel" aria-labelledby="tab-button-overview">
     <div class="usage-section-title">Usage</div>
     ${renderLiveQuotaSection(model)}
@@ -2521,16 +2510,8 @@ export function buildDashboardHtml(
     ${sectionHeader('History', sourceModeChip(model.defaultSourceMode), 'Range-controlled token trend from daily bins where available.')}
     ${renderUsageHistoryChart(model, model.defaultLocalHistoryWindowId)}
 
-    ${sectionHeader('Usage distribution', sourceModeChip(model.defaultSourceMode), 'Visual summaries follow the selected history source and window.')}
-    ${renderUsageDistributionVisuals(model, model.defaultLocalHistoryWindowId)}
-
-    ${sectionHeader('Model breakdown', sourceModeChip(model.defaultSourceMode), 'Safe aggregate model totals follow the selected history source and window.')}
+    ${sectionHeader('Model breakdown', sourceModeChip(model.defaultSourceMode), 'Safe aggregate model totals follow the selected history source and range.')}
     ${renderModelBreakdownDistribution(model, model.defaultLocalHistoryWindowId)}
-
-    ${sectionHeader('Provider usage history details', stateChip('LOCAL', 'local'), 'Provider totals follow the selected history source and window.')}
-    ${renderProviderCards(model, model.providers, model.defaultLocalHistoryWindowId)}
-
-    ${renderSnapshotSummary(model)}
   </section>
 
   ${renderProviderTab(model, 'claude')}
@@ -2540,6 +2521,7 @@ export function buildDashboardHtml(
     <div>
       <div>${esc(liveQuotaRefreshSummary(model))}</div>
       <div>Local history refreshed: ${esc(formatRefreshTime(model.localHistoryLastRefreshedMs))}</div>
+      ${renderFooterSnapshotSummary(model)}
     </div>
     <button type="button" class="refresh-btn" id="refreshBtn">Refresh</button>
   </div>
@@ -2550,26 +2532,11 @@ export function buildDashboardHtml(
     var btn = document.getElementById('refreshBtn');
     var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab]'));
     var tabPanels = Array.prototype.slice.call(document.querySelectorAll('[data-dashboard-tab-panel]'));
-    var windowButtons = Array.prototype.slice.call(document.querySelectorAll('[data-local-window]'));
-    var sourceButtons = Array.prototype.slice.call(document.querySelectorAll('[data-source-mode]'));
     var historyRangeButtons = Array.prototype.slice.call(document.querySelectorAll('[data-history-range]'));
     var activeSourceMode = '${model.defaultSourceMode}';
-    var activeWindowId = '${model.defaultLocalHistoryWindowId}';
     var activeHistoryRange = '${DEFAULT_HISTORY_RANGE_KEY}';
     function statusClass(statusClassName) {
       return statusClassName ? 'badge source-provider-status ' + statusClassName : 'badge source-provider-status';
-    }
-    function updateSourceWindowNotes() {
-      Array.prototype.forEach.call(document.querySelectorAll('[data-source-window-note]'), function(el) {
-        var sourceMode = el.getAttribute('data-source-window-note');
-        var missing = (el.getAttribute('data-missing-windows') || '').split(',');
-        var visible = sourceMode === activeSourceMode && missing.indexOf(activeWindowId) >= 0;
-        if (visible) {
-          el.removeAttribute('hidden');
-        } else {
-          el.setAttribute('hidden', '');
-        }
-      });
     }
     function updateSourceModeLabels() {
       Array.prototype.forEach.call(document.querySelectorAll('.source-mode-label-value'), function(el) {
@@ -2588,7 +2555,7 @@ export function buildDashboardHtml(
       });
     }
     function updateDistributionVisuals() {
-      var key = activeSourceMode + '-' + activeWindowId;
+      var key = activeSourceMode + '-' + activeHistoryRange;
       Array.prototype.forEach.call(document.querySelectorAll('[data-distribution-card]'), function(card) {
         var isEmpty = card.getAttribute('data-empty-' + key) === 'true';
         var totalLabel = card.getAttribute('data-total-label-' + key);
@@ -2665,7 +2632,7 @@ export function buildDashboardHtml(
       });
     }
     function updateModelDistributionVisuals() {
-      var key = activeSourceMode + '-' + activeWindowId;
+      var key = activeSourceMode + '-' + activeHistoryRange;
       Array.prototype.forEach.call(document.querySelectorAll('[data-model-breakdown]'), function(card) {
         var isEmpty = card.getAttribute('data-model-empty-' + key) === 'true';
         var totalLabel = card.getAttribute('data-model-total-label-' + key);
@@ -2720,22 +2687,143 @@ export function buildDashboardHtml(
       });
     }
     function updateHistoryValues() {
-      Array.prototype.forEach.call(document.querySelectorAll('.provider-window-value'), function(el) {
-        var tokens = el.getAttribute('data-tokens-' + activeSourceMode + '-' + activeWindowId);
-        var messages = el.getAttribute('data-messages-' + activeSourceMode + '-' + activeWindowId);
-        if (tokens !== null) {
-          el.textContent = tokens;
-        } else if (messages !== null) {
-          el.textContent = messages;
-        }
-      });
       updateSourceModeLabels();
-      updateSourceWindowNotes();
       updateTodaySections();
-      updateDistributionVisuals();
       updateUsageHistoryCharts();
       updateModelDistributionVisuals();
     }
+    var pfTipEl = null;
+    var pfTipAnchor = null;
+    function getPfTip() {
+      if (!pfTipEl) {
+        pfTipEl = document.createElement('div');
+        pfTipEl.id = 'pf-tip';
+        pfTipEl.className = 'pf-tip hidden';
+        pfTipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(pfTipEl);
+        window.addEventListener('resize', positionPfTip);
+        window.addEventListener('scroll', positionPfTip, true);
+      }
+      return pfTipEl;
+    }
+    function positionPfTip() {
+      if (!pfTipEl || !pfTipAnchor || pfTipEl.classList.contains('hidden')) { return; }
+      var ar = pfTipAnchor.getBoundingClientRect();
+      var tr = pfTipEl.getBoundingClientRect();
+      var vw = document.documentElement.clientWidth || window.innerWidth;
+      var vh = document.documentElement.clientHeight || window.innerHeight;
+      var gap = 8, margin = 8;
+      var left = ar.left + (ar.width - tr.width) / 2;
+      var top = ar.top - tr.height - gap;
+      if (top < margin) { top = ar.bottom + gap; }
+      if (top + tr.height > vh - margin) { top = Math.max(margin, vh - tr.height - margin); }
+      if (left < margin) { left = margin; }
+      if (left + tr.width > vw - margin) { left = Math.max(margin, vw - tr.width - margin); }
+      pfTipEl.style.left = Math.round(left) + 'px';
+      pfTipEl.style.top = Math.round(top) + 'px';
+    }
+    function buildPfTipStat(parent, labelText, valueText) {
+      var row = document.createElement('div');
+      row.className = 'pf-tip-stat';
+      var lbl = document.createElement('span'); lbl.textContent = labelText;
+      var val = document.createElement('strong'); val.textContent = valueText;
+      row.appendChild(lbl); row.appendChild(val);
+      parent.appendChild(row);
+    }
+    function buildPfTipListTitle(parent, text) {
+      var t = document.createElement('div');
+      t.className = 'pf-tip-list-title';
+      t.textContent = text;
+      parent.appendChild(t);
+    }
+    function showHistoryBarTip(anchor, payload) {
+      pfTipAnchor = anchor;
+      var tip = getPfTip();
+      tip.innerHTML = '';
+      var head = document.createElement('div'); head.className = 'pf-tip-head';
+      var title = document.createElement('div'); title.className = 'pf-tip-title'; title.textContent = payload.title || '';
+      var src = document.createElement('div'); src.className = 'pf-tip-source'; src.textContent = payload.source || 'Usage history';
+      head.appendChild(title); head.appendChild(src); tip.appendChild(head);
+      var stats = document.createElement('div'); stats.className = 'pf-tip-stats';
+      buildPfTipStat(stats, 'Tokens', payload.tokens || '0 tokens');
+      buildPfTipStat(stats, 'Activity', payload.messages || '0 messages');
+      if (payload.cache) { buildPfTipStat(stats, 'Cache', payload.cache); }
+      tip.appendChild(stats);
+      if (payload.segments && payload.segments.length > 1) {
+        var list = document.createElement('div'); list.className = 'pf-tip-list';
+        buildPfTipListTitle(list, 'Providers');
+        payload.segments.forEach(function(seg) {
+          var row = document.createElement('div'); row.className = 'pf-tip-provider-row ' + (seg.provider || '');
+          var lbl = document.createElement('span'); lbl.textContent = seg.label || '';
+          var val = document.createElement('span'); val.textContent = seg.tokens || '';
+          row.appendChild(lbl); row.appendChild(val); list.appendChild(row);
+        });
+        tip.appendChild(list);
+      }
+      anchor.setAttribute('aria-describedby', 'pf-tip');
+      tip.className = 'pf-tip';
+      positionPfTip();
+    }
+    function showModelRowTip(anchor, payload) {
+      pfTipAnchor = anchor;
+      var tip = getPfTip();
+      tip.innerHTML = '';
+      var key = activeSourceMode + '-' + activeHistoryRange;
+      var tokens = anchor.getAttribute('data-model-value-' + key) || '0 tokens';
+      var percent = anchor.getAttribute('data-model-percent-' + key) || '0%';
+      var messages = anchor.getAttribute('data-model-messages-' + key) || '0 messages';
+      var providerLabel = anchor.getAttribute('data-model-provider-label-' + key) || payload.provider || '';
+      var head = document.createElement('div'); head.className = 'pf-tip-head';
+      var title = document.createElement('div'); title.className = 'pf-tip-title'; title.textContent = payload.label || 'Model';
+      var src = document.createElement('div'); src.className = 'pf-tip-source'; src.textContent = providerLabel || 'Model breakdown';
+      head.appendChild(title); head.appendChild(src); tip.appendChild(head);
+      var stats = document.createElement('div'); stats.className = 'pf-tip-stats';
+      buildPfTipStat(stats, 'Tokens', tokens);
+      buildPfTipStat(stats, 'Share', percent);
+      buildPfTipStat(stats, 'Activity', messages);
+      tip.appendChild(stats);
+      anchor.setAttribute('aria-describedby', 'pf-tip');
+      tip.className = 'pf-tip';
+      positionPfTip();
+    }
+    function hidePfTip(anchor) {
+      if (pfTipAnchor && anchor && pfTipAnchor !== anchor) { return; }
+      pfTipAnchor = null;
+      if (pfTipEl) { pfTipEl.className = 'pf-tip hidden'; }
+    }
+    function parsePfTip(el) {
+      var raw = el && el.getAttribute('data-pf-tip');
+      if (!raw) { return null; }
+      try { return JSON.parse(raw); } catch(e) { return null; }
+    }
+    document.addEventListener('mouseover', function(e) {
+      var el = e.target.closest ? e.target.closest('[data-pf-tip]') : null;
+      if (!el) { return; }
+      var payload = parsePfTip(el);
+      if (!payload) { return; }
+      if (payload.kind === 'history') { showHistoryBarTip(el, payload); }
+      else if (payload.kind === 'model') { showModelRowTip(el, payload); }
+    });
+    document.addEventListener('mouseout', function(e) {
+      var el = e.target.closest ? e.target.closest('[data-pf-tip]') : null;
+      if (el && e.relatedTarget && el.contains(e.relatedTarget)) { return; }
+      hidePfTip(el);
+    });
+    document.addEventListener('focusin', function(e) {
+      var el = e.target.closest ? e.target.closest('[data-pf-tip]') : null;
+      if (!el) { return; }
+      var payload = parsePfTip(el);
+      if (!payload) { return; }
+      if (payload.kind === 'history') { showHistoryBarTip(el, payload); }
+      else if (payload.kind === 'model') { showModelRowTip(el, payload); }
+    });
+    document.addEventListener('focusout', function(e) {
+      var el = e.target.closest ? e.target.closest('[data-pf-tip]') : null;
+      hidePfTip(el);
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { hidePfTip(null); }
+    });
     function setActiveTab(tabId) {
       if (!tabId) {
         return;
@@ -2754,42 +2842,12 @@ export function buildDashboardHtml(
         }
       });
     }
-    function setLocalWindow(windowId) {
-      if (!windowId) {
-        return;
-      }
-      activeWindowId = windowId;
-      updateHistoryValues();
-      windowButtons.forEach(function(button) {
-        var selected = button.getAttribute('data-local-window') === windowId;
-        button.classList.toggle('active', selected);
-        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-      });
-    }
-    function setSourceMode(sourceMode) {
-      if (!sourceMode) {
-        return;
-      }
-      var sourceButton = sourceButtons.filter(function(button) {
-        return button.getAttribute('data-source-mode') === sourceMode;
-      })[0];
-      if (sourceButton && sourceButton.disabled) {
-        return;
-      }
-      activeSourceMode = sourceMode;
-      updateHistoryValues();
-      sourceButtons.forEach(function(button) {
-        var selected = button.getAttribute('data-source-mode') === sourceMode;
-        button.classList.toggle('active', selected);
-        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-      });
-    }
     function setHistoryRange(rangeKey) {
       if (!rangeKey) {
         return;
       }
       activeHistoryRange = rangeKey;
-      updateUsageHistoryCharts();
+      updateHistoryValues();
       historyRangeButtons.forEach(function(button) {
         var selected = button.getAttribute('data-history-range') === rangeKey;
         button.classList.toggle('active', selected);
@@ -2799,16 +2857,6 @@ export function buildDashboardHtml(
     tabButtons.forEach(function(button) {
       button.addEventListener('click', function() {
         setActiveTab(button.getAttribute('data-dashboard-tab'));
-      });
-    });
-    sourceButtons.forEach(function(button) {
-      button.addEventListener('click', function() {
-        setSourceMode(button.getAttribute('data-source-mode'));
-      });
-    });
-    windowButtons.forEach(function(button) {
-      button.addEventListener('click', function() {
-        setLocalWindow(button.getAttribute('data-local-window'));
       });
     });
     historyRangeButtons.forEach(function(button) {

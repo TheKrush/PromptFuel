@@ -9,8 +9,8 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
 - **Local history secondary** - local Claude and Codex aggregate history remains visible in the dashboard and tooltip, but does not replace live quota as the primary status.
 - **Dashboard tabs** - the dashboard includes Overview, Claude, and Codex tabs.
-- **Local-history windows** - switch usage history between Today, Last 5h, Last 7d, and All local history.
-- **Source modes** - switch dashboard usage history between Local only, Snapshots only, and Combined when imported snapshots are available.
+- **Combined dashboard usage by default** - Overview uses local history plus imported snapshots unless `promptFuel.dashboardUsageSource` is changed.
+- **Range-driven history** - the History range controls the chart, summary cards, usage distribution, and model distribution below it.
 - **Snapshot imports and exports** - open an import folder, drop in aggregate-only snapshot JSON, or export a compatible aggregate snapshot for another install.
 - **AgentBridge-compatible imports** - read compatible aggregate snapshot files directly, including safe source labels such as machine/source names.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
@@ -53,6 +53,8 @@ Imported snapshots appear in the dashboard source modes:
 | Combined | Local history plus imported aggregate snapshots |
 
 Live quota remains separate and is not affected by the selected dashboard source mode.
+
+Set `promptFuel.dashboardUsageSource` to `combined`, `local`, or `snapshots` to choose the usage source for dashboard Today and historical sections. The default is `combined`; live quota remains independent, and the History range selector drives the historical chart, summary, usage distribution, and model distribution.
 
 PromptFuel imports supported versioned snapshot shapes automatically. It preserves existing PromptFuel schema v1 aggregate snapshots and also accepts the current AgentBridge-compatible schema 2 shape, including safe daily history buckets, model breakdowns, and source/machine labels when present. Safe labels such as `PHOENIX`, `WATCHER`, `DESKTOP-123`, `Laptop`, or `Workstation` may appear in the dashboard and tooltip; unsafe labels are replaced with a generic imported-snapshot label. Local paths, filenames, usernames, raw payloads, secrets, and tokens are never displayed.
 
@@ -114,6 +116,7 @@ Exported snapshots are aggregate-only and use the latest compatible snapshot sch
 | `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
 | `promptFuel.refreshIntervalMinutes` | Auto-refresh interval (0 to disable) | `5` |
 | `promptFuel.liveQuotaEnabled` | Attempt live quota from provider APIs; set to `false` to opt out | `true` |
+| `promptFuel.dashboardUsageSource` | Dashboard usage source: `combined`, `local`, or `snapshots`; live quota stays independent | `"combined"` |
 | `promptFuel.snapshotImportPath` | Optional local folder for aggregate snapshot imports; empty uses PromptFuel extension storage | `""` |
 | `promptFuel.snapshotExportPath` | Optional local folder for aggregate snapshot exports; empty uses PromptFuel extension storage | `""` |
 

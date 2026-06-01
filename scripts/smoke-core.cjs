@@ -106,7 +106,8 @@ test('CONFIG_DEFAULTS snapshot paths default to empty strings', () => {
 
 test('CONFIG_DEFAULTS has expected keys', () => {
   const keys = Object.keys(CONFIG_DEFAULTS).sort();
-  assert.deepStrictEqual(keys, ['enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes', 'snapshotExportPath', 'snapshotImportPath']);
+  assert.deepStrictEqual(keys, ['dashboardUsageSource', 'enabledProviders', 'liveQuotaEnabled', 'refreshIntervalMinutes', 'snapshotExportPath', 'snapshotImportPath']);
+  assert.strictEqual(CONFIG_DEFAULTS.dashboardUsageSource, 'combined');
 });
 
 // --- manifest and docs ---
@@ -893,12 +894,13 @@ test('dashboard: local history windows combine loaded providers and default to T
   assert.strictEqual(claude.localHistoryWindows.find(w => w.windowId === 'last7d').totalTokens, 300);
 });
 
-test('dashboard source modes: no snapshots default to Local only and disable unavailable modes', () => {
+test('dashboard source modes: no snapshots default to Combined while snapshots-only stays unavailable', () => {
   const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
-  assert.strictEqual(model.defaultSourceMode, 'local');
+  assert.strictEqual(model.defaultSourceMode, 'combined');
   assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'local').available, true);
   assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'snapshots').available, false);
-  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'combined').available, false);
+  assert.strictEqual(model.sourceModes.find(m => m.sourceMode === 'combined').available, true);
+  assert.strictEqual(buildDashboardModel(createInitialStatus(['claude']), 'snapshots').defaultSourceMode, 'snapshots');
 });
 
 test('dashboard source modes: snapshots present default to Combined', () => {
@@ -1102,7 +1104,7 @@ test('dashboard: uses local history wording, not subscription', () => {
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
 });
 
-test('dashboard: local history selector labels and values are windowed', () => {
+test('dashboard: History range selector drives historical values', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applyRefreshResults(
     createInitialStatus(['claude']),
@@ -1126,13 +1128,14 @@ test('dashboard: local history selector labels and values are windowed', () => {
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('Today'), `expected Today window label`);
-  assert.ok(html.includes('Last 5h'), `expected Last 5h window label`);
-  assert.ok(html.includes('Last 7d'), `expected Last 7d window label`);
-  assert.ok(html.includes('All local history'), `expected All local history window label`);
+  assert.ok(html.includes('data-history-range="1W"'), `expected 1W history range label`);
+  assert.ok(html.includes('data-history-range="1M"'), `expected 1M history range label`);
+  assert.ok(html.includes('data-history-range="1Y"'), `expected 1Y history range label`);
+  assert.ok(html.includes('data-history-range="ALL"'), `expected ALL history range label`);
   assert.ok(html.includes('125 tokens'), `expected Today default tokens`);
-  assert.ok(html.includes('data-tokens-all="5.0K tokens"'), `expected all-history tokens to remain available`);
-  assert.ok(html.includes('data-messages-last7d="3"'), `expected provider window details`);
+  assert.ok(html.includes('data-history-total-label-combined-1M="125 tokens"'), `expected history summary to carry selected range tokens`);
+  assert.ok(html.includes('data-model-empty-combined-1M='), `expected model distribution to carry selected range data`);
+  assert.ok(!html.includes('data-local-window='), `local history window selector should not render`);
 });
 
 test('dashboard: uses full-width AgentBridge-style canvas', () => {
@@ -1245,8 +1248,8 @@ test('dashboard: renders model breakdown rows from safe aggregates', () => {
   assert.ok(html.includes('class="usage-model-donut"'), `expected AgentBridge-style model donut`);
   assert.ok(html.includes('claude-sonnet-4-20250514'), `expected Claude model label`);
   assert.ok(html.includes('gpt-5.4-codex'), `expected Codex model label`);
-  assert.ok(html.includes('data-model-value-local-today="100 tokens"'), `expected windowed local model data`);
-  assert.ok(html.includes('data-model-width-local-today'), `expected compact model bars`);
+  assert.ok(html.includes('data-model-value-combined-1M="1.0K tokens"'), `expected range-filtered model data`);
+  assert.ok(html.includes('data-model-width-combined-1M'), `expected compact model bars`);
   assert.ok(html.includes('No model breakdown available.'), `expected calm empty state copy`);
   assert.ok(claudePanel.includes('data-model-breakdown="claude"'), `expected provider tab model breakdown`);
   assert.ok(claudePanel.includes('claude-sonnet-4-20250514'), `expected Claude tab model row`);
@@ -1255,25 +1258,19 @@ test('dashboard: renders model breakdown rows from safe aggregates', () => {
   assert.ok(!html.includes('API est.'), `PromptFuel dashboard should not include API estimates in this pass`);
 });
 
-test('dashboard source modes: buttons render and no-snapshot modes are disabled', () => {
+test('dashboard source modes: source mode is config-driven, not a main dashboard selector', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const model = buildDashboardModel(createInitialStatus(['claude']));
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('data-source-mode="local"'), `expected Local only source button`);
-  assert.ok(html.includes('data-source-mode="snapshots"'), `expected Snapshots only source button`);
-  assert.ok(html.includes('data-source-mode="combined"'), `expected Combined source button`);
-  assert.ok(html.includes('Local only'), `expected Local only source label`);
-  assert.ok(html.includes('Snapshots only'), `expected Snapshots only source label`);
-  assert.ok(html.includes('Combined'), `expected Combined source label`);
-  assert.ok(html.includes('data-state-chip="local"'), `expected Local source chip`);
-  assert.ok(html.includes('data-state-chip="snapshot"'), `expected Snapshot source chip`);
+  assert.ok(!html.includes('data-source-mode="local"'), `source selector buttons should be removed`);
+  assert.ok(!html.includes('data-source-mode="snapshots"'), `source selector buttons should be removed`);
+  assert.ok(!html.includes('data-source-mode="combined"'), `source selector buttons should be removed`);
+  assert.ok(!html.includes('class="source-selector"'), `source selector should not render`);
   assert.ok(html.includes('data-state-chip="combined"'), `expected Combined source chip`);
-  assert.ok(html.includes('class="snapshot-empty calm-state"'), `expected calm no-snapshots state`);
-  assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots button disabled without snapshots`);
-  assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined button disabled without snapshots`);
-  assert.ok(html.includes('aria-label="Snapshots only unavailable"'), `expected disabled source mode to have a visible state label`);
+  assert.ok(html.includes('Imported snapshots: 0'), `expected compact no-snapshot summary`);
+  assert.ok(html.includes('Dashboard usage source: Combined'), `expected configured source copy`);
 });
 
 test('dashboard source modes: snapshot copy, summary, and data attributes render when snapshots exist', () => {
@@ -1292,19 +1289,17 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('data-source-mode="combined" aria-pressed="true"'), `expected Combined default with snapshots`);
-  assert.ok(html.includes('Imported snapshots'), `expected snapshot summary section`);
-  assert.ok(html.includes('Provider coverage'), `expected provider coverage summary`);
-  assert.ok(html.includes('data-state-chip="aggregate-only"'), `expected aggregate-only snapshot chip`);
-  assert.ok(html.includes('class="snapshot-provider-list"'), `expected compact snapshot provider list`);
+  assert.ok(html.includes('data-state-chip="combined"'), `expected Combined configured source chip`);
+  assert.ok(html.includes('Imported snapshots: 1'), `expected compact snapshot summary`);
+  assert.ok(html.includes('Providers: Claude'), `expected compact provider coverage summary`);
+  assert.ok(!html.includes('data-state-chip="aggregate-only"'), `snapshot card section should not render`);
+  assert.ok(!html.includes('class="snapshot-provider-list"'), `snapshot provider list should not render`);
   assert.ok(!html.includes('class="card-grid snapshot-grid"'), `snapshot section should not render repeated provider cards`);
   assert.ok(html.includes('data-today-source-group="local"'), `expected Today local source group`);
   assert.ok(html.includes('data-today-source-group="snapshots"'), `expected Today snapshot source group`);
   assert.ok(html.includes('data-today-source-group="combined"'), `expected Today combined source group`);
   assert.ok(html.includes('function updateTodaySections()'), `expected Today section to update with selected source mode`);
-  assert.ok(html.includes('data-tokens-local-all="1.0K tokens"'), `expected local all-history source data`);
-  assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
-  assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);
+  assert.ok(html.includes('data-history-range="1M"'), `expected history range controls`);
   assert.ok(html.includes('snapshot import'), `expected safe source label`);
 });
 
@@ -1343,65 +1338,22 @@ test('dashboard source modes: safe snapshot source labels appear in summary, con
 
   assert.ok(html.includes('Snapshot sources'), `expected snapshot source summary label`);
   assert.ok(html.includes('WATCHER'), `expected safe source label in dashboard html`);
-  assert.ok(html.includes('Imported snapshots (WATCHER)'), `expected source contribution to name snapshot source`);
   assert.ok(html.includes('Codex + Codex (WATCHER)'), `expected combined model row source context`);
+  assert.ok(!html.includes('Imported snapshots (WATCHER)'), `source contribution card with snapshot label should not render`);
 });
 
-test('dashboard visuals: overview provider distribution renders for selected aggregate window', () => {
+test('dashboard visuals: Usage distribution section is not rendered', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
-  const localStatus = applyRefreshResults(
-    createInitialStatus(['claude', 'codex']),
-    [
-      {
-        providerId: 'claude',
-        status: 'ok',
-        totalTokens: 1000,
-        totalAssistantMessages: 10,
-        filesFound: 1,
-        localHistoryWindows: localHistoryWindowsFixture({
-          today: { tokens: 100, messages: 1 },
-          last5h: { tokens: 80, messages: 1 },
-          last7d: { tokens: 300, messages: 3 },
-          all: { tokens: 1000, messages: 10 },
-        }),
-      },
-      {
-        providerId: 'codex',
-        status: 'ok',
-        totalTokens: 2000,
-        totalAssistantMessages: 20,
-        filesFound: 1,
-        localHistoryWindows: localHistoryWindowsFixture({
-          today: { tokens: 200, messages: 2 },
-          last5h: { tokens: 150, messages: 2 },
-          last7d: { tokens: 600, messages: 6 },
-          all: { tokens: 2000, messages: 20 },
-        }),
-      },
-    ],
-  );
-  const status = applySnapshotReadResults(localStatus, snapshotStateFixture([{
-    providerId: 'claude',
-    generatedAtEpochMs: new Date('2026-05-31T18:00:00.000Z').getTime(),
-    aggregate: aggregateFixture(500, 5),
-    windowTotals: {
-      today: aggregateFixture(50, 1),
-      all: aggregateFixture(500, 5),
-    },
-  }]));
-  const model = buildDashboardModel(status);
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  const claudeRow = openingTagByAttribute(html, 'data-provider-distribution-row', 'claude');
-  const codexRow = openingTagByAttribute(html, 'data-provider-distribution-row', 'codex');
 
-  assert.ok(html.includes('data-usage-distribution="overview"'), `expected overview usage visual hook`);
-  assert.ok(html.includes('data-distribution-card="provider-overview"'), `expected overview provider distribution card`);
-  assert.ok(html.includes('Provider distribution'), `expected provider distribution title`);
-  assert.ok(html.includes('role="meter"'), `expected distribution bars to expose accessible meter semantics`);
-  assert.ok(html.includes('data-total-label-combined-today="350 tokens"'), `expected selected combined total`);
-  assert.ok(claudeRow.includes('data-value-combined-today="150 tokens"'), `expected Claude combined Today contribution`);
-  assert.ok(codexRow.includes('data-value-combined-today="200 tokens"'), `expected Codex combined Today contribution`);
+  assert.ok(!html.includes('data-usage-distribution="overview"'), `Usage distribution section should not render`);
+  assert.ok(!html.includes('data-distribution-card="provider-overview"'), `provider distribution card should not render`);
+  assert.ok(!html.includes('Provider distribution'), `provider distribution title should not render`);
+  assert.ok(!html.includes('data-source-contribution='), `source contribution card should not render`);
+  assert.ok(!html.includes('Source contribution'), `source contribution title should not render`);
+  assert.ok(html.includes('role="meter"'), `expected usage bars to still expose accessible meter semantics`);
 });
 
 test('dashboard visuals: selected source mode affects historical distribution only', () => {
@@ -1442,14 +1394,14 @@ test('dashboard visuals: selected source mode affects historical distribution on
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('data-total-label-local-today="100 tokens"'), `expected Local only distribution data`);
-  assert.ok(html.includes('data-total-label-snapshots-today="40 tokens"'), `expected Snapshots only distribution data`);
-  assert.ok(html.includes('data-total-label-combined-today="140 tokens"'), `expected Combined distribution data`);
+  assert.ok(html.includes('data-history-total-label-local-1M="100 tokens"'), `expected Local only history range total`);
+  assert.ok(html.includes('data-history-total-label-snapshots-1M="40 tokens"'), `expected Snapshots only history range total`);
+  assert.ok(html.includes('data-history-total-label-combined-1M="140 tokens"'), `expected Combined history range total`);
   assert.ok(html.includes('data-live-quota-card="claude"'), `expected live quota card to remain separate`);
   assert.ok(html.includes('80% remaining'), `expected live quota value to remain unchanged by historical visuals`);
 });
 
-test('dashboard visuals: combined mode shows local vs snapshot contribution', () => {
+test('dashboard visuals: combined mode history chart shows local and snapshot contribution', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const localStatus = applyRefreshResults(
     createInitialStatus(['claude']),
@@ -1479,13 +1431,11 @@ test('dashboard visuals: combined mode shows local vs snapshot contribution', ()
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  const localRow = openingTagByAttribute(html, 'data-source-contribution-row', 'local');
-  const snapshotRow = openingTagByAttribute(html, 'data-source-contribution-row', 'snapshots');
 
-  assert.ok(html.includes('data-source-contribution="overview"'), `expected overview source contribution card`);
-  assert.ok(localRow.includes('data-value-combined-today="100 tokens"'), `expected local part of Combined mode`);
-  assert.ok(snapshotRow.includes('data-value-combined-today="50 tokens"'), `expected snapshot part of Combined mode`);
-  assert.ok(html.includes('Source contribution'), `expected source contribution title`);
+  assert.ok(html.includes('data-history-total-label-combined-1M="150 tokens"'), `expected combined range history total`);
+  assert.ok(html.includes('data-history-total-label-local-1M="100 tokens"'), `expected local range history total`);
+  assert.ok(html.includes('data-history-total-label-snapshots-1M="50 tokens"'), `expected snapshots range history total`);
+  assert.ok(!html.includes('data-source-contribution='), `source contribution card should not render`);
 });
 
 test('dashboard visuals: no snapshot mode handles missing snapshots calmly', () => {
@@ -1494,12 +1444,11 @@ test('dashboard visuals: no snapshot mode handles missing snapshots calmly', () 
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('data-source-contribution="overview"'), `expected source contribution visual even without snapshots`);
-  assert.ok(html.includes('No snapshots found'), `expected calm no-snapshot state`);
-  assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots mode disabled`);
-  assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined mode disabled`);
-  assert.ok(html.includes('class="distribution-empty calm-state"'), `expected calm visual empty state`);
-  assert.ok(html.includes('data-total-label-local-today="0 tokens"'), `expected zero local visual total`);
+  assert.ok(html.includes('Imported snapshots: 0'), `expected compact no-snapshot state`);
+  assert.ok(!html.includes('data-source-mode="snapshots"'), `expected dashboard source selector to be absent`);
+  assert.ok(!html.includes('data-source-mode="combined"'), `expected dashboard source selector to be absent`);
+  assert.ok(!html.includes('data-source-contribution='), `source contribution card should not render without snapshots`);
+  assert.ok(html.includes('data-history-total-label-local-1M'), `expected local history range data to exist`);
 });
 
 test('dashboard visuals: provider tabs isolate provider-specific visual sections', () => {
@@ -1555,18 +1504,15 @@ test('dashboard visuals: provider tabs isolate provider-specific visual sections
   const claudePanel = dashboardTabPanel(html, 'claude');
   const codexPanel = dashboardTabPanel(html, 'codex');
 
-  assert.ok(claudePanel.includes('data-source-contribution="claude"'), `expected Claude-specific visual`);
-  assert.ok(claudePanel.includes('Claude source contribution'), `expected Claude visual title`);
-  assert.ok(claudePanel.includes('data-total-label-combined-today="150 tokens"'), `expected Claude combined visual total`);
-  assert.ok(!claudePanel.includes('data-source-contribution="codex"'), `Claude panel should not include Codex visual`);
-
-  assert.ok(codexPanel.includes('data-source-contribution="codex"'), `expected Codex-specific visual`);
-  assert.ok(codexPanel.includes('Codex source contribution'), `expected Codex visual title`);
-  assert.ok(codexPanel.includes('data-total-label-combined-today="270 tokens"'), `expected Codex combined visual total`);
-  assert.ok(!codexPanel.includes('data-source-contribution="claude"'), `Codex panel should not include Claude visual`);
+  assert.ok(!claudePanel.includes('data-source-contribution='), `Claude panel should not include source contribution card`);
+  assert.ok(!codexPanel.includes('data-source-contribution='), `Codex panel should not include source contribution card`);
+  assert.ok(claudePanel.includes('data-model-breakdown="claude"'), `expected Claude model breakdown in Claude tab`);
+  assert.ok(codexPanel.includes('data-model-breakdown="codex"'), `expected Codex model breakdown in Codex tab`);
+  assert.ok(!claudePanel.includes('data-model-breakdown="codex"'), `Claude panel should not include Codex model breakdown`);
+  assert.ok(!codexPanel.includes('data-model-breakdown="claude"'), `Codex panel should not include Claude model breakdown`);
 });
 
-test('dashboard source modes: missing snapshot windows are labeled honestly in HTML', () => {
+test('dashboard source modes: missing snapshot recent windows do not create prominent dashboard notes', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const status = applySnapshotReadResults(createInitialStatus(['claude']), snapshotStateFixture([{
     providerId: 'claude',
@@ -1577,9 +1523,9 @@ test('dashboard source modes: missing snapshot windows are labeled honestly in H
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
 
-  assert.ok(html.includes('data-source-window-note="snapshots"'), `expected snapshot missing-window note hook`);
-  assert.ok(html.includes('data-missing-windows="today,last5h,last7d"'), `expected missing snapshot window ids`);
-  assert.ok(html.includes('data-tokens-snapshots-today="0 tokens"'), `expected missing snapshot Today to remain zero`);
+  assert.ok(!html.includes('data-source-window-note="snapshots"'), `snapshot missing-window notes should not render as dashboard controls`);
+  assert.ok(!html.includes('data-missing-windows="today,last5h,last7d"'), `missing snapshot window ids should stay out of the main UI`);
+  assert.ok(html.includes('data-history-empty-snapshots-1M'), `expected snapshot history empty-state data to remain available`);
 });
 
 test('dashboard source modes: no raw filenames, paths, internal labels, or private source labels appear in HTML', () => {
@@ -1672,16 +1618,14 @@ test('dashboard: provider tabs isolate local history details by provider', () =>
   const claudePanel = dashboardTabPanel(html, 'claude');
   const codexPanel = dashboardTabPanel(html, 'codex');
 
-  assert.ok(claudePanel.includes('Claude provider usage history details'), `expected Claude usage detail heading`);
-  assert.ok(claudePanel.includes('data-provider-local-detail="claude"'), `expected Claude detail card`);
-  assert.ok(claudePanel.includes('Parse errors: 2 lines skipped'), `expected Claude parse count`);
-  assert.ok(!claudePanel.includes('data-provider-local-detail="codex"'), `Claude tab should not include Codex local detail card`);
+  assert.ok(!claudePanel.includes('Claude provider usage history details'), `provider history details section should not render in Claude tab`);
+  assert.ok(!claudePanel.includes('data-provider-local-detail='), `provider detail card should not render in Claude tab`);
+  assert.ok(claudePanel.includes('Parse errors: 2 lines skipped'), `expected Claude parse error note`);
   assert.ok(!claudePanel.includes('Parse errors: 3 lines skipped'), `Claude tab should not include Codex parse count`);
 
-  assert.ok(codexPanel.includes('Codex provider usage history details'), `expected Codex usage detail heading`);
-  assert.ok(codexPanel.includes('data-provider-local-detail="codex"'), `expected Codex detail card`);
-  assert.ok(codexPanel.includes('Parse errors: 3 lines skipped'), `expected Codex parse count`);
-  assert.ok(!codexPanel.includes('data-provider-local-detail="claude"'), `Codex tab should not include Claude local detail card`);
+  assert.ok(!codexPanel.includes('Codex provider usage history details'), `provider history details section should not render in Codex tab`);
+  assert.ok(!codexPanel.includes('data-provider-local-detail='), `provider detail card should not render in Codex tab`);
+  assert.ok(codexPanel.includes('Parse errors: 3 lines skipped'), `expected Codex parse error note`);
   assert.ok(!codexPanel.includes('Parse errors: 2 lines skipped'), `Codex tab should not include Claude parse count`);
 });
 
@@ -1708,11 +1652,12 @@ test('dashboard: local history selector updates provider details and charts', ()
   const html = buildDashboardHtml(mockWebview, model);
   const claudePanel = dashboardTabPanel(html, 'claude');
 
-  assert.ok(html.includes('data-local-window="last7d"'), `expected Last 7d selector button`);
+  assert.ok(!html.includes('data-local-window="last7d"'), `local history selector button should be removed`);
   assert.ok(!html.includes('local-history-summary-value'), `removed usage summary values should not render or update`);
   assert.ok(html.includes("querySelectorAll('[data-history-chart]')"), `expected selector script to update charts`);
-  assert.ok(claudePanel.includes('data-tokens-last7d="1.2K tokens"'), `expected Claude tab details to carry Last 7d tokens`);
-  assert.ok(claudePanel.includes('data-messages-all="5"'), `expected Claude tab details to carry all-history messages`);
+  assert.ok(claudePanel.includes('data-history-total-label-combined-1M="125 tokens"'), `expected Claude tab history chart to carry combined 1M range tokens`);
+  assert.ok(claudePanel.includes('data-history-chart="claude"'), `expected Claude tab history chart`);
+  assert.ok(!claudePanel.includes('data-provider-local-detail='), `provider detail card should not render in Claude tab`);
 });
 
 test('dashboard: includes local history disclaimer banner', () => {
@@ -1728,9 +1673,10 @@ test('dashboard: includes local history disclaimer banner', () => {
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('class="disclaimer"'), `expected dashboard disclaimer banner`);
   assert.ok(html.includes('class="live-quota-section"'), `expected live quota section`);
-  assert.ok(html.includes('class="source-selector"'), `expected source mode controls`);
-  assert.ok(html.includes('class="window-selector"'), `expected local history window controls`);
-  assert.ok(html.includes('class="control-panel"'), `expected dashboard controls to be visually grouped`);
+  assert.ok(!html.includes('class="source-selector"'), `source mode controls should not render`);
+  assert.ok(!html.includes('class="window-selector"'), `local history window controls should not render`);
+  assert.ok(!html.includes('class="control-panel"'), `main dashboard control panel should not render`);
+  assert.ok(html.includes('Dashboard usage source: Combined'), `expected config-driven source copy`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {
@@ -1802,7 +1748,7 @@ test('dashboard: unavailable live quota stays primary over local history', () =>
   assert.ok(!html.includes('Usage history tokens'), `removed usage summary labels should stay absent`);
 });
 
-test('dashboard: live quota values are not filtered by local history selector', () => {
+test('dashboard: live quota values are not filtered by history range or source setting', () => {
   const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
   const now = Date.now();
   const localStatus = applyRefreshResults(
@@ -1839,7 +1785,8 @@ test('dashboard: live quota values are not filtered by local history selector', 
   assert.ok(html.includes('28% remaining'), `expected live quota 7d remaining value`);
   assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
   assert.ok(!html.includes('% left'), `dashboard should not use left wording`);
-  assert.ok(html.includes('data-local-window="all"'), `expected local selector to include all-history without affecting live quota`);
+  assert.ok(!html.includes('data-local-window="all"'), `local selector should not render`);
+  assert.ok(html.includes('data-history-range="ALL"'), `history range control should remain separate from live quota`);
 });
 
 test('dashboard: stale provider card renders inside provider tab only for that provider', () => {
@@ -1971,7 +1918,8 @@ test('dashboard: removed usage summary section stays removed and parse wording r
   assert.ok(!html.includes('Usage history (secondary)'), `dashboard should not show confusing secondary usage history label`);
   assert.ok(!html.includes('Usage history is secondary'), `dashboard should not describe usage history as secondary`);
   assert.ok(!html.includes('local-history-summary-value'), `dashboard should not render removed usage summary values`);
-  assert.ok(html.includes('Provider usage history details'), `expected provider usage detail heading`);
+  assert.ok(!html.includes('Provider usage history details'), `provider usage history details section should not render`);
+  assert.ok(!html.includes('Usage distribution'), `Usage distribution section should not render`);
   assert.ok(html.includes('Parse errors: 1 line skipped'), `expected non-alarming parse wording`);
 });
 
@@ -1989,6 +1937,217 @@ test('dashboard: webview CSP and script nonce remain paired', () => {
   assert.ok(cspMatch, `expected CSP nonce`);
   assert.ok(scriptMatch, `expected script nonce`);
   assert.strictEqual(scriptMatch[1], cspMatch[1], `expected script nonce to match CSP nonce`);
+});
+
+// === Dashboard parity: new behavior tests ===
+
+test('dashboard: Today Source card is not rendered', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 2, filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 100, messages: 1 }, last5h: { tokens: 50, messages: 1 }, last7d: { tokens: 300, messages: 2 }, all: { tokens: 1000, messages: 2 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  const overviewPanel = dashboardTabPanel(html, 'overview');
+  const todayGrid = overviewPanel.slice(overviewPanel.indexOf('today-card-grid'), overviewPanel.indexOf('today-card-grid') + 800);
+  assert.ok(!todayGrid.includes('metric-label">Source'), `Today Source card should not render`);
+  assert.ok(todayGrid.includes('metric-label">Tokens'), `Today Tokens card should render`);
+  assert.ok(todayGrid.includes('metric-label">Activity'), `Today Activity card should render`);
+});
+
+test('dashboard: Today cache card renders when cache data exists', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 2, filesFound: 1,
+      localHistoryWindows: {
+        today: { totalInputTokens: 200, totalOutputTokens: 100, totalCacheCreationInputTokens: 50, totalCacheReadInputTokens: 300, totalTokens: 650, totalAssistantMessages: 2 },
+        last5h: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheCreationInputTokens: 0, totalCacheReadInputTokens: 0, totalTokens: 0, totalAssistantMessages: 0 },
+        last7d: { totalInputTokens: 200, totalOutputTokens: 100, totalCacheCreationInputTokens: 50, totalCacheReadInputTokens: 300, totalTokens: 650, totalAssistantMessages: 2 },
+        all: { totalInputTokens: 200, totalOutputTokens: 100, totalCacheCreationInputTokens: 50, totalCacheReadInputTokens: 300, totalTokens: 5000, totalAssistantMessages: 2 },
+      } }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('metric-label">Cache'), `Today Cache card should render when cache data exists`);
+  assert.ok(html.includes('Prompt cache activity'), `Today Cache card should include subtitle`);
+});
+
+test('dashboard: Today cache card absent when no cache data', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 2, filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 100, messages: 1 }, last5h: { tokens: 50, messages: 1 }, last7d: { tokens: 300, messages: 2 }, all: { tokens: 1000, messages: 2 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(!html.includes('Prompt cache activity'), `Today Cache card should not render when no cache data`);
+});
+
+test('dashboard: model colors assigned by model label, not provider', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude', 'codex']),
+    [
+      { providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 2, filesFound: 1,
+        modelAggregates: [{ providerId: 'claude', modelLabel: 'same-model', totalTokens: 600, totalAssistantMessages: 1 }],
+        localHistoryModelWindows: { today: [], last5h: [], last7d: [], all: [{ providerId: 'claude', modelLabel: 'same-model', totalTokens: 600, totalAssistantMessages: 1 }] } },
+      { providerId: 'codex', status: 'ok', totalTokens: 2000, totalAssistantMessages: 3, filesFound: 1,
+        modelAggregates: [{ providerId: 'codex', modelLabel: 'same-model', totalTokens: 800, totalAssistantMessages: 1 }],
+        localHistoryModelWindows: { today: [], last5h: [], last7d: [], all: [{ providerId: 'codex', modelLabel: 'same-model', totalTokens: 800, totalAssistantMessages: 1 }] } },
+    ],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  const colorMatches = [...html.matchAll(/--model-color:\s*var\(--pf-model-(\d+)\)/g)];
+  assert.ok(colorMatches.length > 0, `expected --model-color assignments`);
+  const uniqueColors = [...new Set(colorMatches.map(m => m[1]))];
+  assert.strictEqual(uniqueColors.length, 1, `same model label 'same-model' should get the same color index, got ${uniqueColors}`);
+});
+
+test('dashboard: different model labels receive distinct colors', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 3000, totalAssistantMessages: 3, filesFound: 1,
+      modelAggregates: [
+        { providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 1 },
+        { providerId: 'claude', modelLabel: 'claude-opus-4-20250514', totalTokens: 1200, totalAssistantMessages: 1 },
+        { providerId: 'claude', modelLabel: 'claude-haiku-4-20250514', totalTokens: 800, totalAssistantMessages: 1 },
+      ],
+      localHistoryModelWindows: {
+        today: [], last5h: [], last7d: [],
+        all: [
+          { providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 1000, totalAssistantMessages: 1 },
+          { providerId: 'claude', modelLabel: 'claude-opus-4-20250514', totalTokens: 1200, totalAssistantMessages: 1 },
+          { providerId: 'claude', modelLabel: 'claude-haiku-4-20250514', totalTokens: 800, totalAssistantMessages: 1 },
+        ],
+      } }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  const colorMatches = [...html.matchAll(/--model-color:\s*var\(--pf-model-(\d+)\)/g)];
+  const uniqueColors = [...new Set(colorMatches.map(m => m[1]))];
+  assert.ok(uniqueColors.length >= 2, `different model labels should get different colors, got ${uniqueColors.length}`);
+});
+
+test('dashboard: History range does not affect Today section', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 5, filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 125, messages: 1 }, last5h: { tokens: 75, messages: 1 }, last7d: { tokens: 1200, messages: 3 }, all: { tokens: 5000, messages: 5 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('125 tokens'), `expected today tokens in Today section`);
+  assert.ok(html.includes('data-today-source-group='), `expected Today section source groups`);
+  assert.ok(!html.includes('data-local-window='), `local window selector should not render`);
+});
+
+test('dashboard: History range drives model distribution and history chart together', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 5000, totalAssistantMessages: 5, filesFound: 1,
+      modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 5000, totalAssistantMessages: 5 }],
+      localHistoryModelWindows: { today: [], last5h: [], last7d: [], all: [{ providerId: 'claude', modelLabel: 'claude-sonnet-4-20250514', totalTokens: 5000, totalAssistantMessages: 5 }] },
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 125, messages: 1 }, last5h: { tokens: 75, messages: 1 }, last7d: { tokens: 1200, messages: 3 }, all: { tokens: 5000, messages: 5 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('data-model-empty-combined-1W='), `model distribution should have 1W range data`);
+  assert.ok(html.includes('data-model-empty-combined-1M='), `model distribution should have 1M range data`);
+  assert.ok(html.includes('data-model-empty-combined-1Y='), `model distribution should have 1Y range data`);
+  assert.ok(html.includes('data-model-empty-combined-ALL='), `model distribution should have ALL range data`);
+  assert.ok(html.includes('data-history-range-group="combined-1W"'), `history chart should have 1W range group`);
+  assert.ok(html.includes('data-history-range-group="combined-1M"'), `history chart should have 1M range group`);
+  assert.ok(html.includes("activeHistoryRange = rangeKey"), `range change should update history range variable`);
+  assert.ok(html.includes("updateModelDistributionVisuals()"), `range change should update model distribution`);
+  assert.ok(html.includes("updateUsageHistoryCharts()"), `range change should update history charts`);
+});
+
+test('dashboard: live quota not affected by History range or dashboard source', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const now = Date.now();
+  const status = applyLiveQuotaResults(createInitialStatus(['claude']), [{
+    providerId: 'claude',
+    windows: [{ windowId: '5h', usedPercentage: 15, remainingPercentage: 85, resetsAtEpochMs: now + 1000 }],
+    freshness: 'live',
+    lastUpdatedEpochMs: now,
+  }]);
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('85% remaining'), `live quota value should be present`);
+  assert.ok(html.includes('data-live-quota-card="claude"'), `live quota card should render`);
+  assert.ok(!html.includes('data-history-range="5h"'), `live quota window IDs should not appear as history range selectors`);
+});
+
+test('dashboard: Today section shows Tokens and Activity cards', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 2, filesFound: 1,
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 100, messages: 1 }, last5h: { tokens: 50, messages: 1 }, last7d: { tokens: 300, messages: 2 }, all: { tokens: 1000, messages: 2 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('metric-label">Tokens'), `Today Tokens card should render`);
+  assert.ok(html.includes('metric-label">Activity'), `Today Activity card should render`);
+  assert.ok(!html.includes('metric-label">Source'), `Today Source card should not render`);
+});
+
+test('dashboard: Provider usage history details section is not rendered', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(!html.includes('provider usage history details'), `provider usage history details should not appear in dashboard`);
+  assert.ok(!html.includes('data-provider-local-detail='), `provider local detail attribute should not render`);
+});
+
+test('dashboard: parse errors appear as notes in provider tabs, not detail sections', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 500, totalAssistantMessages: 1, filesFound: 1, parseErrors: 5 }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  const claudePanel = dashboardTabPanel(html, 'claude');
+  assert.ok(claudePanel.includes('Parse errors: 5 lines skipped'), `expected parse error note in Claude tab`);
+  assert.ok(claudePanel.includes('parse-error-note'), `expected parse-error-note class`);
+  assert.ok(!claudePanel.includes('provider usage history details'), `no details section should render`);
+});
+
+test('dashboard: provider hover tooltips attach to history bars and model rows', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const status = applyRefreshResults(
+    createInitialStatus(['claude']),
+    [{ providerId: 'claude', status: 'ok', totalTokens: 1000, totalAssistantMessages: 2, filesFound: 1,
+      modelAggregates: [{ providerId: 'claude', modelLabel: 'claude-sonnet', totalTokens: 1000, totalAssistantMessages: 2 }],
+      localHistoryModelWindows: { today: [], last5h: [], last7d: [], all: [{ providerId: 'claude', modelLabel: 'claude-sonnet', totalTokens: 1000, totalAssistantMessages: 2 }] },
+      localHistoryWindows: localHistoryWindowsFixture({ today: { tokens: 100, messages: 1 }, last5h: { tokens: 50, messages: 1 }, last7d: { tokens: 300, messages: 2 }, all: { tokens: 1000, messages: 2 } }) }],
+  );
+  const model = buildDashboardModel(status);
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('data-pf-tip='), `expected data-pf-tip tooltip attributes`);
+  assert.ok(html.includes('&quot;kind&quot;:&quot;history&quot;'), `expected history bar tooltip payloads`);
+  assert.ok(html.includes('&quot;kind&quot;:&quot;model&quot;'), `expected model row tooltip payloads`);
+  assert.ok(html.includes("pfTipEl.className = 'pf-tip hidden'"), `expected pf-tip element initialization`);
+});
+
+test('dashboard: model breakdown progress bars use fixed column alignment', () => {
+  const { buildDashboardHtml } = require(path.join(OUT, 'panel/dashboardHtml'));
+  const model = buildDashboardModel(createInitialStatus(['claude', 'codex']));
+  const html = buildDashboardHtml({ cspSource: 'http://example.com' }, model);
+  assert.ok(html.includes('10px 52px'), `expected fixed-width swatch and provider columns for bar alignment`);
+  const modelRowCss = html.match(/\.usage-model-row\s*\{[^}]+\}/);
+  assert.ok(modelRowCss, `expected .usage-model-row CSS rule`);
+  assert.ok(modelRowCss[0].includes('72px'), `expected fixed-width bar column in model row grid`);
+  assert.ok(!modelRowCss[0].includes('minmax(80px, 1fr)'), `variable-width bar column should be replaced with fixed-width`);
 });
 
 // === Live quota: formatLiveQuota integration ===

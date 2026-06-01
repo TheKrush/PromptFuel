@@ -1,11 +1,14 @@
 import type { ProviderId } from './providers';
 
+export type DashboardUsageSource = 'combined' | 'local' | 'snapshots';
+
 export interface PromptFuelConfig {
   enabledProviders: ProviderId[];
   refreshIntervalMinutes: number;
   liveQuotaEnabled: boolean;
   snapshotImportPath: string;
   snapshotExportPath: string;
+  dashboardUsageSource: DashboardUsageSource;
 }
 
 export const CONFIG_DEFAULTS: PromptFuelConfig = {
@@ -14,4 +17,5 @@ export const CONFIG_DEFAULTS: PromptFuelConfig = {
   liveQuotaEnabled: true,
   snapshotImportPath: '',
   snapshotExportPath: '',
+  dashboardUsageSource: 'combined',
 };

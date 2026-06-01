@@ -81,6 +81,7 @@ if (!refreshSchedulerSource.includes('cfg.snapshotImportPath')) {
 // Configuration setting key checks
 const properties = pkg.contributes?.configuration?.properties || {};
 const expectedSettings = [
+  'promptFuel.dashboardUsageSource',
   'promptFuel.enabledProviders',
   'promptFuel.liveQuotaEnabled',
   'promptFuel.refreshIntervalMinutes',
@@ -98,6 +99,16 @@ for (const key of Object.keys(properties)) {
 }
 if (properties['promptFuel.liveQuotaEnabled']?.default !== true) {
   fail('setting "promptFuel.liveQuotaEnabled" default should be true');
+}
+const dashboardUsageSource = properties['promptFuel.dashboardUsageSource'];
+if (dashboardUsageSource?.default !== 'combined') {
+  fail('setting "promptFuel.dashboardUsageSource" default should be "combined"');
+}
+const dashboardUsageSourceEnum = dashboardUsageSource?.enum || [];
+for (const value of ['combined', 'local', 'snapshots']) {
+  if (!dashboardUsageSourceEnum.includes(value)) {
+    fail(`setting "promptFuel.dashboardUsageSource" should allow "${value}"`);
+  }
 }
 if (Object.hasOwn(properties, 'promptFuel.displayMode')) {
   fail('setting "promptFuel.displayMode" should not be contributed');
