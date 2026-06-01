@@ -1,6 +1,6 @@
 # Contributing to PromptFuel
 
-Thank you for taking an interest in **PromptFuel** — a VS Code extension for tracking AI coding assistant usage, remaining quota, reset windows, and API-equivalent estimates, all locally.
+Thank you for taking an interest in **PromptFuel** — a VS Code extension for tracking AI coding assistant usage, remaining quota, and reset windows.
 
 ---
 
@@ -51,7 +51,7 @@ code --extensionDevelopmentPath=.
 
 - **Settings** must be under `promptFuel.*` (e.g., `promptFuel.enabledProviders`).
 - **Commands** must be under `promptFuel.*` (e.g., `promptFuel.openDashboard`).
-- `promptFuel.liveQuotaEnabled` defaults to `false`. New live quota features must remain opt-in.
+- `promptFuel.liveQuotaEnabled` defaults to `true`; users can set it to `false` to disable live quota reads.
 - Live quota requires existing provider OAuth/auth state. Do not add PromptFuel-specific auth UI unless explicitly scoped.
 - Snapshots are not implemented. Do not commit snapshot or cached provider state unless explicitly scoped.
 - Do **not** commit raw prompts, responses, or conversation transcripts.
