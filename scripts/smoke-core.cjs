@@ -958,7 +958,7 @@ test('dashboard: uses local history wording, not subscription', () => {
   const model = buildDashboardModel(status);
   const mockWebview = { cspSource: 'http://example.com' };
   const html = buildDashboardHtml(mockWebview, model);
-  assert.ok(html.includes('Usage overview'), `expected "Usage overview" subtitle`);
+  assert.ok(html.includes('Live quota first, usage history second'), `expected live quota/local history subtitle`);
   assert.ok(html.includes('Usage history tokens'), `expected "Usage history tokens" overview label`);
   assert.ok(html.includes('Usage history messages'), `expected "Usage history messages" overview label`);
   assert.ok(!html.includes('subscription'), `should not include "subscription"`);
@@ -1009,6 +1009,10 @@ test('dashboard source modes: buttons render and no-snapshot modes are disabled'
   assert.ok(html.includes('Local only'), `expected Local only source label`);
   assert.ok(html.includes('Snapshots only'), `expected Snapshots only source label`);
   assert.ok(html.includes('Combined'), `expected Combined source label`);
+  assert.ok(html.includes('data-state-chip="local"'), `expected Local source chip`);
+  assert.ok(html.includes('data-state-chip="snapshot"'), `expected Snapshot source chip`);
+  assert.ok(html.includes('data-state-chip="combined"'), `expected Combined source chip`);
+  assert.ok(html.includes('class="snapshot-empty calm-state"'), `expected calm no-snapshots state`);
   assert.ok(html.includes('data-source-mode="snapshots" aria-pressed="false" disabled'), `expected snapshots button disabled without snapshots`);
   assert.ok(html.includes('data-source-mode="combined" aria-pressed="false" disabled'), `expected combined button disabled without snapshots`);
 });
@@ -1032,6 +1036,8 @@ test('dashboard source modes: snapshot copy, summary, and data attributes render
   assert.ok(html.includes('data-source-mode="combined" aria-pressed="true"'), `expected Combined default with snapshots`);
   assert.ok(html.includes('Imported snapshots'), `expected snapshot summary section`);
   assert.ok(html.includes('Provider coverage'), `expected provider coverage summary`);
+  assert.ok(html.includes('data-state-chip="aggregate-only"'), `expected aggregate-only snapshot chip`);
+  assert.ok(html.includes('class="card-grid snapshot-grid"'), `expected snapshot cards to use stable grid class`);
   assert.ok(html.includes('data-tokens-local-all="1.0K tokens"'), `expected local all-history source data`);
   assert.ok(html.includes('data-tokens-snapshots-all="500 tokens"'), `expected snapshot all-history source data`);
   assert.ok(html.includes('data-tokens-combined-all="1.5K tokens"'), `expected combined all-history source data`);
@@ -1196,6 +1202,7 @@ test('dashboard: includes local history disclaimer banner', () => {
   assert.ok(html.includes('class="live-quota-section"'), `expected live quota section`);
   assert.ok(html.includes('class="source-selector"'), `expected source mode controls`);
   assert.ok(html.includes('class="window-selector"'), `expected local history window controls`);
+  assert.ok(html.includes('class="control-panel"'), `expected dashboard controls to be visually grouped`);
 });
 
 test('dashboard: no file paths or .jsonl in HTML', () => {
@@ -1415,6 +1422,7 @@ test('dashboard: live provider card shows live badge and reset countdown', () =>
   const html = buildDashboardHtml(mockWebview, model);
   assert.ok(html.includes('Codex'), `expected Codex live card`);
   assert.ok(html.includes('LIVE'), `expected live badge`);
+  assert.ok(html.includes('class="card-grid live-quota-grid"'), `expected live quota cards to use stable grid class`);
   assert.ok(html.includes('85% remaining'), `expected remaining text`);
   assert.ok(html.includes('85% remaining · resets in'), `expected remaining text with reset countdown`);
   assert.ok(!html.includes('used /'), `dashboard should not show used/left pairs`);
