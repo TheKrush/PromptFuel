@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addThousandsSeparators, formatStatus, quotaLevelForRemaining, type FormatOptions } from '../display/format';
+import { addThousandsSeparators, formatStatus, formatTokenCount, quotaLevelForRemaining, type FormatOptions } from '../display/format';
 import { normalizeThresholds } from '../configThresholds';
 import type { ProviderUsageState } from '../types';
 
@@ -36,6 +36,20 @@ describe('display formatting', () => {
     assert.equal(addThousandsSeparators('999'), '999');
     assert.equal(addThousandsSeparators('1000'), '1,000');
     assert.equal(addThousandsSeparators('1234567'), '1,234,567');
+  });
+
+  it('formats token counts with K/M abbreviations', () => {
+    assert.equal(formatTokenCount(0), '0');
+    assert.equal(formatTokenCount(5), '5');
+    assert.equal(formatTokenCount(999), '999');
+    assert.equal(formatTokenCount(1000), '1.0K');
+    assert.equal(formatTokenCount(1500), '1.5K');
+    assert.equal(formatTokenCount(999999), '1,000.0K');
+    assert.equal(formatTokenCount(1000000), '1.0M');
+    assert.equal(formatTokenCount(1500000), '1.5M');
+    assert.equal(formatTokenCount(9999999), '10.0M');
+    assert.equal(formatTokenCount(1234567), '1.2M');
+    assert.equal(formatTokenCount(123456), '123.5K');
   });
 
   it('maps remaining quota levels to dashboard color buckets', () => {

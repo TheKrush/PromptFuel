@@ -2,7 +2,7 @@ import { AuthenticatedQuotaStatus } from '../../types';
 import type { UsageDashboardSourceInfo, UsageDashboardSourceConfidence, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard } from '../usageDashboardModel';
 import type { RemoteModelEntry } from '../../snapshot/remoteUsageProjection';
 import type { UsageHistoryPoint } from '../usageHistoryBinning';
-import { addThousandsSeparators } from '../../display/format';
+import { addThousandsSeparators, formatTokenCount } from '../../display/format';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
 
 interface LocalHistoryModelUsageRow {
@@ -48,13 +48,7 @@ export function shortenCodexModel(model: string): string {
 }
 
 export function formatCount(value: number): string {
-  if (value >= 1_000_000) {
-    return `${addThousandsSeparators((value / 1_000_000).toFixed(1))}M`;
-  }
-  if (value >= 1_000) {
-    return `${addThousandsSeparators((value / 1_000).toFixed(1))}K`;
-  }
-  return Math.round(value).toLocaleString();
+  return formatTokenCount(value);
 }
 
 export function formatUsd(value: number): string {

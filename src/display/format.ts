@@ -709,14 +709,14 @@ export function addThousandsSeparators(numStr: string): string {
   return parts.join('.');
 }
 
-function tooltipCount(value: number): string {
+export function formatTokenCount(value: number): string {
   if (value >= 1_000_000) {
     return `${addThousandsSeparators((value / 1_000_000).toFixed(1))}M`;
   }
   if (value >= 1_000) {
     return `${addThousandsSeparators((value / 1_000).toFixed(1))}K`;
   }
-  return Math.round(value).toLocaleString();
+  return String(Math.round(value));
 }
 
 function formatModelBreakdown(breakdown: ModelBreakdownData, provider: string): string[] {
@@ -739,7 +739,7 @@ function formatModelBreakdown(breakdown: ModelBreakdownData, provider: string): 
   const capped = rows.slice(0, 5);
   for (const row of capped) {
     const modelLabel = escapeMarkdownHtml(row.label);
-    const tokens = tooltipCount(row.totalTokens);
+    const tokens = formatTokenCount(row.totalTokens);
     const msgs = row.assistantMessages !== undefined ? `${row.assistantMessages}` : '';
     const cost = row.costUsd !== undefined ? formatCostShort(row.costUsd) : '';
     lines.push(`| ${modelLabel} | **${tokens}** | ${msgs} | ${cost} |`);
@@ -797,7 +797,7 @@ function formatCombinedModelBreakdown(
 
   for (const item of rows) {
     const modelLabel = escapeMarkdownHtml(item.row.label);
-    const tokens = tooltipCount(item.row.totalTokens);
+    const tokens = formatTokenCount(item.row.totalTokens);
     const msgs = item.row.assistantMessages !== undefined ? `${item.row.assistantMessages}` : '';
     const cost = item.row.costUsd !== undefined ? formatCostShort(item.row.costUsd) : '';
     lines.push(`| ${item.providerLabel} | ${modelLabel} | **${tokens}** | ${msgs} | ${cost} |`);
