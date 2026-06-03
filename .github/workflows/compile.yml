@@ -6,12 +6,12 @@ on:
 
 jobs:
   # ----------------------------------------
-  # 🏗️ Compile
+  # 🏗️ Compile, test & smoke
   # ----------------------------------------
   compile:
-    name: 🏗️ Compile
+    name: ⚙️ Compile, Test & Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: 🧾 Checkout
@@ -27,3 +27,11 @@ jobs:
 
       - name: 🏗️ Build
         uses: ./.github/actions/build-node
+
+      - name: 🧪 Unit tests
+        shell: bash
+        run: npm run test:unit
+
+      - name: 🏪 Dashboard smoke
+        shell: bash
+        run: npm run smoke:dashboard
