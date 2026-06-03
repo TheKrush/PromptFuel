@@ -157,13 +157,17 @@ function buildRemoteTodayCards(
   const remoteCache = remote.cacheCreationTokens + remote.cacheReadTokens;
   const remoteNote = buildRemoteSourceNote(remote);
   const remoteApiEstimate = estimateRemoteTodayApiEquivalent(remote, modelEntries, isClaude, providerLabel);
+  const activityCount = remote.assistantMessages;
+  const activityLabel = isClaude ? 'messages' : 'turns';
 
   return [{
     key: `${keyPrefix}Messages`,
     label: '1D Messages/Turns',
-    value: '—',
-    detail: 'Activity count not available from snapshot data',
-    available: false,
+    value: activityCount !== undefined ? formatCount(activityCount) : '—',
+    detail: activityCount !== undefined
+      ? `${remoteNote} · ${activityCount} ${activityLabel}`
+      : 'Activity count not available from snapshot data',
+    available: activityCount !== undefined,
     source: remoteSource
   }, {
     key: `${keyPrefix}Tokens`,
@@ -447,12 +451,13 @@ export function buildToday(
       const remoteApiEstimate = estimateRemoteTodayApiEquivalent(remoteClaude, remoteClaudeModels, true, 'Claude');
 
       scopeParts.push(`Claude snapshot (${sourceNote})`);
+      const remoteClaudeMessages = remoteClaude.assistantMessages;
       cards.push({
         key: 'todayMessages',
         label: '1D Messages/Turns',
-        value: '—',
-        detail: 'Activity count not available from snapshot data',
-        available: false,
+        value: remoteClaudeMessages !== undefined ? formatCount(remoteClaudeMessages) : '—',
+        detail: remoteClaudeMessages !== undefined ? '' : 'Activity count not available from snapshot data',
+        available: remoteClaudeMessages !== undefined,
         source: remoteSource
       }, {
         key: 'todayTokens',
@@ -484,9 +489,14 @@ export function buildToday(
         available: remoteApiEstimate.available
       });
     } else {
-      const detail = claudeTodayUsage?.error ?? 'Claude assistant-message day-bucket data has not been scanned yet';
-      scopeParts.push('Claude usage unavailable');
-      cards.push(...buildClaudeTodayUnavailableCards(detail));
+      scopeParts.push('Claude (no activity today)');
+      cards.push(
+        { key: 'todayMessages', label: '1D Messages/Turns', value: '0', detail: 'No Claude activity today', available: true },
+        { key: 'todayTokens', label: '1D Tokens', value: '0', detail: 'No Claude activity today', available: true },
+        { key: 'todayInputOutput', label: '1D Input / Output', value: '0 / 0', detail: '', available: true },
+        { key: 'todayCache', label: '1D Cache', value: '0', detail: '', available: true },
+        buildUnavailableMetricCard('todayApiEquivalent', '1D API-equivalent', 'No Claude activity today')
+      );
     }
   }
 
@@ -613,12 +623,13 @@ export function buildToday(
       const remoteApiEstimate = estimateRemoteTodayApiEquivalent(remoteCodex, remoteCodexModels, false, 'Codex');
 
       scopeParts.push(`Codex snapshot (${sourceNote})`);
+      const remoteCodexMessages = remoteCodex.assistantMessages;
       cards.push({
         key: 'codexTodayMessages',
         label: '1D Messages/Turns',
-        value: '—',
-        detail: 'Activity count not available from snapshot data',
-        available: false,
+        value: remoteCodexMessages !== undefined ? formatCount(remoteCodexMessages) : '—',
+        detail: remoteCodexMessages !== undefined ? '' : 'Activity count not available from snapshot data',
+        available: remoteCodexMessages !== undefined,
         source: remoteSource
       }, {
         key: 'codexTodayTokens',
@@ -650,9 +661,14 @@ export function buildToday(
         available: remoteApiEstimate.available
       });
     } else {
-      const detail = codexTodayUsage?.error ?? 'No Codex correlated usage data is available yet.';
-      scopeParts.push('Codex usage unavailable');
-      cards.push(...buildCodexTodayUnavailableCards(detail));
+      scopeParts.push('Codex (no activity today)');
+      cards.push(
+        { key: 'codexTodayMessages', label: '1D Messages/Turns', value: '0', detail: 'No Codex activity today', available: true },
+        { key: 'codexTodayTokens', label: '1D Tokens', value: '0', detail: 'No Codex activity today', available: true },
+        { key: 'codexTodayInputOutput', label: '1D Input / Output', value: '0 / 0', detail: '', available: true },
+        { key: 'codexTodayCache', label: '1D Cache', value: '0', detail: '', available: true },
+        buildUnavailableMetricCard('codexTodayApiEquivalent', '1D API-equivalent', 'No Codex activity today')
+      );
     }
   }
 
@@ -664,7 +680,7 @@ export function buildToday(
     : undefined;
 
   return {
-    available: claudeAvailable || codexAvailable || Boolean(remoteClaude) || Boolean(remoteCodex),
+    available: claudeEnabled || codexEnabled || claudeAvailable || codexAvailable || Boolean(remoteClaude) || Boolean(remoteCodex),
     scopeLabel: scopeParts.length > 0 ? `Today — ${scopeParts.join('; ')}` : 'Today — no enabled providers',
     cards,
     ...(splitCards.length > 0 ? { splitCards } : {}),

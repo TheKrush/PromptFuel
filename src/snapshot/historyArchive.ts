@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { EXTENSION_VERSION } from '../version';
 import {
   SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION,
-  SNAPSHOT_SCHEMA_V4,
+  SNAPSHOT_SCHEMA_V1,
   isSupportedSchemaVersion,
   type PromptFuelMachineSnapshotV2,
   type PromptFuelSnapshotHistoryArchiveMonth,
@@ -18,17 +18,14 @@ const ARCHIVE_ROOT_FIELDS = [
   'schemaVersion',
   'archiveSchemaVersion',
   'generatedAtEpochMs',
-  'machine',      // V2 legacy
-  'machineLabel', // V3+
+  'machineLabel',
   'month',
   'providers',
-  'exportMeta',   // V2/V3 legacy (accepted for upgrade)
-  'writerVersion' // V4
+  'writerVersion'
 ];
 const ARCHIVE_PROVIDER_FIELDS = ['provider', 'historyBuckets'];
 const ARCHIVE_BUCKET_FIELDS = ['dateKey', 'inputTokens', 'outputTokens', 'cacheCreationTokens', 'cacheReadTokens', 'reasoningOutputTokens', 'requests', 'messages', 'turns', 'sourceConfidence', 'models'];
 const ARCHIVE_MODEL_FIELDS = ['model', 'inputTokens', 'outputTokens', 'cacheCreationTokens', 'cacheReadTokens', 'reasoningOutputTokens', 'requests', 'messages', 'turns'];
-const ARCHIVE_EXPORT_META_FIELDS = ['extensionVersion', 'schemaVersion', 'includeHistoryBuckets', 'exportKind', 'archiveSchemaVersion'];
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -132,43 +129,15 @@ export function validateHistoryArchivePayload(value: unknown): PromptFuelSnapsho
     !/^\d{4}-\d{2}$/.test(value.month)) {
     return undefined;
   }
-  // Accept V2 (machine: { label }) or V3+ (machineLabel) format
-  let archiveMachineLabel: string | undefined;
-  if (isObject(value.machine)) {
-    if (Object.keys(value.machine).length !== 1 || typeof value.machine.label !== 'string' || !value.machine.label) {
-      return undefined;
-    }
-    archiveMachineLabel = value.machine.label;
-  } else if (typeof value.machineLabel === 'string' && value.machineLabel) {
-    archiveMachineLabel = value.machineLabel;
-  }
-  if (!archiveMachineLabel) {
+  if (typeof value.machineLabel !== 'string' || !value.machineLabel) {
     return undefined;
   }
+  const archiveMachineLabel = value.machineLabel;
 
-  // V4: writerVersion at root; V2/V3: extensionVersion inside exportMeta
-  let writerVersion: string;
-  if ((value.schemaVersion as number) === SNAPSHOT_SCHEMA_V4) {
-    if (typeof value.writerVersion !== 'string' || !value.writerVersion) {
-      return undefined;
-    }
-    if (value.exportMeta !== undefined) {
-      return undefined;
-    }
-    writerVersion = value.writerVersion;
-  } else {
-    if (!isObject(value.exportMeta) || !hasOnlyKeys(value.exportMeta, ARCHIVE_EXPORT_META_FIELDS)) {
-      return undefined;
-    }
-    if (typeof value.exportMeta.extensionVersion !== 'string' ||
-      !isSupportedSchemaVersion(value.exportMeta.schemaVersion as number) ||
-      value.exportMeta.includeHistoryBuckets !== true ||
-      value.exportMeta.exportKind !== 'historyBucketsArchive' ||
-      value.exportMeta.archiveSchemaVersion !== SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION) {
-      return undefined;
-    }
-    writerVersion = value.exportMeta.extensionVersion;
+  if (typeof value.writerVersion !== 'string' || !value.writerVersion) {
+    return undefined;
   }
+  const writerVersion = value.writerVersion;
 
   if (!Array.isArray(value.providers)) {
     return undefined;
@@ -183,7 +152,7 @@ export function validateHistoryArchivePayload(value: unknown): PromptFuelSnapsho
   }
 
   return {
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     archiveSchemaVersion: SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION,
     writerVersion,
     generatedAtEpochMs: value.generatedAtEpochMs,
@@ -264,7 +233,7 @@ function buildArchivePayload(
   }
 
   return {
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     archiveSchemaVersion: SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION,
     writerVersion: EXTENSION_VERSION,
     generatedAtEpochMs: Date.now(),

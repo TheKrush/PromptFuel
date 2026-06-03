@@ -19,7 +19,7 @@ import {
   formatStatusBarTooltipSuffix
 } from '../snapshot/remoteSourceHelper';
 import { buildRemoteUsageProjection } from '../snapshot/remoteUsageProjection';
-import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V2, SNAPSHOT_SCHEMA_V4 } from '../snapshot/types';
+import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V1 } from '../snapshot/types';
 import type { PromptFuelMachineSnapshotV2, PromptFuelSnapshotHistoryArchiveMonth, SnapshotHistoryBucket } from '../snapshot/types';
 
 let tmpDir: string;
@@ -31,7 +31,7 @@ const TODAY_KEY = (() => {
 
 function makeSnapshot(overrides: Partial<PromptFuelMachineSnapshotV2> = {}): PromptFuelMachineSnapshotV2 {
   return {
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     writerVersion: '0.6.0',
     generatedAtEpochMs: Date.now(),
     machineLabel: 'desktop',
@@ -73,7 +73,7 @@ function makeSnapshot(overrides: Partial<PromptFuelMachineSnapshotV2> = {}): Pro
 
 function makeNonCurrentSnapshot(): any {
   const snap = makeSnapshot() as any;
-  snap.schemaVersion = 1;
+  snap.schemaVersion = 99;
   return snap;
 }
 
@@ -91,7 +91,7 @@ async function writeArchive(
   assert.ok(year);
   assert.ok(monthPart);
   const archive: PromptFuelSnapshotHistoryArchiveMonth = {
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     archiveSchemaVersion: SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION,
     writerVersion: '0.6.0',
     generatedAtEpochMs: Date.now(),
@@ -182,10 +182,10 @@ describe('snapshotReader', () => {
       }
     });
 
-    it('rejects V2 snapshots containing extra machine metadata fields during upgrade', async () => {
+    it('rejects schema version 2 snapshot files', async () => {
       for (const field of ['role', 'roleLabel']) {
         const snap: any = {
-          schemaVersion: SNAPSHOT_SCHEMA_V2,
+          schemaVersion: 2,
           generatedAtEpochMs: Date.now(),
           machine: { label: `BAD_MACHINE_${field}`, [field]: field === 'role' ? 'legacy-role' : 'legacy source' },
           providerUsage: [{
@@ -195,7 +195,7 @@ describe('snapshotReader', () => {
             source: 'authenticated',
             sourceConfidence: 'quotaState'
           }],
-          exportMeta: { extensionVersion: '0.4.38', schemaVersion: SNAPSHOT_SCHEMA_V2 }
+          exportMeta: { extensionVersion: '0.4.38', schemaVersion: 2 }
         };
         await writeLatest(`bad-machine-${field}-latest.json`, snap);
       }
@@ -278,7 +278,7 @@ describe('snapshotReader', () => {
 
       assert.equal(sources.length, 1);
       assert.equal(sources[0].quotaOnly, false);
-      assert.equal(sources[0].schemaVersion, SNAPSHOT_SCHEMA_V4);
+      assert.equal(sources[0].schemaVersion, SNAPSHOT_SCHEMA_V1);
       assert.equal(sources[0].fiveHourResetAtEpochSeconds, 1_800_000_000);
       assert.equal(sources[0].sevenDayResetAtEpochSeconds, 1_900_000_000);
       assert.equal(sources[0].historyBuckets?.[0]?.models?.[0]?.model, 'claude-sonnet-4-20250514');
@@ -301,6 +301,7 @@ describe('snapshotReader', () => {
       assert.equal(projection.claudeToday?.outputTokens, 500);
       assert.equal(projection.claudeToday?.cacheCreationTokens, 250);
       assert.equal(projection.claudeToday?.cacheReadTokens, 100);
+      assert.equal(projection.claudeToday?.assistantMessages, 2);
       assert.equal(projection.claudeModelEntries[0].model, 'claude-sonnet-4-20250514');
       assert.equal(projection.claudeModelEntries[0].tokens, 1850);
       assert.equal(projection.claudeModelEntries[0].assistantMessages, 2);
@@ -386,14 +387,14 @@ describe('snapshotReader', () => {
         ]);
         const archivePath = path.join(rootDir, 'archive', 'vm-source', '2026-05.json');
         const archive = JSON.parse(await fs.readFile(archivePath, 'utf-8'));
-        // Simulate a V2 archive with extra machine metadata field (should be rejected)
+        // Simulate a schema version 2 archive (should be rejected — only V1 is supported)
         delete archive.machineLabel;
         delete archive.writerVersion;
         archive.machine = { label: 'vm-source', roleLabel: 'legacy source' };
-        archive.schemaVersion = SNAPSHOT_SCHEMA_V2;
+        archive.schemaVersion = 2;
         archive.exportMeta = {
           extensionVersion: '0.4.45',
-          schemaVersion: SNAPSHOT_SCHEMA_V2,
+          schemaVersion: 2,
           includeHistoryBuckets: true,
           exportKind: 'historyBucketsArchive',
           archiveSchemaVersion: SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION

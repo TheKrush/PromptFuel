@@ -2202,8 +2202,13 @@ export function buildPromptFuelPanelScript(): string {
       var codexCards = (cards || []).filter(function(c) {
         return c && c.key && (c.key.indexOf('codexToday') === 0 || c.key.indexOf('remoteTodayCodex') === 0);
       });
-      if (claudeCards.length > 0) { groups.push({ label: (today && today.claudeSectionLabel) || 'Claude', cards: claudeCards }); }
-      if (codexCards.length > 0) { groups.push({ label: (today && today.codexSectionLabel) || 'Codex', cards: codexCards }); }
+      // Only show a provider group when it has a real data source (sectionLabel defined).
+      // Suppress "no activity" placeholders in overview when the other provider has real data.
+      var hasRealClaude = !!(today && today.claudeSectionLabel);
+      var hasRealCodex = !!(today && today.codexSectionLabel);
+      var showAll = !hasRealClaude && !hasRealCodex;
+      if (claudeCards.length > 0 && (hasRealClaude || showAll)) { groups.push({ label: (today && today.claudeSectionLabel) || 'Claude', cards: claudeCards }); }
+      if (codexCards.length > 0 && (hasRealCodex || showAll)) { groups.push({ label: (today && today.codexSectionLabel) || 'Codex', cards: codexCards }); }
     } else {
       var remotePrefix = currentUsageProviderTab === 'claude' ? 'remoteTodayClaude' : 'remoteTodayCodex';
       var providerName = currentUsageProviderTab === 'claude' ? 'Claude' : 'Codex';

@@ -7,7 +7,7 @@ const { aggregateSnapshotBucketModels, buildRemoteUsageProjection } = require('.
 const { buildUsageDashboardModel } = require('../out/panel/usageDashboardModel.js');
 const { buildStatusHoverModelBreakdown } = require('../out/display/modelBreakdown.js');
 const { formatRemoteProviderTooltip } = require('../out/display/format.js');
-const { SNAPSHOT_SCHEMA_V2 } = require('../out/snapshot/types.js');
+const { SNAPSHOT_SCHEMA_V1 } = require('../out/snapshot/types.js');
 const { displayTotalTokens } = require('../out/snapshot/tokenMath.js');
 const { estimateClaudeCostUsd, estimateCodexCostUsd } = require('../out/providers/pricing.js');
 const { createCanonicalUsageFixture } = require('../out/test/fixtures/canonicalUsageFixture.js');
@@ -50,7 +50,7 @@ function makeV2Source(overrides = {}) {
     provider: 'claude',
     sourceLabel: 'Claude',
     machineLabel: 'desktop',
-    schemaVersion: SNAPSHOT_SCHEMA_V2,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     quotaOnly: false,
     stale: false,
     historyBuckets: [
@@ -66,7 +66,7 @@ function makeNonCurrentSource(overrides = {}) {
     provider: 'claude',
     sourceLabel: 'Claude',
     machineLabel: 'LEGACY',
-    schemaVersion: 1,
+    schemaVersion: 99,
     quotaOnly: false,
     stale: false,
     ...overrides

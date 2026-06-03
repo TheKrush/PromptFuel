@@ -2,7 +2,7 @@ import type { ProviderUsageState } from '../../types';
 import type { ClaudeHistoryModelUsage, ClaudeTodayUsageBucket, ClaudeUsageHistory } from '../../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket, CodexCorrelatedHistory, CodexCorrelatedHistoryModelUsage } from '../../providers/codexCorrelatedDayBucketScanner';
 import type { SanitizedHistorySource, SnapshotHistoryBucket, SnapshotBucketModel } from '../../snapshot/types';
-import { SNAPSHOT_SCHEMA_V2 } from '../../snapshot/types';
+import { SNAPSHOT_SCHEMA_V1 } from '../../snapshot/types';
 import { buildRemoteUsageProjection } from '../../snapshot/remoteUsageProjection';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
 
@@ -259,7 +259,7 @@ export function createCanonicalUsageFixture(targetDate = new Date()): CanonicalU
     provider: 'claude',
     sourceLabel: 'Claude (vm-source)',
     machineLabel: 'vm-source',
-    schemaVersion: SNAPSHOT_SCHEMA_V2,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     quotaOnly: false,
     stale: false,
     historyBuckets: [
@@ -276,7 +276,7 @@ export function createCanonicalUsageFixture(targetDate = new Date()): CanonicalU
     provider: 'codex',
     sourceLabel: 'Codex (workstation)',
     machineLabel: 'workstation',
-    schemaVersion: SNAPSHOT_SCHEMA_V2,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     quotaOnly: false,
     stale: false,
     historyBuckets: [

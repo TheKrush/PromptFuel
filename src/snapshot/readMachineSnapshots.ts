@@ -3,13 +3,12 @@ import * as path from 'node:path';
 import type { Dirent } from 'node:fs';
 import {
   isSupportedSchemaVersion,
-  SNAPSHOT_SCHEMA_V3,
-  SNAPSHOT_SCHEMA_V4,
+  SNAPSHOT_SCHEMA_V1,
   type PromptFuelMachineSnapshotProvider,
+  type PromptFuelMachineSnapshotV2,
   type SnapshotProviderUsageV2,
   type SnapshotBucketModel,
   type SanitizedHistorySource,
-  type PromptFuelMachineSnapshotV2
 } from './types';
 import type { UsageDashboardProvider, UsageDashboardWindow } from '../panel/usageDashboardModel';
 import { formatSourceLabel, parsePerWindowReset } from './remoteSourceHelper';
@@ -135,97 +134,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// --- Schema upgrade chain ---
-// Each upgradeVNToVN1 validates that the incoming object matches the old schema
-// and returns the upgraded object, or null if validation fails.
-// upgradeSnapshotToCurrentVersion chains all steps from fromVersion to current.
+// V1 is the current public snapshot schema baseline.
+// Legacy private dev versions (V2/V3) are no longer supported for reading.
 
-const SNAPSHOT_SCHEMA_CURRENT = SNAPSHOT_SCHEMA_V4;
-
-function isValidSnapshotProviderAtV2(value: unknown): value is Record<string, unknown> {
-  if (!isObject(value)) return false;
-  if (value.provider !== 'claude' && value.provider !== 'codex') return false;
-  if (typeof value.source !== 'string' ||
-    !['authenticated', 'localSession', 'hook', 'snapshot', 'cache', 'stale', 'unknown'].includes(value.source as string)) {
-    return false;
-  }
-  if (typeof value.sourceConfidence !== 'string' ||
-    !['trustedCompletedTurnUsage', 'correlatedDayBucket', 'mixedDayBucket', 'quotaState', 'snapshotOnly', 'apiEquivalentEstimate', 'unavailable'].includes(value.sourceConfidence as string)) {
-    return false;
-  }
-  if (typeof value.stale !== 'boolean') return false;
-  return typeof value.laneLabel === 'string' || typeof value.sourceLabel === 'string';
-}
-
-function upgradeV2ToV3(obj: Record<string, unknown>): Record<string, unknown> | null {
-  // Flatten machine: { label } → machineLabel; reject machine objects with extra fields
-  let machineLabel: string | undefined;
-  if (isObject(obj.machine)) {
-    if (Object.keys(obj.machine).length !== 1 || typeof obj.machine.label !== 'string') {
-      return null;
-    }
-    machineLabel = obj.machine.label;
-  } else if (typeof obj.machineLabel === 'string') {
-    machineLabel = obj.machineLabel;
-  }
-  if (!machineLabel) return null;
-
-  // Upgrade provider sourceLabel (accept laneLabel or already-renamed sourceLabel)
-  let providerUsage = obj.providerUsage;
-  if (providerUsage !== undefined) {
-    if (!Array.isArray(providerUsage)) return null;
-    const upgraded: Record<string, unknown>[] = [];
-    for (const item of providerUsage) {
-      if (isObject(item) && typeof item.laneLabel === 'string' && item.sourceLabel === undefined) {
-        const { laneLabel, ...rest } = item;
-        upgraded.push({ ...rest, sourceLabel: laneLabel });
-      } else if (isValidSnapshotProviderAtV2(item) || (isObject(item) && typeof item.sourceLabel === 'string')) {
-        upgraded.push({ ...(item as Record<string, unknown>) });
-      } else {
-        return null;
-      }
-    }
-    providerUsage = upgraded;
-  }
-
-  const { machine, ...rest } = obj;
-  return {
-    ...rest,
-    machineLabel,
-    schemaVersion: SNAPSHOT_SCHEMA_V3,
-    exportMeta: { ...(isObject(obj.exportMeta) ? obj.exportMeta : {}), schemaVersion: SNAPSHOT_SCHEMA_V3 },
-    ...(providerUsage !== undefined ? { providerUsage } : {})
-  };
-}
-
-function upgradeV3ToV4(obj: Record<string, unknown>): Record<string, unknown> | null {
-  if (!isObject(obj.exportMeta) || typeof obj.exportMeta.extensionVersion !== 'string') {
-    return null;
-  }
-  const writerVersion = obj.exportMeta.extensionVersion;
-  const { exportMeta: _dropped, ...rest } = obj;
-  return {
-    ...rest,
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
-    writerVersion,
-  };
-}
-
-function upgradeSnapshotToCurrentVersion(
-  obj: Record<string, unknown>,
-  fromVersion: number
-): Record<string, unknown> | null {
-  let result: Record<string, unknown> | null = obj;
-  if (fromVersion < SNAPSHOT_SCHEMA_V3) {
-    result = upgradeV2ToV3(result);
-    if (!result) return null;
-  }
-  if (fromVersion < SNAPSHOT_SCHEMA_V4) {
-    result = upgradeV3ToV4(result);
-    if (!result) return null;
-  }
-  return result;
-}
+const SNAPSHOT_SCHEMA_CURRENT = SNAPSHOT_SCHEMA_V1;
 
 function isValidSnapshotProviderV1(value: unknown): value is PromptFuelMachineSnapshotProvider {
   if (!isObject(value)) {
@@ -355,37 +267,28 @@ function validateSnapshotPayload(obj: unknown): PromptFuelMachineSnapshotV2 | un
     return undefined;
   }
 
-  // Apply upgrade chain for any version older than current.
-  const isLegacy = fromVersion < SNAPSHOT_SCHEMA_CURRENT;
-  let target: Record<string, unknown> = obj;
-  if (isLegacy) {
-    const upgraded = upgradeSnapshotToCurrentVersion(obj, fromVersion);
-    if (!upgraded) return undefined;
-    target = upgraded;
-  }
-
-  const genAt = target.generatedAtEpochMs;
+  const genAt = obj.generatedAtEpochMs;
   if (typeof genAt !== 'number' || !Number.isFinite(genAt) || genAt <= 0) {
     return undefined;
   }
 
-  if (typeof target.machineLabel !== 'string' || !target.machineLabel) {
+  if (typeof obj.machineLabel !== 'string' || !obj.machineLabel) {
     return undefined;
   }
 
-  if (typeof target.writerVersion !== 'string' || !target.writerVersion) {
+  if (typeof obj.writerVersion !== 'string' || !obj.writerVersion) {
     return undefined;
   }
 
-  const generatedAtEpochMs = target.generatedAtEpochMs as number;
+  const generatedAtEpochMs = obj.generatedAtEpochMs as number;
 
   let providerUsage: SnapshotProviderUsageV2[] | undefined;
-  if (target.providerUsage !== undefined) {
-    if (!Array.isArray(target.providerUsage)) {
+  if (obj.providerUsage !== undefined) {
+    if (!Array.isArray(obj.providerUsage)) {
       return undefined;
     }
     providerUsage = [];
-    for (const item of target.providerUsage) {
+    for (const item of obj.providerUsage) {
       if (!isValidSnapshotProviderV2(item)) {
         return undefined;
       }
@@ -395,9 +298,9 @@ function validateSnapshotPayload(obj: unknown): PromptFuelMachineSnapshotV2 | un
 
   const snap: PromptFuelMachineSnapshotV2 = {
     schemaVersion: SNAPSHOT_SCHEMA_CURRENT,
-    writerVersion: String(target.writerVersion),
+    writerVersion: String(obj.writerVersion),
     generatedAtEpochMs,
-    machineLabel: target.machineLabel as string,
+    machineLabel: obj.machineLabel as string,
     ...(providerUsage !== undefined ? { providerUsage } : {}),
   };
 
@@ -571,19 +474,10 @@ export async function readMachineSnapshots(
         continue;
       }
 
-      const parsedVersion = isObject(parsed) ? (parsed.schemaVersion as number) : undefined;
       const validated = validateSnapshotPayload(parsed);
       if (!validated) {
         result.errors.push({ filePath, reason: 'Snapshot validation failed: missing or invalid required fields' });
         continue;
-      }
-
-      if (typeof parsedVersion === 'number' && parsedVersion < SNAPSHOT_SCHEMA_CURRENT) {
-        try {
-          await fs.writeFile(filePath, JSON.stringify(validated, null, 2), 'utf-8');
-        } catch {
-          // Write-back failure is non-fatal; in-memory snapshot is already upgraded.
-        }
       }
 
       const { stale, reason: staleReason } = isStale(validated.generatedAtEpochMs, nowEpochMs);

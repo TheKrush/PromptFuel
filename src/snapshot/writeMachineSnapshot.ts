@@ -10,7 +10,7 @@ import type {
   SnapshotBucketModel,
   PromptFuelMachineSnapshotV2
 } from './types';
-import { SNAPSHOT_SCHEMA_V4 } from './types';
+import { SNAPSHOT_SCHEMA_V1 } from './types';
 import { hasTokenData } from './tokenMath';
 import { writeSnapshotHistoryArchives } from './historyArchive';
 
@@ -189,21 +189,26 @@ function buildHistoryBuckets(
   state: ProviderUsageState,
   historyInput?: ProviderHistoryInput
 ): SnapshotHistoryBucket[] | undefined {
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
   if (historyInput?.buckets?.length) {
     const buckets = historyInput.buckets
       .map(buildHistoryBucketFromInput)
       .filter((bucket): bucket is SnapshotHistoryBucket => bucket !== undefined)
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    if (!buckets.some(b => b.dateKey === todayKey)) {
+      buckets.push({ dateKey: todayKey });
+      buckets.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    }
     return buckets.length > 0 ? buckets : undefined;
   }
 
   if (!state.tracing) {
-    return undefined;
+    return [{ dateKey: todayKey }];
   }
   const t = state.tracing;
-  const now = new Date();
-  const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const bucket: SnapshotHistoryBucket = { dateKey };
+  const bucket: SnapshotHistoryBucket = { dateKey: todayKey };
 
   const inputTokens = safePositiveNumber(t.totalInputTokens);
   const outputTokens = safePositiveNumber(t.totalOutputTokens);
@@ -272,7 +277,7 @@ export function buildMachineSnapshot(
     .filter((p): p is SnapshotProviderUsageV2 => p !== undefined);
 
   return {
-    schemaVersion: SNAPSHOT_SCHEMA_V4,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     writerVersion: EXTENSION_VERSION,
     generatedAtEpochMs: Date.now(),
     machineLabel: config.machineLabel || 'unknown',
@@ -325,7 +330,7 @@ export function isMachineSnapshotPayload(value: unknown): value is PromptFuelMac
     return false;
   }
   const obj = value as Record<string, unknown>;
-  if (obj.schemaVersion !== SNAPSHOT_SCHEMA_V4) {
+  if (obj.schemaVersion !== SNAPSHOT_SCHEMA_V1) {
     return false;
   }
   if (typeof obj.generatedAtEpochMs !== 'number') {

@@ -236,7 +236,8 @@
     "smoke:snapshots": "node scripts/smoke-remote-sources.cjs && node scripts/smoke-remote-history-merge.cjs",
     "smoke:codex": "node scripts/smoke-codex-correlated-day-bucket-scanner.cjs",
     "test:unit": "node --test out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/configThresholds.test.js out/test/displayFormat.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js",
-    "package": "npx --yes @vscode/vsce package --no-dependencies"
+    "package": "npx --yes @vscode/vsce package --no-dependencies",
+    "maintenance:normalize-snapshot-schema": "node scripts/normalize-snapshot-schema-v1.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

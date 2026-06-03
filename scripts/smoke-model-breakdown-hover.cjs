@@ -9,7 +9,7 @@ const {
   buildStatusHoverModelBreakdown
 } = require('../out/display/modelBreakdown.js');
 const { buildRemoteUsageProjection } = require('../out/snapshot/remoteUsageProjection.js');
-const { SNAPSHOT_SCHEMA_V2 } = require('../out/snapshot/types.js');
+const { SNAPSHOT_SCHEMA_V1 } = require('../out/snapshot/types.js');
 
 function main() {
   const now = Date.now();
@@ -73,7 +73,7 @@ function main() {
     provider: 'codex',
     sourceLabel: 'Codex',
     machineLabel: 'vm-source',
-    schemaVersion: SNAPSHOT_SCHEMA_V2,
+    schemaVersion: SNAPSHOT_SCHEMA_V1,
     quotaOnly: false,
     stale: false,
     historyBuckets: [{
@@ -286,7 +286,7 @@ function main() {
     const stale = buildHoverProjection([makeRemoteSource({ stale: true })], new Set(['vm-source/codex']));
     assert.equal(stale.codexModelEntries.length, 0);
 
-    const nonCurrent = buildHoverProjection([makeRemoteSource({ schemaVersion: 1 })], new Set(['vm-source/codex']));
+    const nonCurrent = buildHoverProjection([makeRemoteSource({ schemaVersion: 99 })], new Set(['vm-source/codex']));
     assert.equal(nonCurrent.codexModelEntries.length, 0);
     console.log('PASS: unselected, stale, and non-current remote sources do not contribute to hover models');
   }

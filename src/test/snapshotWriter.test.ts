@@ -10,7 +10,7 @@ import {
   writeMachineSnapshotIfEnabled,
   isMachineSnapshotPayload
 } from '../snapshot/writeMachineSnapshot';
-import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V3, SNAPSHOT_SCHEMA_V4 } from '../snapshot/types';
+import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V1 } from '../snapshot/types';
 
 let tmpDir: string;
 
@@ -73,7 +73,7 @@ function assertArchiveSchemaCanonical(archive: any): void {
     'schemaVersion',
     'writerVersion'
   ].sort());
-  assert.equal(archive.schemaVersion, SNAPSHOT_SCHEMA_V4);
+  assert.equal(archive.schemaVersion, SNAPSHOT_SCHEMA_V1);
   assert.equal(archive.archiveSchemaVersion, SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION);
   assert.equal(typeof archive.writerVersion, 'string');
   assert.ok(archive.writerVersion);
@@ -116,7 +116,7 @@ describe('snapshotWriter', () => {
         [mockState()]
       );
 
-      assert.equal(snap.schemaVersion, SNAPSHOT_SCHEMA_V4);
+      assert.equal(snap.schemaVersion, SNAPSHOT_SCHEMA_V1);
       assert.equal(snap.machineLabel, 'desktop');
       assert.equal(typeof snap.generatedAtEpochMs, 'number');
       assert.ok(snap.providerUsage);
@@ -222,12 +222,17 @@ describe('snapshotWriter', () => {
       assert.equal(model.windowDays, undefined, 'bucket model windowDays must not be emitted');
     });
 
-    it('historyBuckets are absent when no tracing data exists', () => {
+    it('historyBuckets contains a bare today marker when no tracing or history data exists', () => {
       const snap = buildMachineSnapshot(
         { enabled: true, machineLabel: 'desktop', path: '' },
         [mockState()]
       );
-      assert.equal(snap.providerUsage?.[0]?.historyBuckets, undefined);
+      const buckets = snap.providerUsage?.[0]?.historyBuckets;
+      assert.ok(Array.isArray(buckets) && buckets.length === 1, 'historyBuckets must contain exactly one entry');
+      const today = new Date();
+      const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      assert.equal(buckets![0].dateKey, todayKey, 'sole bucket must be today');
+      assert.equal(buckets![0].inputTokens, undefined, 'bare today bucket has no token fields');
     });
   });
 
@@ -487,27 +492,26 @@ describe('snapshotWriter', () => {
   });
 
   describe('isMachineSnapshotPayload', () => {
-    it('accepts valid v4 payload and rejects unsupported schemas', () => {
+    it('accepts valid v1 payload and rejects unsupported schemas', () => {
       assert.ok(isMachineSnapshotPayload({
-        schemaVersion: SNAPSHOT_SCHEMA_V4,
+        schemaVersion: SNAPSHOT_SCHEMA_V1,
         writerVersion: '0.6.0',
         generatedAtEpochMs: Date.now(),
         machineLabel: 'desktop',
       }));
       assert.ok(!isMachineSnapshotPayload({
-        schemaVersion: SNAPSHOT_SCHEMA_V3,
+        schemaVersion: 99,
         generatedAtEpochMs: Date.now(),
-        machineLabel: 'desktop',
-        exportMeta: { extensionVersion: '0.4.38', schemaVersion: SNAPSHOT_SCHEMA_V3 }
+        machineLabel: 'desktop'
       }));
       assert.ok(!isMachineSnapshotPayload({
-        schemaVersion: SNAPSHOT_SCHEMA_V4,
+        schemaVersion: SNAPSHOT_SCHEMA_V1,
         writerVersion: '0.6.0',
         generatedAtEpochMs: Date.now(),
         machineLabel: '',
       }));
       assert.ok(!isMachineSnapshotPayload({
-        schemaVersion: SNAPSHOT_SCHEMA_V4,
+        schemaVersion: SNAPSHOT_SCHEMA_V1,
         writerVersion: '',
         generatedAtEpochMs: Date.now(),
         machineLabel: 'desktop',

@@ -9,6 +9,7 @@ export interface RemoteSourceTodaySummary {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   reasoningOutputTokens: number;
+  assistantMessages?: number;
   sourceCount: number;
   machineLabels: string[];
 }
@@ -74,6 +75,13 @@ function accumulateTodayBucket(
   bucket: SnapshotHistoryBucket
 ): RemoteSourceTodaySummary {
   const tokens = sumTokens(acc, bucket);
+  const bucketCount = bucket.messages ?? bucket.turns;
+  const accCount = acc?.assistantMessages;
+  const assistantMessages =
+    bucketCount !== undefined || accCount !== undefined
+      ? (accCount ?? 0) + (bucketCount ?? 0)
+      : undefined;
+
   if (!acc) {
     return {
       inputTokens: tokens.inputTokens,
@@ -81,6 +89,7 @@ function accumulateTodayBucket(
       cacheCreationTokens: tokens.cacheCreationTokens,
       cacheReadTokens: tokens.cacheReadTokens,
       reasoningOutputTokens: tokens.reasoningOutputTokens,
+      ...(assistantMessages !== undefined ? { assistantMessages } : {}),
       sourceCount: 1,
       machineLabels: [source.machineLabel]
     };
@@ -91,6 +100,7 @@ function accumulateTodayBucket(
     cacheCreationTokens: tokens.cacheCreationTokens,
     cacheReadTokens: tokens.cacheReadTokens,
     reasoningOutputTokens: tokens.reasoningOutputTokens,
+    ...(assistantMessages !== undefined ? { assistantMessages } : {}),
     sourceCount: acc.sourceCount + 1,
     machineLabels: [...acc.machineLabels, source.machineLabel]
   };

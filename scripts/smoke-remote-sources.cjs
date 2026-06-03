@@ -19,7 +19,8 @@ const { formatStatus, formatRemoteProviderTooltip } = require('../out/display/fo
 
 function makeSnapshot(overrides = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
+    writerVersion: '0.7.0',
     generatedAtEpochMs: Date.now(),
     machineLabel: 'desktop',
     providerUsage: [{
@@ -34,7 +35,6 @@ function makeSnapshot(overrides = {}) {
       source: 'authenticated',
       sourceConfidence: 'quotaState'
     }],
-    exportMeta: { extensionVersion: '0.4.38', schemaVersion: 2 },
     ...overrides
   };
 }

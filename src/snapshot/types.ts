@@ -16,12 +16,12 @@ export interface PromptFuelMachineSnapshotProvider {
 }
 
 // --- Snapshot schema versions ---
-export const SNAPSHOT_SCHEMA_V2 = 2; // legacy: uses laneLabel
-export const SNAPSHOT_SCHEMA_V3 = 3; // legacy: had exportMeta wrapper
-export const SNAPSHOT_SCHEMA_V4 = 4; // current: writerVersion at root, no exportMeta
+// V1 is the current public snapshot shape (messages, turns, requests in models).
+// Legacy private dev versions (V2=2, V3=3) are no longer supported for reading.
+export const SNAPSHOT_SCHEMA_V1 = 1;
 export const SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION = 1;
 
-/** Sanitized history bucket (v2). */
+/** Sanitized history bucket. */
 export interface SnapshotHistoryBucket {
   dateKey: string;
   inputTokens?: number;
@@ -36,7 +36,7 @@ export interface SnapshotHistoryBucket {
   models?: SnapshotBucketModel[];
 }
 
-/** Sanitized per-bucket model entry (v2). */
+/** Sanitized per-bucket model entry. */
 export interface SnapshotBucketModel {
   model: string;
   inputTokens?: number;
@@ -49,7 +49,7 @@ export interface SnapshotBucketModel {
   turns?: number;
 }
 
-/** Per-provider source entry with optional v2 history payload. */
+/** Per-provider source entry with optional history payload. */
 export interface SnapshotProviderUsageV2 {
   provider: SnapshotProviderName;
   sourceLabel: string;
@@ -64,16 +64,11 @@ export interface SnapshotProviderUsageV2 {
   historyBuckets?: SnapshotHistoryBucket[];
 }
 
-/** Extension-level export metadata (V2/V3 on-disk only; used in upgrade path). */
-export interface ExtensionExportMetaV2 {
-  extensionVersion: string;
-  schemaVersion: number;
-  includeHistoryBuckets?: boolean;
-}
 
-/** Machine snapshot payload for the current snapshot schema (V4+). */
+
+/** Machine snapshot payload for the current snapshot schema (V1). */
 export interface PromptFuelMachineSnapshotV2 {
-  schemaVersion: typeof SNAPSHOT_SCHEMA_V2 | typeof SNAPSHOT_SCHEMA_V3 | typeof SNAPSHOT_SCHEMA_V4;
+  schemaVersion: typeof SNAPSHOT_SCHEMA_V1;
   writerVersion: string;
   generatedAtEpochMs: number;
   machineLabel: string;
@@ -86,7 +81,7 @@ export interface SnapshotHistoryArchiveProvider {
 }
 
 export interface PromptFuelSnapshotHistoryArchiveMonth {
-  schemaVersion: typeof SNAPSHOT_SCHEMA_V2 | typeof SNAPSHOT_SCHEMA_V3 | typeof SNAPSHOT_SCHEMA_V4;
+  schemaVersion: typeof SNAPSHOT_SCHEMA_V1;
   archiveSchemaVersion: typeof SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION;
   writerVersion: string;
   generatedAtEpochMs: number;
@@ -95,7 +90,7 @@ export interface PromptFuelSnapshotHistoryArchiveMonth {
   providers: SnapshotHistoryArchiveProvider[];
 }
 
-/** Sanitized history source for a single remote source (v2 reader output). */
+/** Sanitized history source for a single remote source (reader output). */
 export interface SanitizedHistorySource {
   provider: string;
   sourceLabel: string;
@@ -109,5 +104,5 @@ export interface SanitizedHistorySource {
 }
 
 export function isSupportedSchemaVersion(version: number): boolean {
-  return version === SNAPSHOT_SCHEMA_V2 || version === SNAPSHOT_SCHEMA_V3 || version === SNAPSHOT_SCHEMA_V4;
+  return version === SNAPSHOT_SCHEMA_V1;
 }

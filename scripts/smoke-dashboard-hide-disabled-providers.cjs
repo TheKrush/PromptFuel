@@ -146,10 +146,10 @@ function main() {
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState] });
 
-    // Enabled providers without Today data show honest unavailable cards.
-    assert.ok(model.today.cards.find(c => c.key === 'todayTokens'), 'claude todayTokens card present (unavailable)');
-    assert.ok(model.today.cards.find(c => c.key === 'codexTodayTokens'), 'codex todayTokens card present (unavailable)');
-    assert.equal(model.today.cards.find(c => c.key === 'codexTodayTokens').available, false, 'codex todayTokens unavailable without codex data');
+    // Enabled providers without Today data show zero-value cards (no activity today).
+    assert.ok(model.today.cards.find(c => c.key === 'todayTokens'), 'claude todayTokens card present (zero)');
+    assert.ok(model.today.cards.find(c => c.key === 'codexTodayTokens'), 'codex todayTokens card present (zero)');
+    assert.equal(model.today.cards.find(c => c.key === 'codexTodayTokens').available, true, 'codex todayTokens shows zero when no codex data today');
 
     const claudeHistoryKeys = ['historyRange', 'historyTokens', 'historyActivity', 'historyCache'];
     const claudeHistoryCards = model.details.cards.filter(c => claudeHistoryKeys.includes(c.key));
@@ -172,25 +172,25 @@ function main() {
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude', 'codex'] });
     const codexTodayTokens = model.today.cards.find(c => c.key === 'codexTodayTokens');
-    assert.ok(codexTodayTokens, 'codex unavailable placeholder appears when codex enabled but missing today data');
-    assert.equal(codexTodayTokens.available, false, 'codex unavailable placeholder is unavailable');
-    assert.equal(model.today.cards.filter(c => c.key.startsWith('codexToday')).length, 5, 'codex unavailable provider has one card per Today metric including Messages/Turns');
+    assert.ok(codexTodayTokens, 'codex zero card appears when codex enabled but missing today data');
+    assert.equal(codexTodayTokens.available, true, 'codex zero card is available (no activity today)');
+    assert.equal(model.today.cards.filter(c => c.key.startsWith('codexToday')).length, 5, 'codex zero provider has one card per Today metric including Messages/Turns');
     assert.ok(model.today.scopeLabel.includes('Claude assistant-message usage'), 'scope includes available Claude data');
-    assert.ok(model.today.scopeLabel.includes('Codex usage unavailable'), 'scope includes missing Codex state');
+    assert.ok(model.today.scopeLabel.includes('Codex (no activity today)'), 'scope indicates Codex had no activity today');
     assert.equal(model.today.source.confidence, 'trustedCompletedTurnUsage', 'section source follows available Claude data');
-    console.log('PASS: Missing enabled Codex Today data renders unavailable cards beside Claude data');
+    console.log('PASS: Missing enabled Codex Today data renders zero cards beside Claude data');
   }
 
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['claude', 'codex'] });
     const claudeTodayTokens = model.today.cards.find(c => c.key === 'todayTokens');
-    assert.ok(claudeTodayTokens, 'claude unavailable placeholder appears when claude enabled but missing today data');
-    assert.equal(claudeTodayTokens.available, false, 'claude unavailable placeholder is unavailable');
-    assert.equal(model.today.cards.filter(c => !c.key.startsWith('codexToday')).length, 5, 'claude unavailable provider has one card per Today metric including Messages/Turns');
-    assert.ok(model.today.scopeLabel.includes('Claude usage unavailable'), 'scope includes missing Claude state');
+    assert.ok(claudeTodayTokens, 'claude zero card appears when claude enabled but missing today data');
+    assert.equal(claudeTodayTokens.available, true, 'claude zero card is available (no activity today)');
+    assert.equal(model.today.cards.filter(c => !c.key.startsWith('codexToday')).length, 5, 'claude zero provider has one card per Today metric including Messages/Turns');
+    assert.ok(model.today.scopeLabel.includes('Claude (no activity today)'), 'scope indicates Claude had no activity today');
     assert.ok(model.today.scopeLabel.includes('Codex correlated usage'), 'scope includes available Codex data');
     assert.equal(model.today.source.confidence, 'correlatedDayBucket', 'section source follows available Codex data');
-    console.log('PASS: Missing enabled Claude Today data renders unavailable cards beside Codex data');
+    console.log('PASS: Missing enabled Claude Today data renders zero cards beside Codex data');
   }
 
   {
@@ -333,9 +333,9 @@ function main() {
   assert.equal(model.providers.length, 1, 'providers has only codex when claude state excluded');
   assert.equal(model.providers[0].provider, 'codex', 'remaining provider is codex');
   assert.equal(model.today.source.confidence, 'unavailable', 'no today data -> unavailable');
-  // Enabled provider with no today data still renders unavailable placeholder cards
-  assert.equal(model.today.cards.length, 5, 'codex placeholder cards present when enabled but missing today data');
-  assert.equal(model.today.cards[0].available, false, 'codex placeholder cards are unavailable');
+  // Enabled provider with no today data renders zero-value cards (no activity today)
+  assert.equal(model.today.cards.length, 5, 'codex zero cards present when enabled but missing today data');
+  assert.equal(model.today.cards[0].available, true, 'codex zero cards are available (no activity today)');
   assert.ok(model.today.cards.every(card => card.key.startsWith('codex')), 'codex-only dashboard does not include claude today cards');
 
   // Same with claude-only
