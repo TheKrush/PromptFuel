@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
-import { formatStatus, formatRemoteProviderTooltip, type FormattedProviderStatus, type RemoteQuotaRow } from './display/format';
+import { formatStatus, formatRemoteProviderTooltip, quotaIndicatorForRemaining, type FormattedProviderStatus, type RemoteQuotaRow } from './display/format';
 import { buildStatusHoverModelBreakdown, HistoryModelUsage, STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './display/modelBreakdown';
 import { mergeAuthenticatedFailure, mergeAuthenticatedQuotaSuccess, mergeLocalAndAuthenticated, QuotaMergeOptions } from './quota/merge';
 import {
@@ -678,7 +678,7 @@ function buildRemoteStatusBarItems(
 
       if (hasSevenDay) {
         const remaining = Math.max(0, 100 - sevenDay);
-        const emoji = remaining >= 80 ? '\uD83D\uDD35' : remaining >= 50 ? '\uD83D\uDFE2' : remaining >= 30 ? '\uD83D\uDFE1' : remaining >= 10 ? '\uD83D\uDFE0' : '\uD83D\uDD34';
+        const emoji = quotaIndicatorForRemaining(remaining);
         if (displayMode === 'standard' && sevenDayResetEpoch) {
           windows.push(`${formatCountdown(sevenDayResetEpoch)} ${emoji}${Math.round(remaining)}%`);
         } else {
@@ -687,7 +687,7 @@ function buildRemoteStatusBarItems(
       }
       if (hasFiveHour) {
         const remaining = Math.max(0, 100 - (fiveHour as number));
-        const emoji = remaining >= 80 ? '\uD83D\uDD35' : remaining >= 50 ? '\uD83D\uDFE2' : remaining >= 30 ? '\uD83D\uDFE1' : remaining >= 10 ? '\uD83D\uDFE0' : '\uD83D\uDD34';
+        const emoji = quotaIndicatorForRemaining(remaining);
         if (displayMode === 'standard') {
           windows.push(`${formatCountdown(fiveHourResetEpoch)} ${emoji}${Math.round(remaining)}%`);
         } else {

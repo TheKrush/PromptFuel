@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addThousandsSeparators, formatStatus, formatTokenCount, quotaLevelForRemaining, type FormatOptions } from '../display/format';
+import { addThousandsSeparators, formatStatus, formatTokenCount, quotaIndicatorForRemaining, quotaLevelForRemaining, type FormatOptions } from '../display/format';
 import { normalizeThresholds } from '../configThresholds';
 import type { ProviderUsageState } from '../types';
 
@@ -53,13 +53,37 @@ describe('display formatting', () => {
   });
 
   it('maps remaining quota levels to dashboard color buckets', () => {
+    assert.equal(quotaLevelForRemaining(100), 'purple');
+    assert.equal(quotaLevelForRemaining(91), 'purple');
     assert.equal(quotaLevelForRemaining(90), 'blue');
+    assert.equal(quotaLevelForRemaining(71), 'blue');
     assert.equal(quotaLevelForRemaining(70), 'green');
-    assert.equal(quotaLevelForRemaining(40), 'yellow');
-    assert.equal(quotaLevelForRemaining(20), 'orange');
-    assert.equal(quotaLevelForRemaining(5), 'red');
+    assert.equal(quotaLevelForRemaining(51), 'green');
+    assert.equal(quotaLevelForRemaining(50), 'yellow');
+    assert.equal(quotaLevelForRemaining(31), 'yellow');
+    assert.equal(quotaLevelForRemaining(30), 'orange');
+    assert.equal(quotaLevelForRemaining(11), 'orange');
+    assert.equal(quotaLevelForRemaining(10), 'red');
+    assert.equal(quotaLevelForRemaining(0), 'red');
     assert.equal(quotaLevelForRemaining(undefined), 'unavailable');
     assert.equal(quotaLevelForRemaining(50, true), 'unavailable');
+  });
+
+  it('maps remaining quota percentages to correct emoji via quotaIndicatorForRemaining', () => {
+    assert.equal(quotaIndicatorForRemaining(100), '\uD83D\uDFE3');
+    assert.equal(quotaIndicatorForRemaining(91), '\uD83D\uDFE3');
+    assert.equal(quotaIndicatorForRemaining(90), '\uD83D\uDD35');
+    assert.equal(quotaIndicatorForRemaining(71), '\uD83D\uDD35');
+    assert.equal(quotaIndicatorForRemaining(70), '\uD83D\uDFE2');
+    assert.equal(quotaIndicatorForRemaining(51), '\uD83D\uDFE2');
+    assert.equal(quotaIndicatorForRemaining(50), '\uD83D\uDFE1');
+    assert.equal(quotaIndicatorForRemaining(31), '\uD83D\uDFE1');
+    assert.equal(quotaIndicatorForRemaining(30), '\uD83D\uDFE0');
+    assert.equal(quotaIndicatorForRemaining(11), '\uD83D\uDFE0');
+    assert.equal(quotaIndicatorForRemaining(10), '\uD83D\uDD34');
+    assert.equal(quotaIndicatorForRemaining(0), '\uD83D\uDD34');
+    assert.equal(quotaIndicatorForRemaining(undefined), '\u26AB');
+    assert.equal(quotaIndicatorForRemaining(undefined, true), '\u26AB');
   });
 
   it('applies threshold ordering to formatted status severity', () => {

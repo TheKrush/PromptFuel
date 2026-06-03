@@ -26,7 +26,7 @@ export interface FormatOptions {
 }
 
 export type StatusSeverity = 'normal' | 'low' | 'warning' | 'critical';
-export type QuotaIndicatorLevel = 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'unavailable';
+export type QuotaIndicatorLevel = 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'unavailable';
 export type PresentableQuotaSeverity = StatusSeverity | 'unavailable';
 export type PresentableQuotaFreshness = 'live' | 'cached' | 'local' | 'stale' | 'unknown';
 export type PresentableQuotaIncident =
@@ -339,15 +339,18 @@ function maxSeverity(left: StatusSeverity, right: StatusSeverity): StatusSeverit
 
 export function quotaLevelForRemaining(remainingPercent: number | undefined, unavailable = false): QuotaIndicatorLevel {
   if (unavailable || remainingPercent === undefined) return 'unavailable';
-  if (remainingPercent >= 80) return 'blue';
-  if (remainingPercent >= 50) return 'green';
-  if (remainingPercent >= 30) return 'yellow';
-  if (remainingPercent >= 10) return 'orange';
+  if (remainingPercent >= 91) return 'purple';
+  if (remainingPercent >= 71) return 'blue';
+  if (remainingPercent >= 51) return 'green';
+  if (remainingPercent >= 31) return 'yellow';
+  if (remainingPercent >= 11) return 'orange';
   return 'red';
 }
 
-function quotaIndicatorForRemaining(remainingPercent: number | undefined, unavailable = false): string {
+export function quotaIndicatorForRemaining(remainingPercent: number | undefined, unavailable = false): string {
   switch (quotaLevelForRemaining(remainingPercent, unavailable)) {
+    case 'purple':
+      return '\uD83D\uDFE3';
     case 'blue':
       return '\uD83D\uDD35';
     case 'green':

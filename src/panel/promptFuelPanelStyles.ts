@@ -467,6 +467,9 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   background:var(--vscode-charts-green,#89d185);
   border-radius:999px
 }
+.usage-progress-fill.level-purple{
+  background:var(--vscode-charts-purple,#b180d7)
+}
 .usage-progress-fill.level-blue{
   background:var(--vscode-charts-blue,#75beff)
 }
