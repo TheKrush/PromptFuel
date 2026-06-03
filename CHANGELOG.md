@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.0
+
+PromptFuel hardens its snapshot schema, surfaces remote Today activity counts, sharpens the quota display scale, and refactors the extension internals into focused modules.
+
+**Included in this release:**
+
+- Snapshot schema simplified to V1 as the sole supported baseline; the private V2–V4 upgrade chain is removed. Existing snapshot files can be migrated to V1 with the new `npm run maintenance:normalize-snapshot-schema` script (creates `.bak` backups; supports dry-run).
+- Remote Today dashboard cards now show assistant-message and turn activity counts when the snapshot provides them, replacing the "Activity count not available from snapshot data" placeholder.
+- Merged/Overview Today section suppresses empty provider groups when another provider has real local or remote data.
+- Separate-view remote Today cards now populate correctly when a provider has no local today data but a remote snapshot does.
+- Quota threshold display expanded to a 6-level scale: purple (91–100%), blue (71–90%), green (51–70%), yellow (31–50%), orange (11–30%), red (0–10%).
+- Dashboard placeholder copy updated to neutral loading wording.
+- `extension.ts` refactored into focused modules: `statusBar.ts` (status bar helpers), `watchers.ts` (file watchers and debounce timers), and `refreshController.ts` (refresh orchestration and history-scan cache). Runtime behavior is unchanged.
+- Dashboard webview styles and scripts moved to media assets; inline injection removed.
+- Token count formatting unified across status bar and dashboard (locale-independent output).
+- Model usage contribution mapping centralized across Claude and Codex paths.
+- CI workflow now gates on unit tests and dashboard smoke before packaging.
+- Dead code, unreferenced imports, and unused variables removed.
+
+**Scope notes:**
+
+- PromptFuel continues to display aggregate usage only.
+- PromptFuel does not display prompts, responses, transcripts, raw JSONL, local paths, usernames, secrets, tokens, or raw provider payloads.
+- Snapshot imports and exports remain aggregate-only, with safe source labels permitted only after sanitization.
+- Live quota remains independent from the selected dashboard usage source.
+- Live authenticated quota refresh stays opt-in and makes no live calls when disabled.
+
 ## 0.7.0
 
 PromptFuel rebuilds its usage engine and dashboard around a faster aggregation pipeline, combined per-metric cards, model-stacked history, configurable alert thresholds, and a reorganized cross-machine snapshot schema.
