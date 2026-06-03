@@ -488,6 +488,16 @@ export function buildToday(
         detailTooltip: remoteApiEstimate.detailTooltip,
         available: remoteApiEstimate.available
       });
+      // Separate view: local panel shows no-local placeholder; remote panel shows snapshot cards.
+      splitCards.push(
+        buildUnavailableMetricCard('todayMessages', '1D Messages/Turns', 'No local Claude activity today'),
+        buildUnavailableMetricCard('todayTokens', '1D Tokens', 'No local Claude activity today'),
+        buildUnavailableMetricCard('todayInputOutput', '1D Input / Output', 'No local Claude activity today'),
+        buildUnavailableMetricCard('todayCache', '1D Cache', 'No local Claude activity today'),
+        buildUnavailableMetricCard('todayApiEquivalent', '1D API-equivalent', 'No local Claude activity today'),
+        ...buildRemoteTodayCards(remoteClaude, remoteClaudeModels, true, 'Claude', 'remoteTodayClaude',
+          sourceInfo('snapshotOnly', 'Claude snapshot today summary', 'Aggregated from selected imported Claude snapshots'))
+      );
     } else {
       scopeParts.push('Claude (no activity today)');
       cards.push(
@@ -660,6 +670,15 @@ export function buildToday(
         detailTooltip: remoteApiEstimate.detailTooltip,
         available: remoteApiEstimate.available
       });
+      // Separate view: local panel shows no-local placeholder; remote panel shows snapshot cards.
+      splitCards.push(
+        buildUnavailableMetricCard('codexTodayMessages', '1D Messages/Turns', 'No local Codex activity today'),
+        buildUnavailableMetricCard('codexTodayTokens', '1D Tokens', 'No local Codex activity today'),
+        buildUnavailableMetricCard('codexTodayInputOutput', '1D Input / Output', 'No local Codex activity today'),
+        buildUnavailableMetricCard('codexTodayCache', '1D Cache', 'No local Codex activity today'),
+        buildUnavailableMetricCard('codexTodayApiEquivalent', '1D API-equivalent', 'No local Codex activity today'),
+        ...buildRemoteTodayCards(remoteCodex, remoteCodexModels, false, 'Codex', 'remoteTodayCodex', remoteSource)
+      );
     } else {
       scopeParts.push('Codex (no activity today)');
       cards.push(
