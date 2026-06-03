@@ -26,12 +26,13 @@ import { formatSourceLabel, parsePerWindowReset } from './snapshot/remoteSourceH
 import type { UsageDashboardProvider } from './panel/usageDashboardModel';
 import { buildUsageDashboardModel, shortenClaudeModel, shortenCodexModel } from './panel/usageDashboardModel';
 import {
+  ClaudeHistoryModelUsage,
   ClaudeTodayUsageBucket,
   ClaudeUsageHistory,
   readClaudeRecentUsageHistory,
   readClaudeTodayUsageBucket
 } from './providers/claudeDayBucketScanner';
-import { CodexCorrelatedDayBucket, CodexCorrelatedHistory, readCodexCorrelatedHistory, readCodexCorrelatedTodayBucket } from './providers/codexCorrelatedDayBucketScanner';
+import { CodexCorrelatedDayBucket, CodexCorrelatedHistory, CodexCorrelatedHistoryModelUsage, readCodexCorrelatedHistory, readCodexCorrelatedTodayBucket } from './providers/codexCorrelatedDayBucketScanner';
 import { estimateClaudeCostUsd, estimateCodexCostUsd } from './providers/pricing';
 
 let combinedStatusItem: vscode.StatusBarItem;
@@ -319,6 +320,30 @@ async function refreshNow(options: RefreshOptions = {}): Promise<void> {
   }
 }
 
+function toModelContribution(m: ClaudeHistoryModelUsage): ModelContributionInput;
+function toModelContribution(m: CodexCorrelatedHistoryModelUsage): ModelContributionInput;
+function toModelContribution(m: ClaudeHistoryModelUsage | CodexCorrelatedHistoryModelUsage): ModelContributionInput {
+  const base: ModelContributionInput = {
+    model: m.model,
+    totalTokens: m.totalTokens,
+    inputTokens: m.inputTokens,
+    outputTokens: m.outputTokens,
+    cacheCreationTokens: m.cacheCreationInputTokens,
+    cacheReadTokens: m.cacheReadInputTokens,
+  };
+  if ('reasoningOutputTokens' in m) {
+    return {
+      ...base,
+      reasoningOutputTokens: m.reasoningOutputTokens,
+      turns: m.assistantMessages
+    };
+  }
+  return {
+    ...base,
+    assistantMessages: m.assistantMessages
+  };
+}
+
 async function performRefresh(options: RefreshOptions): Promise<void> {
   const cfg = getConfig();
   const mergeOptions: QuotaMergeOptions = { freshResetToleranceSeconds: cfg.freshResetToleranceSeconds };
@@ -505,15 +530,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   if (latest.claudeUsageHistory?.modelUsage && latest.claudeUsageHistory.modelUsage.length > 0) {
     extraModelData.claude = latest.claudeUsageHistory.modelUsage
       .filter(m => m.totalTokens > 0)
-      .map(m => ({
-        model: m.model,
-        totalTokens: m.totalTokens,
-        inputTokens: m.inputTokens,
-        outputTokens: m.outputTokens,
-        cacheCreationTokens: m.cacheCreationInputTokens,
-        cacheReadTokens: m.cacheReadInputTokens,
-        assistantMessages: m.assistantMessages
-      }));
+      .map(toModelContribution);
   }
   if (latest.claudeUsageHistory?.days && latest.claudeUsageHistory.days.length > 0) {
     historyData.claude = {
@@ -528,31 +545,14 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
           messages: day.assistantMessages,
           modelUsage: day.modelUsage
             .filter(m => m.totalTokens > 0)
-            .map(m => ({
-              model: m.model,
-              totalTokens: m.totalTokens,
-              inputTokens: m.inputTokens,
-              outputTokens: m.outputTokens,
-              cacheCreationTokens: m.cacheCreationInputTokens,
-              cacheReadTokens: m.cacheReadInputTokens,
-              assistantMessages: m.assistantMessages
-            }))
+            .map(toModelContribution)
         }))
     };
   }
   if (latest.codexCorrelatedHistory?.modelUsage && latest.codexCorrelatedHistory.modelUsage.length > 0) {
     extraModelData.codex = latest.codexCorrelatedHistory.modelUsage
       .filter(m => m.totalTokens > 0)
-      .map(m => ({
-        model: m.model,
-        totalTokens: m.totalTokens,
-        inputTokens: m.inputTokens,
-        outputTokens: m.outputTokens,
-        cacheCreationTokens: m.cacheCreationInputTokens,
-        cacheReadTokens: m.cacheReadInputTokens,
-        reasoningOutputTokens: m.reasoningOutputTokens,
-        turns: m.assistantMessages
-      }));
+      .map(toModelContribution);
   }
   if (latest.codexCorrelatedHistory?.days && latest.codexCorrelatedHistory.days.length > 0) {
     historyData.codex = {
@@ -568,16 +568,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
           turns: day.correlatedTurns,
           modelUsage: day.modelUsage
             .filter(m => m.totalTokens > 0)
-            .map(m => ({
-              model: m.model,
-              totalTokens: m.totalTokens,
-              inputTokens: m.inputTokens,
-              outputTokens: m.outputTokens,
-              cacheCreationTokens: m.cacheCreationInputTokens,
-              cacheReadTokens: m.cacheReadInputTokens,
-              reasoningOutputTokens: m.reasoningOutputTokens,
-              turns: m.assistantMessages
-            }))
+            .map(toModelContribution)
         }))
     };
   }
