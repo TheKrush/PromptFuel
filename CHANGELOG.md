@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.0
+
+PromptFuel rebuilds its usage engine and dashboard around a faster aggregation pipeline, combined per-metric cards, model-stacked history, configurable alert thresholds, and a reorganized cross-machine snapshot schema.
+
+**Included in this release:**
+
+- Usage aggregation rebuilt around day-bucket scanning for Claude and Codex, with per-model totals, provider pricing, and API-equivalent cost estimates.
+- Dashboard at-a-glance redesigned as one compact row per source on a shared grid, showing 7d and 5h bars, reset time, and a current/snapshot/stale badge across local and remote lanes.
+- Today and Overview merged into combined metric cards (Tokens, Input/Output, Cache, API-equivalent) that sum Claude and Codex with a per-provider breakdown line.
+- History charts now use model-stacked bars across 1D, 1W, 1M, 1Y, and ALL ranges, with inline model-distribution sections per provider.
+- `promptFuel.statusBarDensity` setting added (`standard`/`compact`) to control status bar countdown detail; countdown display simplified to a single highest unit (days, hours, or minutes).
+- `promptFuel.lowRemainingPercent`, `promptFuel.warnRemainingPercent`, and `promptFuel.criticalRemainingPercent` settings added for configurable low, warning, and critical remaining-quota icons.
+- `promptFuel.authenticatedQuota.refreshIntervalSeconds` renamed to `promptFuel.authenticatedQuota.refreshIntervalMinutes` (default 5, minimum 1).
+- Snapshot settings reorganized under the `promptFuel.snapshot.*` namespace: a single `promptFuel.snapshot.path` replaces the separate import and export path settings, alongside `promptFuel.snapshot.enabled` and `promptFuel.snapshot.machineLabel` for the local snapshot writer.
+- Remote snapshot lanes are now configured through `promptFuel.snapshot.remoteSources`, `promptFuel.snapshot.statusBarSources`, and `promptFuel.snapshot.remoteMachineLabels` for dashboard cards, status bar entries, and display aliases.
+- Snapshot files upgraded to schema V4 (flattened machine label and writer version, source labels, always-written daily history buckets), with older schema 2 and 3 files upgraded automatically on read.
+- `PromptFuel: Upgrade Snapshot Files to Current Schema` command added for migrating older snapshot files in place.
+- Dashboard webview content security policy tightened: inline script execution replaced with a per-request nonce.
+- Display defaults hardcoded (countdown display, combined status bar layout); the `promptFuel.configureClaudeHooks` command and unused separate-layout settings removed.
+- Local install tooling hardened: `install.ps1` gains isolated-profile options and explicit exit-code checks, and `dev-validate-install.ps1` verifies the packaged entrypoint and runs the aggregate smoke suite.
+- Smoke and unit coverage reorganized into focused suites for chart binning, tooltips, dashboards, model breakdowns, remote history merge, pricing, and snapshot read/write.
+
+**Scope notes:**
+
+- PromptFuel continues to display aggregate usage only.
+- PromptFuel does not display prompts, responses, transcripts, raw JSONL, local paths, usernames, secrets, tokens, or raw provider payloads.
+- Snapshot imports and exports remain aggregate-only, with safe source labels permitted only after sanitization.
+- Live quota remains independent from the selected dashboard usage source.
+- Live authenticated quota refresh stays opt-in and makes no live calls when disabled.
+
 ## 0.6.0
 
 PromptFuel now adds configurable cross-machine snapshot imports/exports, model-level usage breakdowns, imported quota visibility, and a more range-driven dashboard experience.
@@ -11,7 +41,7 @@ PromptFuel now adds configurable cross-machine snapshot imports/exports, model-l
 - `promptFuel.snapshotExportPath` setting added for choosing a custom aggregate snapshot export folder.
 - `promptFuel.localMachineLabel` setting added for stable exported machine labels and local-import deduplication.
 - `promptFuel.snapshotImportLabels` setting added for allowlisting imported machine/source labels.
-- Snapshot import support expanded for AgentBridge-compatible schema 2 snapshots, including archive files, daily history buckets, model breakdowns, safe machine/source labels, and imported quota windows.
+- Snapshot import support expanded for compatible schema 2 snapshots, including archive files, daily history buckets, model breakdowns, safe machine/source labels, and imported quota windows.
 - Snapshot import deduplication now skips snapshots from the local machine label and respects the configured import allowlist.
 - Snapshot source labels are sanitized, preserved, combined, and surfaced in dashboard and tooltip views when safe.
 - Imported snapshot quota windows can now appear in the status bar, tooltip, and dashboard alongside live quota state.
