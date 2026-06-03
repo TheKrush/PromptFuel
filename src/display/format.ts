@@ -496,7 +496,7 @@ function remainingSeverity(remaining: number, options: FormatOptions): StatusSev
   return 'normal';
 }
 
-function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
+function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, _options: FormatOptions): string {
   const provider = providerDisplayName(state);
   const w = state.fiveHour;
   const pct = w && w.usedPercentage !== undefined ? 100 - clamp(w.usedPercentage, 0, 100) : 0;
@@ -869,7 +869,7 @@ function formatQuotaWindowRow(
   label: string,
   window: LimitWindow | undefined,
   options: FormatOptions,
-  state: ProviderUsageState
+  _state: ProviderUsageState
 ): string {
   if (!window || window.usedPercentage === undefined) {
     return `| ${label} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | |`;

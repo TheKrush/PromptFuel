@@ -3,8 +3,6 @@ import * as path from 'node:path';
 import { EXTENSION_VERSION } from '../version';
 import {
   SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION,
-  SNAPSHOT_SCHEMA_V2,
-  SNAPSHOT_SCHEMA_V3,
   SNAPSHOT_SCHEMA_V4,
   isSupportedSchemaVersion,
   type PromptFuelMachineSnapshotV2,

@@ -3,7 +3,6 @@ import * as path from 'node:path';
 import type { Dirent } from 'node:fs';
 import {
   isSupportedSchemaVersion,
-  SNAPSHOT_SCHEMA_V2,
   SNAPSHOT_SCHEMA_V3,
   SNAPSHOT_SCHEMA_V4,
   type PromptFuelMachineSnapshotProvider,
@@ -12,8 +11,8 @@ import {
   type SanitizedHistorySource,
   type PromptFuelMachineSnapshotV2
 } from './types';
-import type { UsageDashboardProvider, UsageDashboardWindow, UsageDashboardSourceInfo } from '../panel/usageDashboardModel';
-import { parseRemoteSourceId, formatSourceLabel, parsePerWindowReset } from './remoteSourceHelper';
+import type { UsageDashboardProvider, UsageDashboardWindow } from '../panel/usageDashboardModel';
+import { formatSourceLabel, parsePerWindowReset } from './remoteSourceHelper';
 import { formatCountdown } from '../usageTime';
 import { archiveToSanitizedHistorySources, validateHistoryArchivePayload } from './historyArchive';
 

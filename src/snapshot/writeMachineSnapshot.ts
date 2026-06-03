@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as os from 'node:os';
+
 import type { ProviderUsageState, LimitWindow, QuotaSourceKind } from '../types';
 import type { UsageDashboardSourceConfidence } from '../panel/usageDashboardModel';
 import { EXTENSION_VERSION } from '../version';
@@ -224,7 +224,7 @@ function buildHistoryBuckets(
 
 function buildProviderUsage(
   state: ProviderUsageState,
-  extraContributions?: ModelContributionInput[],
+  _extraContributions?: ModelContributionInput[],
   historyInput?: ProviderHistoryInput
 ): SnapshotProviderUsageV2 | undefined {
   if (!state.fiveHour && !state.sevenDay) {

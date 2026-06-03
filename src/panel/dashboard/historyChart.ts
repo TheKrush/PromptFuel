@@ -3,7 +3,7 @@ import type { CodexCorrelatedHistory } from '../../providers/codexCorrelatedDayB
 import { estimateAggregateCostUsd } from '../../providers/pricing';
 import type { RemoteModelEntry } from '../../snapshot/remoteUsageProjection';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
-import type { UsageDashboardHistoryChart, UsageDashboardHistoryChartRange, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard, UsageDashboardSourceInfo } from '../usageDashboardModel';
+import type { UsageDashboardHistoryChart, UsageDashboardHistoryChartRange, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard } from '../usageDashboardModel';
 import type { UsageHistoryPoint } from '../usageHistoryBinning';
 import { buildUsageHistoryRangeViews } from '../usageHistoryBinning';
 import { sourceInfo, formatCount, formatUsd, shortenClaudeModel, shortenCodexModel, mapModelUsageToHistory, normalizeRemoteHistoryPointModels, buildHistoryUnavailableCard, buildCodexHistoryUnavailableCard, remoteModelEntriesToCostRows } from './format';
@@ -250,14 +250,6 @@ export function buildHistoryCards(claudeUsageHistory: ClaudeUsageHistory | undef
   );
   const historyApiAvailable = !remoteModelEntries?.length || remoteModelEntriesToCostRows(remoteModelEntries) !== undefined;
 
-  const topModel = claudeUsageHistory.modelUsage[0];
-  const modelCount = claudeUsageHistory.modelUsage.length;
-  const activityDetail = modelCount === 0
-    ? 'See model distribution'
-    : modelCount === 1
-      ? `1 model · Top: ${shortenClaudeModel(topModel.model)}`
-      : `${modelCount} models · Top: ${shortenClaudeModel(topModel.model)}`;
-
   return [
     {
       key: 'historyActivity',
@@ -359,14 +351,6 @@ export function buildCodexHistoryCards(codexCorrelatedHistory: CodexCorrelatedHi
     false
   );
   const codexHistoryApiAvailable = !remoteModelEntries?.length || remoteModelEntriesToCostRows(remoteModelEntries) !== undefined;
-
-  const codexTopModel = codexCorrelatedHistory.modelUsage[0];
-  const codexModelCount = codexCorrelatedHistory.modelUsage.length;
-  const codexActivityDetail = codexModelCount === 0
-    ? 'See model distribution'
-    : codexModelCount === 1
-      ? `1 model · Top: ${shortenCodexModel(codexTopModel.model)}`
-      : `${codexModelCount} models · Top: ${shortenCodexModel(codexTopModel.model)}`;
 
   return [
     {

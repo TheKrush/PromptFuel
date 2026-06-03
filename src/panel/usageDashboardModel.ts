@@ -1,4 +1,4 @@
-import { AuthenticatedQuotaStatus, LimitWindow, ProviderName, ProviderUsageState, UsageTracing } from '../types';
+import { LimitWindow, ProviderName, ProviderUsageState, UsageTracing } from '../types';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { ClaudeUsageHistory } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';

@@ -339,10 +339,6 @@ export function buildToday(
       const mergedSource = hasRemote
         ? sourceInfo('mixedDayBucket', 'Claude today — merged', 'Local day-bucket merged with selected snapshot data.')
         : undefined;
-      const modelDetail = claudeTodayUsage!.models.length > 0
-        ? ` · ${claudeTodayUsage!.models.join(', ')}`
-        : '';
-
       scopeParts.push(hasRemote
         ? `Claude + ${remoteNote}`
         : `Claude assistant-message usage (${claudeTodayUsage!.dateLabel} local)`);
@@ -446,7 +442,6 @@ export function buildToday(
     } else if (remoteClaude) {
       const remoteTotal = displayTotalTokens(remoteClaude);
       const remoteCache = remoteClaude.cacheCreationTokens + remoteClaude.cacheReadTokens;
-      const remoteNote = buildRemoteSourceNote(remoteClaude);
       const sourceNote = remoteClaude.sourceCount === 1 ? '1 source' : `${remoteClaude.sourceCount} sources`;
       const remoteSource = sourceInfo('snapshotOnly', 'Snapshot today summary', 'Aggregated from selected imported snapshots');
       const remoteApiEstimate = estimateRemoteTodayApiEquivalent(remoteClaude, remoteClaudeModels, true, 'Claude');
@@ -510,10 +505,6 @@ export function buildToday(
       const mergedSource = hasRemote
         ? sourceInfo('mixedDayBucket', 'Codex today — merged', 'Local correlated day-bucket merged with selected snapshot data.')
         : undefined;
-      const modelDetail = codexTodayUsage!.models.length > 0
-        ? ` · ${codexTodayUsage!.models.join(', ')}`
-        : '';
-
       scopeParts.push(hasRemote
         ? `Codex + ${remoteNote}`
         : `Codex correlated usage (${codexTodayUsage!.dateLabel} local)`);
@@ -617,7 +608,6 @@ export function buildToday(
     } else if (remoteCodex) {
       const remoteTotal = displayTotalTokens(remoteCodex);
       const remoteCache = remoteCodex.cacheCreationTokens + remoteCodex.cacheReadTokens;
-      const remoteNote = buildRemoteSourceNote(remoteCodex);
       const sourceNote = remoteCodex.sourceCount === 1 ? '1 source' : `${remoteCodex.sourceCount} sources`;
       const remoteSource = sourceInfo('snapshotOnly', 'Codex snapshot today summary', 'Aggregated from selected imported Codex snapshots');
       const remoteApiEstimate = estimateRemoteTodayApiEquivalent(remoteCodex, remoteCodexModels, false, 'Codex');

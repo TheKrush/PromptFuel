@@ -19,7 +19,7 @@ import {
   formatStatusBarTooltipSuffix
 } from '../snapshot/remoteSourceHelper';
 import { buildRemoteUsageProjection } from '../snapshot/remoteUsageProjection';
-import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V2, SNAPSHOT_SCHEMA_V3, SNAPSHOT_SCHEMA_V4 } from '../snapshot/types';
+import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V2, SNAPSHOT_SCHEMA_V4 } from '../snapshot/types';
 import type { PromptFuelMachineSnapshotV2, PromptFuelSnapshotHistoryArchiveMonth, SnapshotHistoryBucket } from '../snapshot/types';
 
 let tmpDir: string;

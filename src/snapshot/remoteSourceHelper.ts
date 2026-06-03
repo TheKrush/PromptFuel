@@ -1,11 +1,10 @@
-import { formatCoarseAgeLabel, formatCountdown } from '../usageTime';
+import { formatCoarseAgeLabel } from '../usageTime';
 
 export interface RemoteSourceId {
   machineLabel: string;
   provider: 'claude' | 'codex';
 }
 
-const VALID_PROVIDERS = new Set(['claude', 'codex']);
 
 export function parseRemoteSourceId(sourceId: string): RemoteSourceId | undefined {
   const slashIndex = sourceId.indexOf('/');

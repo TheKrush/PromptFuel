@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
-import { formatStatus, formatRemoteProviderTooltip, quotaIndicatorForRemaining, type FormattedProviderStatus, type RemoteQuotaRow } from './display/format';
+import { formatStatus, formatRemoteProviderTooltip, quotaIndicatorForRemaining, type FormattedProviderStatus } from './display/format';
 import { buildStatusHoverModelBreakdown, HistoryModelUsage, STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './display/modelBreakdown';
 import { mergeAuthenticatedFailure, mergeAuthenticatedQuotaSuccess, mergeLocalAndAuthenticated, QuotaMergeOptions } from './quota/merge';
 import {
@@ -769,7 +769,7 @@ function applyStatusBarItem(
   item.show();
 }
 
-function configureWatchers(context: vscode.ExtensionContext): void {
+function configureWatchers(_context: vscode.ExtensionContext): void {
   cancelDebouncedRefresh();
   disposeWatchers();
   if (timers.refresh) {

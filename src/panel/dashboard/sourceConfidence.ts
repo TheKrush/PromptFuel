@@ -1,7 +1,7 @@
 import type { ClaudeTodayUsageBucket } from '../../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../../providers/codexCorrelatedDayBucketScanner';
 import type { RemoteUsageProjection } from '../../snapshot/remoteUsageProjection';
-import type { UsageDashboardModel, UsageDashboardProvider, UsageDashboardWindow, UsageDashboardSourceInfo } from '../usageDashboardModel';
+import type { UsageDashboardModel, UsageDashboardProvider, UsageDashboardWindow } from '../usageDashboardModel';
 import { sourceInfo } from './format';
 import { buildTodaySectionSource } from './today';
 
