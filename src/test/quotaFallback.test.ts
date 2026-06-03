@@ -392,7 +392,7 @@ describe('quota fallback regression coverage', () => {
       lastUpdatedEpochMs: now
     }, undefined);
     const formatted = formatSingle(merged);
-    const dashboard = buildUsageDashboardModel([merged]);
+    const dashboard = buildUsageDashboardModel({ states: [merged] });
     const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
 
     assert.equal(merged.fiveHour?.usedPercentage, 0);
@@ -465,7 +465,7 @@ describe('quota fallback regression coverage', () => {
         lastUpdatedEpochMs: now
       }, failure(providerName, 'network_error'), backoffUntil);
       const formatted = formatSingle(fallback);
-      const dashboard = buildUsageDashboardModel([fallback]);
+      const dashboard = buildUsageDashboardModel({ states: [fallback] });
       const provider = dashboard.providers[0];
       const fiveHour = provider?.windows.find(window => window.key === 'fiveHour');
 
@@ -479,14 +479,14 @@ describe('quota fallback regression coverage', () => {
   });
 
   it('dashboard explains present windows that lack a usable percentage', () => {
-    const dashboard = buildUsageDashboardModel([{
+    const dashboard = buildUsageDashboardModel({ states: [{
       provider: 'codex',
       fiveHour: { resetsAtEpochSeconds: fiveHourReset },
       sevenDay: { usedPercentage: 57, resetsAtEpochSeconds: sevenDayReset },
       source: 'local Codex session snapshot',
       lastUpdatedEpochMs: now,
       authenticatedStatus: 'skipped'
-    }]);
+    }] });
     const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
 
     assert.equal(fiveHour?.available, false);

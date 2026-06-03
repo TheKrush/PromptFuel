@@ -32,7 +32,7 @@ function codexState(overrides: Partial<ProviderUsageState> = {}): ProviderUsageS
 
 describe('provider tabs model', () => {
   it('overview tab exists and is default', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     const overview = model.tabs.find(t => t.key === 'overview');
     assert.ok(overview, 'overview tab must exist');
     assert.equal(overview.label, 'Overview');
@@ -42,7 +42,7 @@ describe('provider tabs model', () => {
   });
 
   it('both Claude and Codex tabs are generated when both providers have data', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     const keys = model.tabs.map(t => t.key);
     assert.ok(keys.includes('claude'), 'Claude tab must exist');
     assert.ok(keys.includes('codex'), 'Codex tab must exist');
@@ -57,7 +57,7 @@ describe('provider tabs model', () => {
   });
 
   it('only Claude tab when only Claude has data', () => {
-    const model = buildUsageDashboardModel([claudeState()], undefined, undefined, undefined, undefined, ['claude']);
+    const model = buildUsageDashboardModel({ states: [claudeState()], enabledProviders: ['claude'] });
     const keys = model.tabs.map(t => t.key);
     assert.ok(keys.includes('overview'));
     assert.ok(keys.includes('claude'));
@@ -65,7 +65,7 @@ describe('provider tabs model', () => {
   });
 
   it('only Codex tab when only Codex has data', () => {
-    const model = buildUsageDashboardModel([codexState()], undefined, undefined, undefined, undefined, ['codex']);
+    const model = buildUsageDashboardModel({ states: [codexState()], enabledProviders: ['codex'] });
     const keys = model.tabs.map(t => t.key);
     assert.ok(keys.includes('overview'));
     assert.ok(keys.includes('codex'));
@@ -73,7 +73,7 @@ describe('provider tabs model', () => {
   });
 
   it('tab order: overview first, then providers', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     assert.equal(model.tabs[0].key, 'overview');
     assert.equal(model.tabs[0].isDefault, true);
     const providerTabs = model.tabs.filter(t => t.key !== 'overview');
@@ -81,13 +81,13 @@ describe('provider tabs model', () => {
   });
 
   it('no "This Machine" wording appears in tabs or model', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     const serialized = JSON.stringify(model);
     assert.ok(!serialized.includes('This Machine'), 'Model must not contain "This Machine" wording');
   });
 
   it('absent snapshots do not create misleading snapshot controls', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     assert.equal(model.remoteProviders, undefined, 'remoteProviders should be undefined when no remote groups');
     for (const tab of model.tabs) {
       assert.equal((tab as any).snapshotControls, undefined, 'Tabs must not contain snapshotControls field');
@@ -95,33 +95,33 @@ describe('provider tabs model', () => {
   });
 
   it('tabs array length matches expected count for both providers', () => {
-    const model = buildUsageDashboardModel([claudeState(), codexState()]);
+    const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     assert.equal(model.tabs.length, 3);
   });
 
   describe('scopedToProvider filtering', () => {
     it('scopedToProvider=claude filters providers to Claude only', () => {
-      const model = buildUsageDashboardModel([claudeState(), codexState()], undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'claude');
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], scopedToProvider: 'claude' });
       assert.equal(model.providers.length, 1);
       assert.equal(model.providers[0].provider, 'claude');
       assert.equal(model.selectedTab, 'claude');
     });
 
     it('scopedToProvider=codex filters providers to Codex only', () => {
-      const model = buildUsageDashboardModel([claudeState(), codexState()], undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'codex');
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], scopedToProvider: 'codex' });
       assert.equal(model.providers.length, 1);
       assert.equal(model.providers[0].provider, 'codex');
       assert.equal(model.selectedTab, 'codex');
     });
 
     it('scopedToProvider=undefined returns all providers (overview)', () => {
-      const model = buildUsageDashboardModel([claudeState(), codexState()]);
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
       assert.equal(model.providers.length, 2);
       assert.equal(model.selectedTab, 'overview');
     });
 
     it('scopedToProvider=claude today cards are scoped to Claude', () => {
-      const model = buildUsageDashboardModel([claudeState()], undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'claude');
+      const model = buildUsageDashboardModel({ states: [claudeState()], scopedToProvider: 'claude' });
       const todayAvailable = model.today.available;
       assert.equal(typeof todayAvailable, 'boolean');
       const allKeys = model.today.cards.map(c => c.key);
@@ -129,14 +129,14 @@ describe('provider tabs model', () => {
     });
 
     it('scopedToProvider=codex today cards are scoped to Codex', () => {
-      const model = buildUsageDashboardModel([codexState()], undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'codex');
+      const model = buildUsageDashboardModel({ states: [codexState()], scopedToProvider: 'codex' });
       const allKeys = model.today.cards.map(c => c.key);
       assert.ok(allKeys.some(k => k.indexOf('codexToday') === 0), 'Codex today cards must include codexToday-prefixed keys');
       assert.ok(!allKeys.some(k => k === 'todayTokens' || k === 'todayInputOutput' || k === 'todayCache'), 'No Claude-only cards should appear when scoped to Codex');
     });
 
     it('overview has both tabs present even with scopedToProvider set', () => {
-      const model = buildUsageDashboardModel([claudeState(), codexState()], undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'claude');
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], scopedToProvider: 'claude' });
       const keys = model.tabs.map(t => t.key);
       assert.ok(keys.includes('overview'), 'Overview tab must exist');
       assert.ok(keys.includes('claude'), 'Claude tab must exist');

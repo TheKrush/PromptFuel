@@ -78,11 +78,12 @@ function main() {
   };
 
   {
-    const model = buildUsageDashboardModel(
-      [claudeState, codexState],
-      claudeTodayUsage, undefined, undefined, codexTodayUsage,
-      ['claude', 'codex']
-    );
+    const model = buildUsageDashboardModel({
+      states: [claudeState, codexState],
+      claudeTodayUsage: claudeTodayUsage,
+      codexTodayUsage: codexTodayUsage,
+      enabledProviders: ['claude', 'codex']
+    });
 
     const todayApiEq = model.today.cards.find(c => c.key === 'todayApiEquivalent');
     assert.ok(todayApiEq, 'todayApiEquivalent card present');
@@ -126,10 +127,11 @@ function main() {
       ]
     };
 
-    const model = buildUsageDashboardModel(
-      [codexState], undefined, undefined, undefined, codexMixedTodayUsage,
-      ['codex']
-    );
+    const model = buildUsageDashboardModel({
+      states: [codexState],
+      codexTodayUsage: codexMixedTodayUsage,
+      enabledProviders: ['codex']
+    });
 
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'mixed codexTodayApiEquivalent card present');
@@ -145,10 +147,11 @@ function main() {
       modelUsage: []
     };
 
-    const model = buildUsageDashboardModel(
-      [codexState], undefined, undefined, undefined, codexMixedNoBreakdown,
-      ['codex']
-    );
+    const model = buildUsageDashboardModel({
+      states: [codexState],
+      codexTodayUsage: codexMixedNoBreakdown,
+      enabledProviders: ['codex']
+    });
 
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'mixed codexTodayApiEquivalent card present without per-model tokens');
@@ -161,7 +164,7 @@ function main() {
   }
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState]);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState] });
     const todayApiEq = model.today.cards.find(c => c.key === 'todayApiEquivalent');
     assert.ok(todayApiEq, 'todayApiEquivalent card present when all unavailable');
     assert.equal(todayApiEq.available, false, 'todayApiEquivalent unavailable when no today data');
@@ -222,9 +225,11 @@ function main() {
       ]
     };
 
-    const model = buildUsageDashboardModel(
-      [codexState], undefined, undefined, codexCorrelatedHistory, undefined, ['codex']
-    );
+    const model = buildUsageDashboardModel({
+      states: [codexState],
+      codexCorrelatedHistory: codexCorrelatedHistory,
+      enabledProviders: ['codex']
+    });
 
     const apiEq = model.details.cards.find(c => c.key === 'codexHistoryApiEquivalent');
     assert.ok(apiEq, 'codexHistoryApiEquivalent card present');

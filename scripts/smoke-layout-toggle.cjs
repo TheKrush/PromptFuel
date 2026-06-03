@@ -192,7 +192,7 @@ function main() {
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
   const { buildPromptFuelPanelScript } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelScript.js'));
 
-  const model = buildUsageDashboardModel([], undefined, makeClaudeHistory(), makeCodexHistory(), undefined, ['claude', 'codex']);
+  const model = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), codexCorrelatedHistory: makeCodexHistory(), enabledProviders: ['claude', 'codex'] });
   assert.ok(model.details.historyChart.available, 'Claude split chart remains available');
   assert.ok(model.details.codexHistoryChart.available, 'Codex split chart remains available');
   assert.ok(model.details.combinedHistoryChart.available, 'combined chart is available when both providers have history');
@@ -213,7 +213,7 @@ function main() {
     'Codex segment remains correlated in combined bins'
   );
 
-  const claudeOnlyModel = buildUsageDashboardModel([], undefined, makeClaudeHistory(), undefined, undefined, ['claude']);
+  const claudeOnlyModel = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), enabledProviders: ['claude'] });
   assert.equal(claudeOnlyModel.details.combinedHistoryChart, undefined, 'single-provider history does not build combined chart');
 
   const webviewScript = buildPromptFuelPanelScript();

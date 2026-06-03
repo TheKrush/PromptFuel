@@ -263,19 +263,34 @@ interface NumericAggregate {
   apiEquivalentCostUsd: number;
 }
 
-export function buildUsageDashboardModel(
-  states: ProviderUsageState[],
-  claudeTodayUsage?: ClaudeTodayUsageBucket,
-  claudeUsageHistory?: ClaudeUsageHistory,
-  codexCorrelatedHistory?: CodexCorrelatedHistory,
-  codexTodayUsage?: CodexCorrelatedDayBucket,
-  enabledProviders?: ProviderName[],
-  remoteProviderGroups?: GroupedRemoteProvider[],
-  selectedRemoteProviders?: UsageDashboardProvider[],
-  remoteUsage?: RemoteUsageProjection,
-  aliasMap?: Record<string, string>,
-  scopedToProvider?: ProviderName
-): UsageDashboardModel {
+export interface BuildUsageDashboardModelOptions {
+  states: ProviderUsageState[];
+  claudeTodayUsage?: ClaudeTodayUsageBucket;
+  claudeUsageHistory?: ClaudeUsageHistory;
+  codexCorrelatedHistory?: CodexCorrelatedHistory;
+  codexTodayUsage?: CodexCorrelatedDayBucket;
+  enabledProviders?: ProviderName[];
+  remoteProviderGroups?: GroupedRemoteProvider[];
+  selectedRemoteProviders?: UsageDashboardProvider[];
+  remoteUsage?: RemoteUsageProjection;
+  aliasMap?: Record<string, string>;
+  scopedToProvider?: ProviderName;
+}
+
+export function buildUsageDashboardModel(options: BuildUsageDashboardModelOptions): UsageDashboardModel {
+  const {
+    states,
+    claudeTodayUsage,
+    claudeUsageHistory,
+    codexCorrelatedHistory,
+    codexTodayUsage,
+    enabledProviders,
+    remoteProviderGroups,
+    selectedRemoteProviders,
+    remoteUsage,
+    aliasMap,
+    scopedToProvider
+  } = options;
   const ep = enabledProviders ? new Set(enabledProviders) : new Set(states.map(s => s.provider));
   const hasRemoteClaude = Boolean(
     remoteUsage?.claudeToday ||

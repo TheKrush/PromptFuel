@@ -14,7 +14,7 @@ function makeProviderState(overrides: Partial<ProviderUsageState> = {}): Provide
 }
 
 function dashboardProvider(overrides: Partial<ProviderUsageState> = {}) {
-  const model = buildUsageDashboardModel([makeProviderState(overrides)], undefined, undefined, undefined, undefined, ['claude']);
+  const model = buildUsageDashboardModel({ states: [makeProviderState(overrides)], enabledProviders: ['claude'] });
   const provider = model.providers.find(p => p.provider === 'claude');
   assert.ok(provider, 'claude provider present');
   return provider;

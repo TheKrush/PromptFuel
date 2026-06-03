@@ -93,14 +93,11 @@ function main() {
     makePoint('2026-05-15', 50),
     makePoint('2026-05-17', 100)
   ];
-  const model = buildUsageDashboardModel(
-    [{ provider: 'claude', source: 'local statusLine/hook state', stale: false, lastUpdatedEpochMs: Date.now() }],
-    undefined,
-    makeClaudeHistory(sourcePoints),
-    undefined,
-    undefined,
-    ['claude']
-  );
+  const model = buildUsageDashboardModel({
+    states: [{ provider: 'claude', source: 'local statusLine/hook state', stale: false, lastUpdatedEpochMs: Date.now() }],
+    claudeUsageHistory: makeClaudeHistory(sourcePoints),
+    enabledProviders: ['claude']
+  });
   assert.ok(model.details.historyChart.rangeViews, 'single-provider Claude chart includes precomputed range views');
   assert.equal(
     model.details.historyChart.ranges.find(range => range.key === '1D').available,
@@ -200,7 +197,7 @@ function main() {
   assert.ok(selectedRemoteCodexDistribution.available, 'remote Codex bucket-model distribution remains available when history buckets have no model stacks');
   assert.equal(selectedRemoteCodexDistribution.segments[0].model, 'gpt-5-5', 'remote Codex bucket-model segment is preserved');
 
-  const noProviderModel = buildUsageDashboardModel([], undefined, undefined, undefined, undefined, []);
+  const noProviderModel = buildUsageDashboardModel({ states: [], enabledProviders: [] });
   assert.equal(noProviderModel.details.historyChart, undefined, 'no-provider model omits Claude chart');
   assert.equal(noProviderModel.details.codexHistoryChart, undefined, 'no-provider model omits Codex chart');
 

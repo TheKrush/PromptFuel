@@ -81,7 +81,7 @@ function main() {
   // ── Scenario 1: Claude only ──────────────────────────────────────────────
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState], claudeTodayUsage, undefined, undefined, undefined, ['claude']);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude'] });
 
     assert.equal(model.providers.length, 2, 'providers array length unchanged by filter');
 
@@ -110,7 +110,7 @@ function main() {
   // ── Scenario 2: Codex only ──────────────────────────────────────────────
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState], undefined, undefined, undefined, codexTodayUsage, ['codex']);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['codex'] });
 
     assert.equal(model.providers.length, 2, 'providers array length unchanged by filter');
 
@@ -144,7 +144,7 @@ function main() {
   // ── Scenario 3: Both enabled (default) ───────────────────────────────────
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState]);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState] });
 
     // Enabled providers without Today data show honest unavailable cards.
     assert.ok(model.today.cards.find(c => c.key === 'todayTokens'), 'claude todayTokens card present (unavailable)');
@@ -170,7 +170,7 @@ function main() {
   }
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState], claudeTodayUsage, undefined, undefined, undefined, ['claude', 'codex']);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude', 'codex'] });
     const codexTodayTokens = model.today.cards.find(c => c.key === 'codexTodayTokens');
     assert.ok(codexTodayTokens, 'codex unavailable placeholder appears when codex enabled but missing today data');
     assert.equal(codexTodayTokens.available, false, 'codex unavailable placeholder is unavailable');
@@ -182,7 +182,7 @@ function main() {
   }
 
   {
-    const model = buildUsageDashboardModel([claudeState, codexState], undefined, undefined, undefined, codexTodayUsage, ['claude', 'codex']);
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['claude', 'codex'] });
     const claudeTodayTokens = model.today.cards.find(c => c.key === 'todayTokens');
     assert.ok(claudeTodayTokens, 'claude unavailable placeholder appears when claude enabled but missing today data');
     assert.equal(claudeTodayTokens.available, false, 'claude unavailable placeholder is unavailable');
@@ -290,7 +290,7 @@ function main() {
       ]
     };
 
-    const model = buildUsageDashboardModel([codexState], undefined, undefined, codexCorrelatedHistory, undefined, ['codex']);
+    const model = buildUsageDashboardModel({ states: [codexState], codexCorrelatedHistory: codexCorrelatedHistory, enabledProviders: ['codex'] });
     const labels = model.details.codexModelDistribution.segments.map(segment => segment.label);
     assert.ok(labels.includes('gpt-4.5'), 'gpt model label keeps gpt prefix while stripping date suffix');
     assert.ok(labels.includes('<synthetic>'), 'synthetic Codex model label collapses to synthetic marker');
@@ -329,7 +329,7 @@ function main() {
 
 {
   // Simulate extension.ts filtering: only codex state + codex enabled
-  const model = buildUsageDashboardModel([codexState], undefined, undefined, undefined, undefined, ['codex']);
+  const model = buildUsageDashboardModel({ states: [codexState], enabledProviders: ['codex'] });
   assert.equal(model.providers.length, 1, 'providers has only codex when claude state excluded');
   assert.equal(model.providers[0].provider, 'codex', 'remaining provider is codex');
   assert.equal(model.today.source.confidence, 'unavailable', 'no today data -> unavailable');
@@ -339,7 +339,7 @@ function main() {
   assert.ok(model.today.cards.every(card => card.key.startsWith('codex')), 'codex-only dashboard does not include claude today cards');
 
   // Same with claude-only
-  const claudeModel = buildUsageDashboardModel([claudeState], undefined, undefined, undefined, undefined, ['claude']);
+  const claudeModel = buildUsageDashboardModel({ states: [claudeState], enabledProviders: ['claude'] });
   assert.equal(claudeModel.providers.length, 1, 'providers has only claude when codex state excluded');
   assert.equal(claudeModel.providers[0].provider, 'claude', 'remaining provider is claude');
   console.log('PASS: Filtered provider states exclude provider cards for filtered-out providers');

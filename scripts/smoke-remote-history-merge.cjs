@@ -257,14 +257,11 @@ function makeNonCurrentSource(overrides = {}) {
     })]
   });
   const projection = buildRemoteUsageProjection([codexSource], new Set(['vm-source/codex']));
-  const model = buildUsageDashboardModel(
-    [{ provider: 'codex', source: 'local', stale: false, sevenDay: { usedPercentage: 20 }, fiveHour: { usedPercentage: 10 } }],
-    undefined, undefined, undefined, undefined,
-    ['codex'],
-    undefined,
-    undefined,
-    projection
-  );
+  const model = buildUsageDashboardModel({
+    states: [{ provider: 'codex', source: 'local', stale: false, sevenDay: { usedPercentage: 20 }, fiveHour: { usedPercentage: 10 } }],
+    enabledProviders: ['codex'],
+    remoteUsage: projection
+  });
   const segment = model.details.codexModelDistribution.segments.find(s => s.model === 'gpt-5.5');
   assert.equal(segment.totalTokens, 1800);
   assert.equal(segment.assistantMessages, 2);
@@ -310,14 +307,12 @@ function makeNonCurrentSource(overrides = {}) {
     fileReadErrors: 0
   };
   const localState = { provider: 'codex', source: 'local', stale: false, sevenDay: { usedPercentage: 20 }, fiveHour: { usedPercentage: 10 } };
-  const model = buildUsageDashboardModel(
-    [localState],
-    undefined, undefined, localCodexHistory, undefined,
-    ['codex'],
-    undefined,
-    undefined,
-    projection
-  );
+  const model = buildUsageDashboardModel({
+    states: [localState],
+    codexCorrelatedHistory: localCodexHistory,
+    enabledProviders: ['codex'],
+    remoteUsage: projection
+  });
   const segment = model.details.codexModelDistribution.segments.find(s => s.model === 'gpt-5-5');
   assert.equal(segment.totalTokens, 16000);
   assert.equal(model.details.codexModelDistribution.segments.length, 1);
@@ -364,17 +359,15 @@ function makeNonCurrentSource(overrides = {}) {
 
 {
   const fixture = createCanonicalUsageFixture();
-  const model = buildUsageDashboardModel(
-    fixture.states,
-    fixture.claudeToday,
-    fixture.claudeHistory,
-    fixture.codexHistory,
-    fixture.codexToday,
-    ['claude', 'codex'],
-    undefined,
-    undefined,
-    fixture.remoteProjection
-  );
+  const model = buildUsageDashboardModel({
+    states: fixture.states,
+    claudeTodayUsage: fixture.claudeToday,
+    claudeUsageHistory: fixture.claudeHistory,
+    codexCorrelatedHistory: fixture.codexHistory,
+    codexTodayUsage: fixture.codexToday,
+    enabledProviders: ['claude', 'codex'],
+    remoteUsage: fixture.remoteProjection
+  });
 
   const forbiddenFixtureText = JSON.stringify(fixture.remoteSources);
   for (const field of ['todaySummary', 'modelContribution', 'windowResetMeta', 'resetAtEpochSeconds', 'apiEquivalentCostUsd']) {
@@ -395,28 +388,22 @@ function makeNonCurrentSource(overrides = {}) {
   assert.equal(codexTodayApi.available, true, 'mixed Codex local+remote API estimate is available when every row has model/token components');
   assert.match(codexTodayApi.value, /^\$/, 'mixed Codex local+remote API estimate shows a derived combined cost');
 
-  const localOnlyModel = buildUsageDashboardModel(
-    fixture.states,
-    fixture.claudeToday,
-    fixture.claudeHistory,
-    fixture.codexHistory,
-    fixture.codexToday,
-    ['claude', 'codex']
-  );
+  const localOnlyModel = buildUsageDashboardModel({
+    states: fixture.states,
+    claudeTodayUsage: fixture.claudeToday,
+    claudeUsageHistory: fixture.claudeHistory,
+    codexCorrelatedHistory: fixture.codexHistory,
+    codexTodayUsage: fixture.codexToday,
+    enabledProviders: ['claude', 'codex']
+  });
   assert.equal(localOnlyModel.today.cards.find(card => card.key === 'todayApiEquivalent').available, true, 'local-only Claude with complete model cost data may show API estimate');
   assert.equal(localOnlyModel.today.cards.find(card => card.key === 'codexTodayApiEquivalent').available, true, 'local-only Codex with complete model cost data may show API estimate');
 
-  const remoteOnlyModel = buildUsageDashboardModel(
-    [],
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    ['claude', 'codex'],
-    undefined,
-    undefined,
-    fixture.remoteProjection
-  );
+  const remoteOnlyModel = buildUsageDashboardModel({
+    states: [],
+    enabledProviders: ['claude', 'codex'],
+    remoteUsage: fixture.remoteProjection
+  });
   assert.equal(remoteOnlyModel.today.cards.find(card => card.key === 'todayApiEquivalent').available, true, 'remote-only Claude known model rows compute API estimate locally');
   assert.equal(remoteOnlyModel.today.cards.find(card => card.key === 'codexTodayApiEquivalent').available, true, 'remote-only Codex known model rows compute API estimate locally');
 
@@ -430,17 +417,11 @@ function makeNonCurrentSource(overrides = {}) {
       models: []
     })]
   })], new Set(['BROKEN/claude']));
-  const unpriceableModel = buildUsageDashboardModel(
-    [],
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    ['claude'],
-    undefined,
-    undefined,
-    unpriceableProjection
-  );
+  const unpriceableModel = buildUsageDashboardModel({
+    states: [],
+    enabledProviders: ['claude'],
+    remoteUsage: unpriceableProjection
+  });
   assert.equal(unpriceableModel.today.cards.find(card => card.key === 'todayApiEquivalent').available, false, 'remote row without model/token attribution hides API estimate');
 
   const fallbackProjection = buildRemoteUsageProjection([makeV2Source({
@@ -460,17 +441,11 @@ function makeNonCurrentSource(overrides = {}) {
       }]
     })]
   })], new Set(['FALLBACK/claude']));
-  const fallbackModel = buildUsageDashboardModel(
-    [],
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    ['claude'],
-    undefined,
-    undefined,
-    fallbackProjection
-  );
+  const fallbackModel = buildUsageDashboardModel({
+    states: [],
+    enabledProviders: ['claude'],
+    remoteUsage: fallbackProjection
+  });
   const fallbackApi = fallbackModel.today.cards.find(card => card.key === 'todayApiEquivalent');
   assert.equal(fallbackApi.available, true, 'unknown remote model follows existing fallback pricing behavior');
   assert.match(fallbackApi.detail, /fallback/, 'fallback remote estimate keeps fallback label');

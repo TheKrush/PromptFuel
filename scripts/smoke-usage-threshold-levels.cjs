@@ -31,7 +31,7 @@ function main() {
   ];
 
   for (const testCase of cases) {
-    const model = buildUsageDashboardModel([makeState(100 - testCase.remaining)]);
+    const model = buildUsageDashboardModel({ states: [makeState(100 - testCase.remaining)] });
     const window = model.providers[0].windows.find(w => w.key === 'sevenDay');
     assert.equal(quotaLevelForRemaining(testCase.remaining), testCase.level, `${testCase.remaining}% remaining resolves expected dot level`);
     assert.equal(window.level, testCase.level, `${testCase.remaining}% remaining dashboard window reuses dot level`);

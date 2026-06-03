@@ -240,7 +240,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.upgradeSnapshotFiles', () => upgradeSnapshotFiles()));
   registerPromptFuelPanelCommands(context, {
     refreshNow: () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true, suppressPanelBroadcast: true }),
-    getUsageDashboardModel: () => buildUsageDashboardModel(latest.providerStates, latest.claudeTodayUsage, latest.claudeUsageHistory, latest.codexCorrelatedHistory, latest.codexCorrelatedTodayUsage, getConfig().enabledProviders, latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined, latest.selectedRemoteProviders.length > 0 ? latest.selectedRemoteProviders : undefined, latest.remoteUsage, getConfig().snapshot.remoteMachineLabels)
+    getUsageDashboardModel: () => buildUsageDashboardModel({
+      states: latest.providerStates,
+      claudeTodayUsage: latest.claudeTodayUsage,
+      claudeUsageHistory: latest.claudeUsageHistory,
+      codexCorrelatedHistory: latest.codexCorrelatedHistory,
+      codexTodayUsage: latest.codexCorrelatedTodayUsage,
+      enabledProviders: getConfig().enabledProviders,
+      remoteProviderGroups: latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined,
+      selectedRemoteProviders: latest.selectedRemoteProviders.length > 0 ? latest.selectedRemoteProviders : undefined,
+      remoteUsage: latest.remoteUsage,
+      aliasMap: getConfig().snapshot.remoteMachineLabels
+    })
   });
   logPromptFuel('Commands registered.');
 
@@ -474,7 +485,18 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   // The panel calls refreshNow directly, so the shared refresh path should not also broadcast
   // the same dashboard model to the open webview.
   if (!options.suppressPanelBroadcast) {
-    const usageDashboardModel = buildUsageDashboardModel(latest.providerStates, latest.claudeTodayUsage, latest.claudeUsageHistory, latest.codexCorrelatedHistory, latest.codexCorrelatedTodayUsage, effectiveProviders, latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined, selectedDashboardRemoteProviders.length > 0 ? selectedDashboardRemoteProviders : undefined, remoteUsage, aliasMap);
+    const usageDashboardModel = buildUsageDashboardModel({
+      states: latest.providerStates,
+      claudeTodayUsage: latest.claudeTodayUsage,
+      claudeUsageHistory: latest.claudeUsageHistory,
+      codexCorrelatedHistory: latest.codexCorrelatedHistory,
+      codexTodayUsage: latest.codexCorrelatedTodayUsage,
+      enabledProviders: effectiveProviders,
+      remoteProviderGroups: latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined,
+      selectedRemoteProviders: selectedDashboardRemoteProviders.length > 0 ? selectedDashboardRemoteProviders : undefined,
+      remoteUsage: remoteUsage,
+      aliasMap: aliasMap
+    });
     postUsageDashboardRefreshIfOpen(usageDashboardModel);
   }
 
