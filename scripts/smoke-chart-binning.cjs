@@ -201,7 +201,7 @@ function main() {
   assert.equal(noProviderModel.details.historyChart, undefined, 'no-provider model omits Claude chart');
   assert.equal(noProviderModel.details.codexHistoryChart, undefined, 'no-provider model omits Codex chart');
 
-  const styles = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelStyles.ts'), 'utf8');
+  const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   assert.match(styles, /usage-history-bars[\s\S]*display:grid/, 'history bars use bounded grid rendering');
   assert.match(styles, /grid-template-columns:repeat\(var\(--history-bin-count,30\),minmax\(0,1fr\)\)/, 'history grid is driven by bounded bin count');
   assert.match(styles, /usage-history-bars[\s\S]*overflow:hidden/, 'history chart does not rely on horizontal scrolling');

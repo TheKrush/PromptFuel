@@ -1,9 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { buildPromptFuelPanelScript } from './promptFuelPanelScript';
-import { buildStyles } from './promptFuelPanelStyles';
 import { EXTENSION_VERSION } from '../version';
 
-export function buildPromptFuelPanelHtml(): string {
+export function buildPromptFuelPanelHtml(cssUri: string, cspSource: string): string {
   const nonce = randomBytes(16).toString('base64url');
   const script = buildPromptFuelPanelScript();
 
@@ -11,10 +10,8 @@ export function buildPromptFuelPanelHtml(): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-<style nonce="${nonce}">
-${buildStyles()}
-</style>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${cspSource}; script-src 'nonce-${nonce}';">
+<link rel="stylesheet" href="${cssUri}">
 </head>
 <body>
 <h1 class="app-title">PromptFuel</h1>

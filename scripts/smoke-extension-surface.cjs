@@ -65,7 +65,7 @@ const vscodeIgnore = fs.readFileSync(path.join(repoRoot, '.vscodeignore'), 'utf8
 for (const excluded of ['.github/**', '*.vsix', '*.log', 'DO_NOT_DELETE/**', 'vsix-inspect/**', 'src/**', 'tools/**']) {
   assert.ok(vscodeIgnore.includes(excluded), `.vscodeignore excludes ${excluded}`);
 }
-for (const included of ['!package.json', '!CHANGELOG.md', '!SUPPORT.md', '!assets/icon.png', '!out/display/*.js', '!out/panel/*.js', '!out/panel/dashboard/*.js', '!out/panel/dashboard/*.js.map', '!out/providers/*.js', '!out/quota/*.js', '!out/snapshot/*.js']) {
+for (const included of ['!package.json', '!CHANGELOG.md', '!SUPPORT.md', '!assets/icon.png', '!out/display/*.js', '!out/panel/*.js', '!out/panel/dashboard/*.js', '!out/panel/dashboard/*.js.map', '!out/providers/*.js', '!out/quota/*.js', '!out/snapshot/*.js', '!media/**']) {
   assert.ok(vscodeIgnore.includes(included), `.vscodeignore includes ${included}`);
 }
 
@@ -116,8 +116,8 @@ assert.equal(
   'CSP script-src does not use unsafe-inline'
 );
 assert.ok(
-  /style nonce="\$\{nonce\}"/.test(viewSource),
-  'inline <style> carries nonce attribute'
+  /link rel="stylesheet"/.test(viewSource),
+  'webview head uses <link> for external CSS asset'
 );
 assert.ok(
   /script nonce="\$\{nonce\}"/.test(viewSource),
@@ -125,14 +125,12 @@ assert.ok(
 );
 
 const { buildPromptFuelPanelHtml } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelView.js'));
-const panelHtml = buildPromptFuelPanelHtml();
+const panelHtml = buildPromptFuelPanelHtml('media/promptFuelPanel.css', 'https://file+.vscode-resource.vscode-cdn.net');
 const cspNonce = panelHtml.match(/script-src 'nonce-([A-Za-z0-9_-]+)'/);
-const styleNonce = panelHtml.match(/<style nonce="([A-Za-z0-9_-]+)">/);
 const scriptNonce = panelHtml.match(/<script nonce="([A-Za-z0-9_-]+)">/);
 assert.ok(cspNonce, 'generated HTML has nonce-based script-src');
-assert.ok(styleNonce, 'generated HTML style tag carries nonce');
+assert.ok(panelHtml.includes('<link rel="stylesheet" href="media/promptFuelPanel.css">'), 'generated HTML links external CSS asset');
 assert.ok(scriptNonce, 'generated HTML script tag carries nonce');
-assert.equal(styleNonce[1], cspNonce[1], 'generated style nonce matches CSP nonce');
 assert.equal(scriptNonce[1], cspNonce[1], 'generated script nonce matches CSP nonce');
 assert.equal(
   /script-src 'unsafe-inline'/.test(panelHtml),

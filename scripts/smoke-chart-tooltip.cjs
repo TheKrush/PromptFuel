@@ -240,7 +240,7 @@ function main() {
   assert.match(renderTooltipSource, /showProviderSwatches === false/, 'history tooltip can suppress provider swatches for model-stacked combined bins');
   assert.match(renderTooltipSource, /ab-tip-model-row[\s\S]*ab-tip-swatch/, 'Top Models rows keep model swatches');
 
-  const styles = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelStyles.ts'), 'utf8');
+  const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   assert.match(styles, /\.ab-tip\{[\s\S]*position:fixed/, 'single tooltip style is fixed-position for webview edge handling');
   assert.match(styles, /\.ab-tip\{[\s\S]*pointer-events:none/, 'tooltip does not cause hover jitter');
   assert.match(styles, /\.usage-history-bar:focus-visible/, 'focus-visible styling exists for chart bars');

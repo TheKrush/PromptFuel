@@ -1,5 +1,4 @@
-export function buildStyles(): string {
-  return `:root{
+:root{
   --ab-space-1:4px;
   --ab-space-2:8px;
   --ab-space-3:12px;
@@ -1361,5 +1360,4 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   align-items:center
 }
 .pr-base-head .arrow{color:var(--vscode-descriptionForeground);opacity:.5}
-.dirty-hint{font-size:11px;color:var(--vscode-inputValidation-warningBorder,#b89500);font-weight:600;margin-left:8px}`;
-}
+.dirty-hint{font-size:11px;color:var(--vscode-inputValidation-warningBorder,#b89500);font-weight:600;margin-left:8px}

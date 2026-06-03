@@ -334,7 +334,7 @@ function main() {
   assert.match(scriptSource, /command: 'setUsageHistoryLayout'/, 'webview posts layout changes');
   assert.match(scriptSource, /currentHistoryLayout = 'combined'/, 'Combined is the webview default');
 
-  const styles = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelStyles.ts'), 'utf8');
+  const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   assert.match(styles, /usage-history-bar-segment\.codex:not\(\.model\)[\s\S]*repeating-linear-gradient/, 'Codex fallback provider bars use hatch treatment');
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');

@@ -41,7 +41,7 @@ function main() {
   assert.match(panelScript, /var levelClass = window\.level \? ' level-' \+ window\.level : '';/, 'quota window renderer derives level-* class from model level');
   assert.match(panelScript, /usage-progress-fill' \+ levelClass/, 'usage progress fill receives the resolved level class');
 
-  const styles = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelStyles.ts'), 'utf8');
+  const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   for (const level of cases.map(testCase => testCase.level)) {
     assert.match(styles, new RegExp(`\\.usage-progress-fill\\.level-${level}\\s*\\{`), `usage progress fill has level-${level} styling`);
   }

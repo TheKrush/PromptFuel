@@ -45,3 +45,4 @@ assets/**
 !out/quota/*.js.map
 !out/snapshot/*.js
 !out/snapshot/*.js.map
+!media/**

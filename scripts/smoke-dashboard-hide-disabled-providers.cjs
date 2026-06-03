@@ -311,7 +311,7 @@ function main() {
     assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('codex'\)\) \{[\s\S]*readCodexCorrelatedHistory/, 'excluded Codex provider does not refresh dashboard history inputs');
 
     const panelScript = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelScript.ts'), 'utf8');
-    const styles = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelStyles.ts'), 'utf8');
+    const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
     assert.match(panelScript, /overviewCards/, 'Today overview uses model-computed combined cards');
     assert.match(panelScript, /overviewCards: undefined/, 'Today provider tabs strip overview cards so provider-specific cards render');
     assert.match(panelScript, /scopeTodayByTab[\s\S]*tab === 'overview'[\s\S]*return today/, 'Provider tabs keep scopeTodayByTab unchanged');

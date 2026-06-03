@@ -62,7 +62,11 @@ function openPromptFuelPanel(
     'promptFuelPanel',
     'PromptFuel',
     vscode.ViewColumn.One,
-    { enableScripts: true, retainContextWhenHidden: true }
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+    }
   );
 
   const panelMessageHandler = panel.webview.onDidReceiveMessage(
@@ -81,8 +85,12 @@ function openPromptFuelPanel(
     panel = undefined;
   }, undefined, context.subscriptions);
 
+  const cssUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'media', 'promptFuelPanel.css')
+  ).toString();
+
   try {
-    panel.webview.html = buildPromptFuelPanelHtml();
+    panel.webview.html = buildPromptFuelPanelHtml(cssUri, panel.webview.cspSource);
   } catch (error) {
     panel.dispose();
     panel = undefined;
