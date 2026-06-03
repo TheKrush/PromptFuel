@@ -190,8 +190,6 @@ function makeModelUsage(modelTotals, inputRatio, reasoningOutputTokens = 0) {
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
-  const { buildPromptFuelPanelScript } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelScript.js'));
-
   const model = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), codexCorrelatedHistory: makeCodexHistory(), enabledProviders: ['claude', 'codex'] });
   assert.ok(model.details.historyChart.available, 'Claude split chart remains available');
   assert.ok(model.details.codexHistoryChart.available, 'Codex split chart remains available');
@@ -216,7 +214,7 @@ function main() {
   const claudeOnlyModel = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), enabledProviders: ['claude'] });
   assert.equal(claudeOnlyModel.details.combinedHistoryChart, undefined, 'single-provider history does not build combined chart');
 
-  const webviewScript = buildPromptFuelPanelScript();
+  const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
     'globalThis.__layoutToggleTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderHistoryLayoutToggle: renderHistoryLayoutToggle, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, usageCardsByKey: usageCardsByKey, setHistoryLayout: function(layout) { currentHistoryLayout = layout; }, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; } }; })();'
@@ -330,7 +328,7 @@ function main() {
   assert.match(panelSource, /workspaceState\.update\(USAGE_HISTORY_LAYOUT_STATE_KEY/, 'layout changes persist to workspaceState');
   assert.match(panelSource, /usageWorkspaceState\?\.get<string>\(USAGE_HISTORY_LAYOUT_STATE_KEY\)/, 'layout reads from workspaceState');
 
-  const scriptSource = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelScript.ts'), 'utf8');
+  const scriptSource = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   assert.match(scriptSource, /command: 'setUsageHistoryLayout'/, 'webview posts layout changes');
   assert.match(scriptSource, /currentHistoryLayout = 'combined'/, 'Combined is the webview default');
 

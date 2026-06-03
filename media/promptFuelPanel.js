@@ -1,5 +1,5 @@
-export function buildPromptFuelPanelScript(): string {
-  return `
+// Webview script for PromptFuel. Keep values interpolated into innerHTML escaped with esc()/escAttr().
+
 (function() {
   var vscode = acquireVsCodeApi();
   var currentClaudeHistoryRange = '1M';
@@ -641,7 +641,7 @@ export function buildPromptFuelPanelScript(): string {
       lines.push('Top models: none for this point');
     }
 
-    return lines.join('\\n');
+    return lines.join('\n');
   }
 
   function buildHistoryTooltipPayload(point, provider, chart) {
@@ -688,7 +688,7 @@ export function buildPromptFuelPanelScript(): string {
       providerRows: providerRows,
       showProviderSwatches: provider === 'combined' && hasModelStack ? false : true,
       topModels: topModels,
-      ariaLabel: buildHistoryPointTooltip(point).replace(/\\s+/g, ' ')
+      ariaLabel: buildHistoryPointTooltip(point).replace(/\s+/g, ' ')
     };
   }
 
@@ -2051,7 +2051,7 @@ export function buildPromptFuelPanelScript(): string {
 
   function addThousandsSeparators(numStr) {
     var parts = numStr.split('.');
-    parts[0] = parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return parts.join('.');
   }
 
@@ -2060,7 +2060,7 @@ export function buildPromptFuelPanelScript(): string {
     if (!isFinite(n)) { return '—'; }
     if (n >= 1000000) { return addThousandsSeparators((n / 1000000).toFixed(1)) + 'M'; }
     if (n >= 1000) { return addThousandsSeparators((n / 1000).toFixed(1)) + 'K'; }
-    return String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+    return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
   function formatMetricUsd(value) {
@@ -2217,7 +2217,7 @@ export function buildPromptFuelPanelScript(): string {
       var sectionLabel = currentUsageProviderTab === 'claude'
         ? ((today && today.claudeSectionLabel) || 'Claude')
         : ((today && today.codexSectionLabel) || 'Codex');
-      var remoteLabel = sectionLabel.replace(new RegExp('^' + providerName + ' \\+ '), '') || 'Snapshot';
+      var remoteLabel = sectionLabel.replace(new RegExp('^' + providerName + ' \+ '), '') || 'Snapshot';
       if (remoteLabel === sectionLabel) { remoteLabel = 'Snapshot'; }
       if (localCards.length > 0) { groups.push({ label: providerName, cards: localCards }); }
       if (remoteCards.length > 0) { groups.push({ label: remoteLabel, cards: remoteCards }); }
@@ -2363,5 +2363,3 @@ export function buildPromptFuelPanelScript(): string {
     }
   });
 })();
-`;
-}

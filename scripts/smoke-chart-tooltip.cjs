@@ -9,8 +9,7 @@ const vm = require('node:vm');
 
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const { buildPromptFuelPanelScript } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelScript.js'));
-  const webviewScript = buildPromptFuelPanelScript();
+  const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
     'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderClaudeModelDistribution: renderClaudeModelDistribution, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'

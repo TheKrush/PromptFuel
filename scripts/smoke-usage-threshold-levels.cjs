@@ -37,7 +37,7 @@ function main() {
     assert.equal(window.level, testCase.level, `${testCase.remaining}% remaining dashboard window reuses dot level`);
   }
 
-  const panelScript = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelScript.ts'), 'utf8');
+  const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   assert.match(panelScript, /var levelClass = window\.level \? ' level-' \+ window\.level : '';/, 'quota window renderer derives level-* class from model level');
   assert.match(panelScript, /usage-progress-fill' \+ levelClass/, 'usage progress fill receives the resolved level class');
 

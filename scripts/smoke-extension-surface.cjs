@@ -121,15 +121,20 @@ assert.ok(
 );
 assert.ok(
   /script nonce="\$\{nonce\}"/.test(viewSource),
-  'inline <script> carries nonce attribute'
+  'script tag carries nonce attribute'
+);
+assert.ok(
+  /src="\$\{scriptUri\}"/.test(viewSource),
+  'script tag loads external asset via scriptUri'
 );
 
 const { buildPromptFuelPanelHtml } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelView.js'));
-const panelHtml = buildPromptFuelPanelHtml('media/promptFuelPanel.css', 'https://file+.vscode-resource.vscode-cdn.net');
+const panelHtml = buildPromptFuelPanelHtml('media/promptFuelPanel.css', 'media/promptFuelPanel.js', 'https://file+.vscode-resource.vscode-cdn.net');
 const cspNonce = panelHtml.match(/script-src 'nonce-([A-Za-z0-9_-]+)'/);
-const scriptNonce = panelHtml.match(/<script nonce="([A-Za-z0-9_-]+)">/);
+const scriptNonce = panelHtml.match(/<script nonce="([A-Za-z0-9_-]+)"[^>]*>/);
 assert.ok(cspNonce, 'generated HTML has nonce-based script-src');
 assert.ok(panelHtml.includes('<link rel="stylesheet" href="media/promptFuelPanel.css">'), 'generated HTML links external CSS asset');
+assert.ok(panelHtml.includes('src="media/promptFuelPanel.js"'), 'generated HTML script tag references promptFuelPanel.js');
 assert.ok(scriptNonce, 'generated HTML script tag carries nonce');
 assert.equal(scriptNonce[1], cspNonce[1], 'generated script nonce matches CSP nonce');
 assert.equal(

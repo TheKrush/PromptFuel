@@ -89,8 +89,12 @@ function openPromptFuelPanel(
     vscode.Uri.joinPath(context.extensionUri, 'media', 'promptFuelPanel.css')
   ).toString();
 
+  const scriptUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(context.extensionUri, 'media', 'promptFuelPanel.js')
+  ).toString();
+
   try {
-    panel.webview.html = buildPromptFuelPanelHtml(cssUri, panel.webview.cspSource);
+    panel.webview.html = buildPromptFuelPanelHtml(cssUri, scriptUri, panel.webview.cspSource);
   } catch (error) {
     panel.dispose();
     panel = undefined;

@@ -85,7 +85,7 @@ function makeClaudeHistory(days) {
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
-  const { buildPromptFuelPanelScript } = require(path.join(repoRoot, 'out', 'panel', 'promptFuelPanelScript.js'));
+  const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
 
   const sourcePoints = [
     makePoint('2026-01-10', 70),
@@ -111,7 +111,6 @@ function main() {
   );
   assert.equal(model.details.codexHistoryChart, undefined, 'single-provider Claude mode does not create Codex chart');
 
-  const webviewScript = buildPromptFuelPanelScript();
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
     'globalThis.__usageHistoryTest = { selectClaudeHistoryChartRange: selectClaudeHistoryChartRange, selectClaudeModelDistributionRange: selectClaudeModelDistributionRange, selectCodexModelDistributionRange: selectCodexModelDistributionRange, renderHistoryChart: renderHistoryChart }; })();'
@@ -208,7 +207,7 @@ function main() {
   assert.doesNotMatch(styles, /usage-history-bars[\s\S]{0,220}overflow-x:auto/, 'history bars do not use horizontal scroll');
   assert.match(styles, /usage-history-bar\.empty/, 'empty bins have dedicated faint styling');
 
-  const panelScript = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelScript.ts'), 'utf8');
+  const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   assert.match(panelScript, /chart\.ariaLabel \|\| 'Token trend chart'/, 'chart aria label uses bin-granularity metadata');
   assert.match(panelScript, /chart\.axisLabel \|\| chart\.granularityLabel/, 'axis label reflects bin granularity');
   assert.match(panelScript, /normalizeAvailableHistoryRange/, 'stale 1D selection state falls back to an available range');
