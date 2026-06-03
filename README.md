@@ -33,6 +33,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 | `promptFuel.openDashboard` | PromptFuel: Open Usage Dashboard |
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
+| `promptFuel.upgradeSnapshotFiles` | PromptFuel: Upgrade Snapshot Files to Current Schema |
 
 ## Machine Snapshots
 
@@ -48,15 +49,14 @@ Minimal machine snapshot example:
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
+  "writerVersion": "0.8.0",
   "generatedAtEpochMs": 1767225600000,
-  "machine": {
-    "label": "desktop"
-  },
+  "machineLabel": "desktop",
   "providerUsage": [
     {
       "provider": "claude",
-      "laneLabel": "Claude",
+      "sourceLabel": "Claude",
       "sevenDayUsedPercent": 40,
       "fiveHourUsedPercent": 20,
       "lastUpdatedEpochMs": 1767225600000,
@@ -64,11 +64,7 @@ Minimal machine snapshot example:
       "source": "localSession",
       "sourceConfidence": "apiEquivalentEstimate"
     }
-  ],
-  "exportMeta": {
-    "extensionVersion": "0.6.0",
-    "schemaVersion": 2
-  }
+  ]
 }
 ```
 
@@ -79,6 +75,7 @@ Malformed snapshot files, unsupported schema versions, unknown providers, privat
 When `promptFuel.snapshot.path` points to a shared folder, PromptFuel discovers compatible snapshots from other machines automatically. You can selectively display those remote sources in the dashboard and status bar.
 
 **Settings:**
+
 - `promptFuel.snapshot.remoteSources` — list of `machineLabel/provider` entries to show as provider cards in the dashboard. Example: `["desktop/claude", "laptop/codex"]`.
 - `promptFuel.snapshot.statusBarSources` — same format, but controls what appears in the status bar.
 - `promptFuel.snapshot.remoteMachineLabels` — optional display aliases for machine labels. Example: `{ "desktop": "Home Desktop", "laptop": "Work Laptop" }`.
@@ -119,7 +116,6 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | `promptFuel.authenticatedQuota.refreshIntervalMinutes` | Minimum interval in minutes for periodic authenticated quota refresh | `5` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
-| `promptFuel.snapshot.includeHistoryBuckets` | Include sanitized history buckets in written snapshots | `true` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |
 | `promptFuel.snapshot.remoteSources` | Remote machine sources to show as provider cards in the dashboard (`machineLabel/provider`, e.g. `desktop/claude`) | `[]` |
 | `promptFuel.snapshot.statusBarSources` | Remote machine sources to show in the status bar (`machineLabel/provider`, e.g. `laptop/codex`) | `[]` |
@@ -130,6 +126,12 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 ```bash
 npm install
 npm run compile
+```
+
+Run unit tests:
+
+```bash
+npm run test:unit
 ```
 
 Run smoke tests:
