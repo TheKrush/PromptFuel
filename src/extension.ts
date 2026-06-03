@@ -470,7 +470,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     latest.codexCorrelatedTodayUsage = undefined;
   }
 
-  // Panel-owned refreshes keep the loading/result/final-model sequence in
+  // Panel-owned refreshes keep the loading/result/final-model sequence in sync.
   // The panel calls refreshNow directly, so the shared refresh path should not also broadcast
   // the same dashboard model to the open webview.
   if (!options.suppressPanelBroadcast) {

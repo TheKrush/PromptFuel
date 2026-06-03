@@ -51,11 +51,11 @@ ${buildStyles()}
     </section>
 
     <div id="usageToday" class="usage-today">
-      <div class="usage-empty">Today section will appear when safe day-bucket aggregation is implemented.</div>
+      <div class="usage-empty">Loading today's usage...</div>
     </div>
 
     <div id="usageDetails" class="usage-details">
-      <div class="usage-empty">Details will appear when safe normalized token data is available.</div>
+      <div class="usage-empty">Loading usage details...</div>
     </div>
 
     <div id="usageRefreshStatus" class="usage-status">Waiting for usage refresh...</div>
