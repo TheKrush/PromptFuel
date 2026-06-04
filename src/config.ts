@@ -1,13 +1,6 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import {
-  DEFAULT_CRITICAL_REMAINING_PERCENT,
-  DEFAULT_EMPTY_REMAINING_PERCENT,
-  DEFAULT_LOW_REMAINING_PERCENT,
-  DEFAULT_WARN_REMAINING_PERCENT,
-  normalizeThresholds
-} from './configThresholds';
 import { DisplayMode, ProviderName, SourceConfigEntry } from './types';
 import {
   resolveConfiguredSourcesFromInspection,
@@ -27,10 +20,6 @@ export interface PromptFuelConfig {
   codexSessionsPath: string;
   displayMode: DisplayMode;
   statusMode: 'remaining' | 'used';
-  lowRemainingPercent: number;
-  warnRemainingPercent: number;
-  criticalRemainingPercent: number;
-  emptyRemainingPercent: number;
   freshResetToleranceSeconds: number;
   snapshot: SnapshotConfig;
 }
@@ -61,11 +50,6 @@ export function getConfig(): PromptFuelConfig {
   const configuredClaudeProjectsDir = cfg.get<string>('claudeProjectsPath') ?? '';
   const configuredCodexDir = cfg.get<string>('codexSessionsPath') ?? '';
   const configuredSnapshotPath = cfg.get<string>('snapshot.path') ?? '';
-  const rawLow = cfg.get<number>('lowRemainingPercent') ?? DEFAULT_LOW_REMAINING_PERCENT;
-  const rawWarn = cfg.get<number>('warnRemainingPercent') ?? DEFAULT_WARN_REMAINING_PERCENT;
-  const rawCritical = cfg.get<number>('criticalRemainingPercent') ?? DEFAULT_CRITICAL_REMAINING_PERCENT;
-  const rawEmpty = DEFAULT_EMPTY_REMAINING_PERCENT;
-  const { lowRemainingPercent, warnRemainingPercent, criticalRemainingPercent, emptyRemainingPercent } = normalizeThresholds(rawLow, rawWarn, rawCritical, rawEmpty);
 
   const rawSources = resolveConfiguredSourcesFromInspection(
     cfg.inspect<Record<string, Partial<SourceConfigEntry>>>('sources')
@@ -91,10 +75,6 @@ export function getConfig(): PromptFuelConfig {
     codexSessionsPath: expandHome(configuredCodexDir || path.join(os.homedir(), '.codex', 'sessions')),
     displayMode: resolveDisplayMode(cfg.get<string>('statusBarDensity') ?? 'standard'),
     statusMode: cfg.get<'remaining' | 'used'>('statusMode') ?? 'remaining',
-    lowRemainingPercent,
-    warnRemainingPercent,
-    criticalRemainingPercent,
-    emptyRemainingPercent,
     freshResetToleranceSeconds: DEFAULT_FRESH_RESET_TOLERANCE_SECONDS,
     snapshot: {
       enabled: cfg.get<boolean>('snapshot.enabled') ?? false,

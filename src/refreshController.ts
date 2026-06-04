@@ -635,10 +635,6 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   const formatted = formatStatus(states, {
     displayMode: cfg.displayMode,
     statusMode: cfg.statusMode,
-    lowRemainingPercent: cfg.lowRemainingPercent,
-    warnRemainingPercent: cfg.warnRemainingPercent,
-    criticalRemainingPercent: cfg.criticalRemainingPercent,
-    emptyRemainingPercent: cfg.emptyRemainingPercent,
     nextResetRefreshEpochMs: scheduledResetRefreshEpochMs,
     modelBreakdown: modelBreakdownData,
     normalizedSources: cfg.normalizedSources

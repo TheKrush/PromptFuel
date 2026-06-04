@@ -53,11 +53,7 @@ function baseFormatOptions() {
       showSourceInline: false,
       showStaleInline: false
     },
-    statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1
+    statusMode: 'remaining'
   };
 }
 

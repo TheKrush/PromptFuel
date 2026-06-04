@@ -39,10 +39,6 @@ function main() {
       showStaleInline: false
     },
     statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1,
     nextResetRefreshEpochMs: now + 120_000
   };
 

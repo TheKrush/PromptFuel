@@ -59,9 +59,6 @@ for (const key of [
   'promptFuel.authenticatedQuota.enabled',
   'promptFuel.statusBarDensity',
   'promptFuel.statusMode',
-  'promptFuel.lowRemainingPercent',
-  'promptFuel.warnRemainingPercent',
-  'promptFuel.criticalRemainingPercent',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
   'promptFuel.snapshot.path'

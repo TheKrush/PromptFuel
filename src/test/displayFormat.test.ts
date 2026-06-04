@@ -1,7 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { addThousandsSeparators, formatStatus, formatTokenCount, quotaIndicatorForRemaining, quotaLevelForRemaining, type FormatOptions } from '../display/format';
-import { normalizeThresholds } from '../configThresholds';
 import type { ProviderUsageState } from '../types';
 
 function makeState(usedPercentSevenDay: number, usedPercentFiveHour = usedPercentSevenDay): ProviderUsageState[] {
@@ -19,11 +18,7 @@ function makeState(usedPercentSevenDay: number, usedPercentFiveHour = usedPercen
 function baseOptions(): FormatOptions {
   return {
     displayMode: 'compact',
-    statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1
+    statusMode: 'remaining'
   };
 }
 
@@ -124,17 +119,11 @@ describe('display formatting', () => {
     }
   });
 
-  it('applies threshold ordering to formatted status severity', () => {
+  it('applies fixed remaining thresholds to formatted status severity', () => {
     const opts = baseOptions();
     assert.equal(formatStatus(makeState(25), opts).severity, 'normal');
     assert.equal(formatStatus(makeState(60), opts).severity, 'low');
     assert.equal(formatStatus(makeState(80), opts).severity, 'warning');
     assert.equal(formatStatus(makeState(95), opts).severity, 'critical');
-
-    const safe = normalizeThresholds(10, 50, 30, 1);
-    assert.equal(formatStatus(makeState(25), { ...opts, ...safe }).severity, 'normal');
-    assert.equal(formatStatus(makeState(60), { ...opts, ...safe }).severity, 'low');
-    assert.equal(formatStatus(makeState(80), { ...opts, ...safe }).severity, 'warning');
-    assert.equal(formatStatus(makeState(95), { ...opts, ...safe }).severity, 'critical');
   });
 });

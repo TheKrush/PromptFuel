@@ -41,11 +41,7 @@ const emptyAliasMap: Record<string, string> = {};
 function compactOptions(): FormatOptions {
   return {
     displayMode: 'compact',
-    statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1
+    statusMode: 'remaining'
   };
 }
 

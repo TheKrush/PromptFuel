@@ -116,9 +116,6 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | `promptFuel.refreshIntervalSeconds` | Fallback refresh interval in seconds | `300` |
 | `promptFuel.statusBarDensity` | Status bar display density: `standard` (countdown + full labels) or `compact` (shorter) | `"standard"` |
 | `promptFuel.statusMode` | Show quota percentages as remaining allowance or used amount | `"remaining"` |
-| `promptFuel.lowRemainingPercent` | Low remaining threshold | `50` |
-| `promptFuel.warnRemainingPercent` | Warning remaining threshold | `30` |
-| `promptFuel.criticalRemainingPercent` | Critical remaining threshold | `10` |
 | `promptFuel.authenticatedQuota.enabled` | Enable opt-in authenticated live quota refresh | `false` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |

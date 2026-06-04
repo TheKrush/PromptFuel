@@ -17,10 +17,6 @@ export type ModelBreakdownData = Record<string, ModelBreakdownEntry[]>;
 export interface FormatOptions {
   displayMode: DisplayMode;
   statusMode: 'remaining' | 'used';
-  lowRemainingPercent: number;
-  warnRemainingPercent: number;
-  criticalRemainingPercent: number;
-  emptyRemainingPercent: number;
   nextResetRefreshEpochMs?: number;
   modelBreakdown?: ModelBreakdownData;
   normalizedSources?: Record<string, SourceConfigEntry>;
@@ -39,6 +35,8 @@ export type PresentableQuotaIncident =
   | 'disabled'
   | 'not_configured'
   | 'provider_error';
+
+const STATUS_EMPTY_THRESHOLD = 1;
 
 export interface PresentableQuotaWindowState {
   value: LimitWindow | undefined;
@@ -72,7 +70,7 @@ export function derivePresentableQuotaWindowState(
 ): PresentableQuotaWindowState {
   return {
     value: window,
-    severity: window && window.usedPercentage !== undefined ? windowSeverity(window, options) : 'unavailable',
+    severity: window && window.usedPercentage !== undefined ? windowSeverity(window) : 'unavailable',
     freshness: quotaFreshnessForWindow(state, window),
     incident: providerIncident(state)
   };
@@ -243,7 +241,7 @@ function formatWindow(
   resolved: ResolvedDisplayParts,
   state?: ProviderUsageState
 ): string {
-  if (label === '5h' && state && isFiveHourBlockedBySevenDay(state, options)) {
+  if (label === '5h' && state && isFiveHourBlockedBySevenDay(state)) {
     const prefix = resolved.showWindowLabels && !resolved.countdownBeforeValue ? `${label} ` : '';
     return `${prefix}${quotaIndicatorForRemaining(undefined, true)}blocked`.trim();
   }
@@ -330,18 +328,9 @@ function providerQuotaEmoji(state: ProviderUsageState, resolved: ResolvedDisplay
   return quotaIndicatorForRemaining(Math.min(...remaining));
 }
 
-function windowSeverity(window: LimitWindow, options: FormatOptions): StatusSeverity {
+function windowSeverity(window: LimitWindow): StatusSeverity {
   const remaining = 100 - clamp(window.usedPercentage as number, 0, 100);
-  if (remaining <= options.criticalRemainingPercent) {
-    return 'critical';
-  }
-  if (remaining <= options.warnRemainingPercent) {
-    return 'warning';
-  }
-  if (remaining <= options.lowRemainingPercent) {
-    return 'low';
-  }
-  return 'normal';
+  return severityForQuotaLevel(quotaLevelForRemaining(remaining));
 }
 
 function maxSeverity(left: StatusSeverity, right: StatusSeverity): StatusSeverity {
@@ -443,7 +432,7 @@ function formatCombinedQuotaSummaryLines(
 
   for (const state of states) {
     rows.push(formatCombinedQuotaWindowRow(state, '7d', state.sevenDay, options));
-    if (isFiveHourBlockedBySevenDay(state, options)) {
+    if (isFiveHourBlockedBySevenDay(state)) {
       rows.push(formatCombinedBlockedFiveHourRow(state, options));
     } else {
       rows.push(formatCombinedQuotaWindowRow(state, '5h', state.fiveHour, options));
@@ -492,7 +481,7 @@ function formatCombinedRemoteQuotaRow(
     return `| ${label} | ${windowLabel} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | | ${snapshotNote} |`;
   }
   const clamped = clamp(remainingPercent, 0, 100);
-  const severity = remainingSeverity(clamped, options);
+  const severity = remainingSeverity(clamped);
   const emoji = quotaIndicatorForRemaining(clamped);
   const pct = formatWindowPercent(clamped, true, true);
   const bar = renderProgressBarColored(clamped, severity);
@@ -501,11 +490,21 @@ function formatCombinedRemoteQuotaRow(
   return `| ${label} | ${windowLabel} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} | ${snapshotNote} |`;
 }
 
-function remainingSeverity(remaining: number, options: FormatOptions): StatusSeverity {
-  if (remaining <= options.criticalRemainingPercent) return 'critical';
-  if (remaining <= options.warnRemainingPercent) return 'warning';
-  if (remaining <= options.lowRemainingPercent) return 'low';
-  return 'normal';
+function remainingSeverity(remaining: number): StatusSeverity {
+  return severityForQuotaLevel(quotaLevelForRemaining(remaining));
+}
+
+function severityForQuotaLevel(level: QuotaIndicatorLevel): StatusSeverity {
+  switch (level) {
+    case 'red':
+      return 'critical';
+    case 'orange':
+      return 'warning';
+    case 'yellow':
+      return 'low';
+    default:
+      return 'normal';
+  }
 }
 
 function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
@@ -531,7 +530,7 @@ function formatCombinedQuotaWindowRow(
 
   const used = clamp(window.usedPercentage, 0, 100);
   const remaining = clamp(100 - used, 0, 100);
-  const severity = windowSeverity(window, options);
+  const severity = windowSeverity(window);
   const emoji = quotaIndicatorForRemaining(remaining);
   const pct = formatWindowPercent(remaining, true, true);
   const bar = renderProgressBarColored(remaining, severity);
@@ -606,11 +605,7 @@ export function formatRemoteProviderTooltip(input: RemoteProviderTooltipInput): 
 
   const formatOptions: FormatOptions = {
     displayMode: 'standard',
-    statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1
+    statusMode: 'remaining'
   };
 
   lines.push('', ...formatQuotaSummaryLines(fakeState, formatOptions));
@@ -838,12 +833,12 @@ function formatCostShort(costUsd: number): string {
   return '&lt;¢1';
 }
 
-function isFiveHourBlockedBySevenDay(state: ProviderUsageState, options: FormatOptions): boolean {
+function isFiveHourBlockedBySevenDay(state: ProviderUsageState): boolean {
   if (!state.sevenDay || state.sevenDay.usedPercentage === undefined) {
     return false;
   }
   const remaining = 100 - clamp(state.sevenDay.usedPercentage, 0, 100);
-  return remaining <= options.emptyRemainingPercent;
+  return remaining <= STATUS_EMPTY_THRESHOLD;
 }
 
 function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptions): string[] {
@@ -854,7 +849,7 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
     formatQuotaWindowRow('7d', state.sevenDay, options, state)
   ];
 
-  if (isFiveHourBlockedBySevenDay(state, options)) {
+  if (isFiveHourBlockedBySevenDay(state)) {
     rows.push(formatBlockedFiveHourRow(state, options));
   } else {
     rows.push(formatQuotaWindowRow('5h', state.fiveHour, options, state));
@@ -870,7 +865,7 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
 function formatBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
   const w = state.fiveHour;
   const pct = w && w.usedPercentage !== undefined ? 100 - clamp(w.usedPercentage, 0, 100) : 0;
-  const sev = w ? windowSeverity(w, options) : 'critical';
+  const sev = w ? windowSeverity(w) : 'critical';
   const bar = renderProgressBarColored(pct, sev);
   const countdown = w ? formatTableCountdown(w.resetsAtEpochSeconds) : 'unknown';
   const resetTime = w ? formatTableResetTime(w.resetsAtEpochSeconds) : '';
@@ -889,7 +884,7 @@ function formatQuotaWindowRow(
 
   const used = clamp(window.usedPercentage, 0, 100);
   const remaining = clamp(100 - used, 0, 100);
-  const severity = windowSeverity(window, options);
+  const severity = windowSeverity(window);
   const emoji = quotaIndicatorForRemaining(remaining);
   const pct = formatWindowPercent(remaining, true, true);
   const bar = renderProgressBarColored(remaining, severity);
@@ -993,7 +988,7 @@ function formatNotesLine(states: ProviderUsageState[], options: FormatOptions): 
 
 function formatFiveHourBlockedNote(states: ProviderUsageState[], options: FormatOptions): string | undefined {
   for (const state of states) {
-    if (isFiveHourBlockedBySevenDay(state, options)) {
+    if (isFiveHourBlockedBySevenDay(state)) {
       const rawRemaining = state.fiveHour?.usedPercentage !== undefined
         ? `${Math.round(100 - clamp(state.fiveHour.usedPercentage, 0, 100))}%`
         : 'unknown';

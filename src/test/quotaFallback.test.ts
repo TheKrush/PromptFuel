@@ -75,11 +75,7 @@ function formatSingle(state: ProviderUsageState): ReturnType<typeof formatStatus
 function formatOptions(): FormatOptions {
   return {
     displayMode: 'standard',
-    statusMode: 'remaining',
-    lowRemainingPercent: 50,
-    warnRemainingPercent: 30,
-    criticalRemainingPercent: 10,
-    emptyRemainingPercent: 1
+    statusMode: 'remaining'
   };
 }
 
