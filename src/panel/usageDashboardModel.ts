@@ -179,6 +179,8 @@ export interface UsageDashboardHistoryChartPoint {
   binEndDateKey?: string;
   sourcePointCount?: number;
   isEmpty?: boolean;
+  source?: 'local' | 'remote';
+  sourceLabel?: string;
 }
 
 export interface UsageDashboardHistoryChartModelUsage {
@@ -452,8 +454,13 @@ function buildDetails(
   const remoteCodexHistPoints = remoteUsage?.codexHistoryPoints?.length ? remoteUsage.codexHistoryPoints : undefined;
   const remoteClaudeModels = remoteUsage?.claudeModelEntries?.length ? remoteUsage.claudeModelEntries : undefined;
   const remoteCodexModels = remoteUsage?.codexModelEntries?.length ? remoteUsage.codexModelEntries : undefined;
-  const historyChart = claudeEnabled ? buildClaudeHistoryChart(claudeUsageHistory, remoteClaudeHistPoints) : undefined;
-  const codexHistoryChart = codexEnabled ? buildCodexHistoryChart(codexCorrelatedHistory, remoteCodexHistPoints) : undefined;
+  const cml = remoteUsage?.contributingMachineLabels;
+  const claudeHistRemote = cml?.claudeHistory.length ? cml.claudeHistory : undefined;
+  const codexHistRemote = cml?.codexHistory.length ? cml.codexHistory : undefined;
+  const claudeModelRemote = cml?.claudeModels.length ? cml.claudeModels : undefined;
+  const codexModelRemote = cml?.codexModels.length ? cml.codexModels : undefined;
+  const historyChart = claudeEnabled ? buildClaudeHistoryChart(claudeUsageHistory, remoteClaudeHistPoints, aliasMap, claudeHistRemote) : undefined;
+  const codexHistoryChart = codexEnabled ? buildCodexHistoryChart(codexCorrelatedHistory, remoteCodexHistPoints, aliasMap, codexHistRemote) : undefined;
   const providerApiEquivalentCostUsd = sumCostIfComplete(availableProviders.map(provider => ({
     costUsd: provider.apiEquivalentCostUsd
   })));
@@ -509,12 +516,6 @@ function buildDetails(
   const modelDistribution = claudeEnabled ? buildClaudeModelDistribution(claudeUsageHistory, remoteClaudeModels) : undefined;
   const codexModelDistribution = codexEnabled ? buildCodexModelDistribution(codexCorrelatedHistory, remoteCodexModels) : undefined;
 
-  const cml = remoteUsage?.contributingMachineLabels;
-  const claudeHistRemote = cml?.claudeHistory.length ? cml.claudeHistory : undefined;
-  const codexHistRemote = cml?.codexHistory.length ? cml.codexHistory : undefined;
-  const claudeModelRemote = cml?.claudeModels.length ? cml.claudeModels : undefined;
-  const codexModelRemote = cml?.codexModels.length ? cml.codexModels : undefined;
-
   const claudeHistorySectionLabel = claudeEnabled && (historyChart?.available || claudeHistRemote)
     ? buildSectionLabel(['Claude'], claudeHistRemote ?? [], 'claude', aliasMap)
     : undefined;
@@ -528,10 +529,10 @@ function buildDetails(
     ? buildSectionLabel(['Codex'], codexModelRemote ?? [], 'codex', aliasMap)
     : undefined;
   const claudeSourceHistoryPanels = claudeEnabled
-    ? buildSourceHistoryPanels('Claude', 'claude', claudeUsageHistory?.available ? buildClaudeHistoryChart(claudeUsageHistory) : undefined, remoteClaudeHistPoints?.length ? buildClaudeHistoryChart(undefined, remoteClaudeHistPoints) : undefined, claudeHistRemote, aliasMap)
+    ? buildSourceHistoryPanels('Claude', 'claude', claudeUsageHistory?.available ? buildClaudeHistoryChart(claudeUsageHistory) : undefined, remoteClaudeHistPoints?.length ? buildClaudeHistoryChart(undefined, remoteClaudeHistPoints, aliasMap, claudeHistRemote) : undefined, claudeHistRemote, aliasMap)
     : undefined;
   const codexSourceHistoryPanels = codexEnabled
-    ? buildSourceHistoryPanels('Codex', 'codex', codexCorrelatedHistory?.available ? buildCodexHistoryChart(codexCorrelatedHistory) : undefined, remoteCodexHistPoints?.length ? buildCodexHistoryChart(undefined, remoteCodexHistPoints) : undefined, codexHistRemote, aliasMap)
+    ? buildSourceHistoryPanels('Codex', 'codex', codexCorrelatedHistory?.available ? buildCodexHistoryChart(codexCorrelatedHistory) : undefined, remoteCodexHistPoints?.length ? buildCodexHistoryChart(undefined, remoteCodexHistPoints, aliasMap, codexHistRemote) : undefined, codexHistRemote, aliasMap)
     : undefined;
   const claudeSourceModelDistributionPanels = claudeEnabled
     ? buildSourceModelDistributionPanels('Claude', 'claude', claudeUsageHistory?.available ? buildClaudeModelDistribution(claudeUsageHistory) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label === 'Claude')?.chart, remoteClaudeModels?.length ? buildClaudeModelDistribution(undefined, remoteClaudeModels) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label !== 'Claude')?.chart, claudeModelRemote, aliasMap)

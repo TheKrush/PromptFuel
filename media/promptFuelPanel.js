@@ -123,79 +123,6 @@
     bindHistoryTooltipControls(el);
   }
 
-  function enrichMergedTodayCards(mergedCards, splitCards, localPrefix, remotePrefix) {
-    var localMap = {};
-    var remoteMap = {};
-    splitCards.forEach(function(c) {
-      if (!c || !c.key) { return; }
-      if (c.key.indexOf(localPrefix) === 0) { localMap[c.key] = c; }
-      if (c.key.indexOf(remotePrefix) === 0) { remoteMap[c.key] = c; }
-    });
-    var hasLocalAndRemote = Object.keys(localMap).length > 0 && Object.keys(remoteMap).length > 0;
-    if (!hasLocalAndRemote) { return mergedCards; }
-    var remoteTokensCard = remoteMap[remotePrefix + 'Tokens'];
-    var remoteSourceLabel = remoteTokensCard && remoteTokensCard.detail
-      ? String(remoteTokensCard.detail).replace(/ snapshot:.*$/, '').trim() || 'remote'
-      : 'remote';
-    return mergedCards.map(function(card) {
-      if (!card || !card.available || card.detail) { return card; }
-      var suffix = card.key.slice(localPrefix.length);
-      var localCard = localMap[card.key];
-      var remoteCard = remoteMap[remotePrefix + suffix];
-      if (localCard && localCard.available && remoteCard && remoteCard.available) {
-        return Object.assign({}, card, {
-          detailLines: [
-            'Local: ' + localCard.value,
-            remoteSourceLabel + ': ' + remoteCard.value
-          ]
-        });
-      }
-      return card;
-    });
-  }
-
-  function getTodayCardsForContext(today, providerContext) {
-    if (!today || !today.cards || !today.cards.length) { return []; }
-    var cards;
-    var src;
-    if (providerContext === 'combined') {
-      cards = (today.overviewCards && today.overviewCards.length > 0) ? today.overviewCards : [];
-    } else if (providerContext === 'codex') {
-      cards = today.cards.filter(function(c) {
-        return c && c.key && (c.key.indexOf('codexToday') === 0 || c.key.indexOf('remoteTodayCodex') === 0);
-      });
-      if (!cards.length) { cards = today.cards; }
-      if (currentUsageProviderTab !== 'overview' && today.splitCards && today.splitCards.length) {
-        cards = enrichMergedTodayCards(cards, today.splitCards, 'codexToday', 'remoteTodayCodex');
-      }
-    } else if (providerContext === 'codex-local') {
-      src = (today.splitCards && today.splitCards.length) ? today.splitCards : today.cards;
-      cards = src.filter(function(c) { return c && c.key && c.key.indexOf('remoteTodayCodex') !== 0; });
-      if (!cards.length) { cards = today.cards; }
-    } else if (providerContext === 'codex-remote') {
-      src = today.splitCards || [];
-      cards = src.filter(function(c) { return c && c.key && c.key.indexOf('remoteTodayCodex') === 0; });
-    } else if (providerContext === 'claude-local') {
-      src = (today.splitCards && today.splitCards.length) ? today.splitCards : today.cards;
-      cards = src.filter(function(c) {
-        return c && c.key && c.key.indexOf('remoteTodayClaude') !== 0 && c.key.indexOf('codexToday') !== 0 && c.key.indexOf('remoteTodayCodex') !== 0;
-      });
-      if (!cards.length) { cards = today.cards; }
-    } else if (providerContext === 'claude-remote') {
-      src = today.splitCards || [];
-      cards = src.filter(function(c) { return c && c.key && c.key.indexOf('remoteTodayClaude') === 0; });
-    } else {
-      cards = today.cards.filter(function(c) {
-        return c && c.key && c.key.indexOf('codexToday') !== 0 && c.key.indexOf('remoteTodayCodex') !== 0;
-      });
-      if (!cards.length) { cards = today.cards; }
-      if (currentUsageProviderTab !== 'overview' && today.splitCards && today.splitCards.length) {
-        cards = enrichMergedTodayCards(cards, today.splitCards, 'today', 'remoteTodayClaude');
-      }
-    }
-    return cards || [];
-  }
-
   function renderTodayInHistory(cards, source) {
     if (!cards || !cards.length) { return ''; }
     var cardSource = source || sectionSourceFromCards(cards);
@@ -212,7 +139,7 @@
 
   function renderUsageHistorySection(details, today, providers) {
     var aggregate = selectDashboardHistoryAggregate(details, providers);
-    var aggregateBody = renderDashboardHistoryAggregateBody(aggregate, today);
+    var aggregateBody = renderDashboardHistoryAggregateBody(aggregate);
     var gridClass = aggregate.provider === 'combined' ? 'usage-section-provider-grid combined' : 'usage-section-provider-grid';
     var titleSource = aggregate.source || sectionSourceFromProviderCharts(details && details.historyChart, details && details.codexHistoryChart, details && details.source);
 
@@ -234,8 +161,8 @@
     '</section>';
   }
 
-  function renderDashboardHistoryAggregateBody(aggregate, today) {
-    var todayHtml = renderTodayInHistory(getTodayCardsForContext(today, aggregate.todayContext), today && today.source);
+  function renderDashboardHistoryAggregateBody(aggregate) {
+    var todayHtml = renderTodayInHistory(aggregate.todayCards, aggregate.todaySource || aggregate.source);
     var unavailableReason = aggregate.unavailableReason || 'No selected provider history data is available yet.';
     var chartHtml = aggregate.unavailable
       ? renderProviderUnavailable('History unavailable', unavailableReason)
@@ -284,6 +211,7 @@
 
   function buildCombinedHistoryAggregate(details) {
     var selectedCombinedChart = selectCombinedHistoryChartRange(details && details.combinedHistoryChart, currentCombinedHistoryRange);
+    var selectedCombinedOneDayChart = selectCombinedHistoryChartRange(details && details.combinedHistoryChart, '1D');
     var unavailable = !selectedCombinedChart || !selectedCombinedChart.available;
     return {
       provider: 'combined',
@@ -291,6 +219,10 @@
       range: currentCombinedHistoryRange,
       label: details && details.combinedHistorySectionLabel || 'Claude + Codex',
       chart: selectedCombinedChart,
+      todayCards: selectedCombinedOneDayChart && selectedCombinedOneDayChart.available
+        ? selectCombinedHistoryMetricCardsRange(details && details.cards, selectedCombinedOneDayChart, '1D')
+        : [],
+      todaySource: selectedCombinedOneDayChart && selectedCombinedOneDayChart.source,
       cards: selectCombinedHistoryMetricCardsRange(details && details.cards, selectedCombinedChart, currentCombinedHistoryRange),
       distribution: selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange),
       source: selectedCombinedChart && selectedCombinedChart.source,
@@ -308,21 +240,33 @@
     var selectedChart = isCodex
       ? selectCodexHistoryChartRange(baseChart, range)
       : selectClaudeHistoryChartRange(baseChart, range);
-    var cards = isCodex
-      ? selectCodexHistoryMetricCardsRange(usageCardsByKey(details && details.cards, [
+    var selectedOneDayChart = isCodex
+      ? selectCodexHistoryChartRange(baseChart, '1D')
+      : selectClaudeHistoryChartRange(baseChart, '1D');
+    var cardKeys = isCodex
+      ? [
         'codexHistoryActivity',
         'codexHistoryTokens',
         'codexHistoryInputOutput',
         'codexHistoryCache',
         'codexHistoryApiEquivalent'
-      ]), baseChart, range)
-      : selectClaudeHistoryMetricCardsRange(usageCardsByKey(details && details.cards, [
+      ]
+      : [
         'historyActivity',
         'historyTokens',
         'historyInputOutput',
         'historyCache',
         'historyApiEquivalent'
-      ]), baseChart, range);
+      ];
+    var baseCards = usageCardsByKey(details && details.cards, cardKeys);
+    var cards = isCodex
+      ? selectCodexHistoryMetricCardsRange(baseCards, baseChart, range)
+      : selectClaudeHistoryMetricCardsRange(baseCards, baseChart, range);
+    var todayCards = selectedOneDayChart && selectedOneDayChart.available
+      ? (isCodex
+        ? selectCodexHistoryMetricCardsRange(baseCards, baseChart, '1D')
+        : selectClaudeHistoryMetricCardsRange(baseCards, baseChart, '1D'))
+      : [];
     var distribution = isCodex
       ? selectCodexModelDistributionRange(details && details.codexModelDistribution, baseChart, range)
       : selectClaudeModelDistributionRange(details && details.modelDistribution, baseChart, range);
@@ -335,6 +279,8 @@
       range: range,
       label: label,
       chart: selectedChart,
+      todayCards: todayCards,
+      todaySource: selectedOneDayChart && selectedOneDayChart.source,
       cards: cards,
       distribution: distribution,
       source: selectedChart && selectedChart.source,
@@ -1612,6 +1558,108 @@
     return lines.length >= 2 ? lines : undefined;
   }
 
+  function selectedPointDateBounds(selectedPoints) {
+    var minDate = null, maxDate = null;
+    (selectedPoints || []).forEach(function(p) {
+      if (!p || !p.dateKey) { return; }
+      var start = p.binStartDateKey || p.dateKey;
+      var end = p.binEndDateKey || p.dateKey;
+      if (minDate === null || start < minDate) { minDate = start; }
+      if (maxDate === null || end > maxDate) { maxDate = end; }
+    });
+    return minDate && maxDate ? { minDate: minDate, maxDate: maxDate } : undefined;
+  }
+
+  function sourceDisplayLabel(point) {
+    return point && point.sourceLabel ? point.sourceLabel : (point && point.source === 'local' ? 'Local' : 'Snapshot');
+  }
+
+  function computeSourceBreakdown(chart, selectedPoints) {
+    if (!chart || !chart.points || !chart.points.length) { return undefined; }
+    var hasSourceMarkers = chart.points.some(function(p) { return p && p.source; });
+    if (!hasSourceMarkers) { return undefined; }
+    var bounds = selectedPointDateBounds(selectedPoints);
+    if (!bounds) { return undefined; }
+    var bySource = {};
+    chart.points.forEach(function(p) {
+      if (!p || !p.source || !p.dateKey) { return; }
+      if (p.dateKey < bounds.minDate || p.dateKey > bounds.maxDate) { return; }
+      var key = sourceDisplayLabel(p);
+      if (!bySource[key]) {
+        bySource[key] = { totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, assistantMessages: 0 };
+      }
+      bySource[key].totalTokens += Number(p.totalTokens || 0);
+      bySource[key].inputTokens += Number(p.inputTokens || 0);
+      bySource[key].outputTokens += Number(p.outputTokens || 0);
+      bySource[key].cacheTokens += Number(p.cacheTokens || 0);
+      bySource[key].cacheCreationTokens += Number(p.cacheCreationTokens || 0);
+      bySource[key].cacheReadTokens += Number(p.cacheReadTokens || 0);
+      bySource[key].assistantMessages += Number(p.assistantMessages || 0);
+    });
+    var keys = Object.keys(bySource).filter(function(k) { return bySource[k].totalTokens > 0 || bySource[k].assistantMessages > 0; });
+    if (!keys.length) { return undefined; }
+    return keys.map(function(k) { return { label: k, totals: bySource[k] }; });
+  }
+
+  function formatSourceBreakdownLines(breakdown, formatFn) {
+    if (!breakdown || !breakdown.length) { return undefined; }
+    return breakdown.map(function(entry) {
+      return entry.label + ': ' + formatFn(entry.totals);
+    });
+  }
+
+  function computeSourceApiEquivalentBreakdown(chart, selectedPoints, isClaude) {
+    if (!chart || !chart.points || !chart.points.length) { return undefined; }
+    var hasSourceMarkers = chart.points.some(function(p) { return p && p.source; });
+    if (!hasSourceMarkers) { return undefined; }
+    var bounds = selectedPointDateBounds(selectedPoints);
+    if (!bounds) { return undefined; }
+    var bySource = {};
+    chart.points.forEach(function(p) {
+      if (!p || !p.source || !p.dateKey) { return; }
+      if (p.dateKey < bounds.minDate || p.dateKey > bounds.maxDate) { return; }
+      var key = sourceDisplayLabel(p);
+      if (!bySource[key]) {
+        bySource[key] = {
+          totals: { totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, assistantMessages: 0 },
+          points: []
+        };
+      }
+      bySource[key].totals.totalTokens += Number(p.totalTokens || 0);
+      bySource[key].totals.inputTokens += Number(p.inputTokens || 0);
+      bySource[key].totals.outputTokens += Number(p.outputTokens || 0);
+      bySource[key].totals.cacheTokens += Number(p.cacheTokens || 0);
+      bySource[key].totals.cacheCreationTokens += Number(p.cacheCreationTokens || 0);
+      bySource[key].totals.cacheReadTokens += Number(p.cacheReadTokens || 0);
+      bySource[key].totals.assistantMessages += Number(p.assistantMessages || 0);
+      bySource[key].points.push(p);
+    });
+    var keys = Object.keys(bySource).filter(function(k) {
+      var totals = bySource[k].totals;
+      return totals.totalTokens > 0 || totals.assistantMessages > 0;
+    });
+    if (!keys.length) { return undefined; }
+
+    var breakdown = [];
+    for (var i = 0; i < keys.length; i++) {
+      var entry = bySource[keys[i]];
+      var modelUsage = aggregateModelUsageForEstimate(entry.points);
+      var modelTokenTotal = modelUsage.reduce(function(sum, model) { return sum + Number(model.totalTokens || 0); }, 0);
+      if (modelTokenTotal < entry.totals.totalTokens) { return undefined; }
+      var estimate = estimateApiEquivalentFromModelUsage(modelUsage, isClaude);
+      if (!estimate.available) { return undefined; }
+      breakdown.push({ label: keys[i], costUsd: estimate.costUsd, isFallback: estimate.isFallback });
+    }
+    return breakdown.length ? breakdown : undefined;
+  }
+
+  function formatSourceApiEquivalentLines(breakdown) {
+    if (!breakdown || !breakdown.length) { return undefined; }
+    return breakdown.map(function(entry) {
+      return entry.label + ': ' + formatMetricUsd(entry.costUsd);
+    });
+  }
+
   function countProviderActiveBins(points, provider) {
     return (points || []).filter(function(point) {
       return (point.providerSegments || []).some(function(segment) {
@@ -1873,18 +1921,27 @@
       : { available: false, costUsd: 0, isFallback: false, fallbackCount: 0, totalCount: modelUsageForEstimate.length };
     var apiSource = apiEquivalentEstimateSource('Claude history API-equivalent estimate');
 
+    var sourceBreakdown = computeSourceBreakdown(chart, points);
+    var sourceApiEquivalentLines = apiEst.available
+      ? formatSourceApiEquivalentLines(computeSourceApiEquivalentBreakdown(chart, points, true))
+      : undefined;
+
     return [
-      buildRangeHistoryMetricCard('historyActivity', rangeCardLabel(selectedRange, 'activity'), formatMetricNumber(totals.assistantMessages), '', true, chart.source),
-      buildRangeHistoryMetricCard('historyTokens', rangeCardLabel(selectedRange, 'tokens'), formatMetricNumber(totals.totalTokens), '', true, chart.source),
+      buildRangeHistoryMetricCard('historyActivity', rangeCardLabel(selectedRange, 'activity'), formatMetricNumber(totals.assistantMessages), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.assistantMessages); })),
+      buildRangeHistoryMetricCard('historyTokens', rangeCardLabel(selectedRange, 'tokens'), formatMetricNumber(totals.totalTokens), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.totalTokens); })),
       buildRangeHistoryMetricCard('historyInputOutput', rangeCardLabel(selectedRange, 'inputOutput'),
         formatMetricNumber(totals.inputTokens) + ' / ' + formatMetricNumber(totals.outputTokens),
-        '', true, chart.source),
-      buildRangeHistoryMetricCard('historyCache', rangeCardLabel(selectedRange, 'cache'), formatMetricNumber(totals.cacheTokens), '', true, chart.source),
+        '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.inputTokens) + ' / ' + formatMetricNumber(t.outputTokens); })),
+      buildRangeHistoryMetricCard('historyCache', rangeCardLabel(selectedRange, 'cache'), formatMetricNumber(totals.cacheTokens), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.cacheTokens); })),
       buildRangeHistoryMetricCard('historyApiEquivalent', rangeCardLabel(selectedRange, 'apiEquivalent'),
         apiEst.available ? formatMetricUsd(apiEst.costUsd) : 'Unavailable',
         apiEst.available ? (apiEst.isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing')
           : (modelTokenTotal > 0 && modelTokenTotal < totals.totalTokens ? 'Unavailable for merged snapshot data' : 'No token data to estimate API-equivalent cost'),
-        apiEst.available, apiSource, undefined,
+        apiEst.available, apiSource, sourceApiEquivalentLines,
         formatApiEstimateTooltip('Claude ' + rangeCardLabel(selectedRange, 'apiEquivalent'), apiEst.isFallback,
           apiEst.available ? undefined : 'selected-range model token totals must cover all tokens'))
     ];
@@ -1918,18 +1975,27 @@
       : { available: false, costUsd: 0, isFallback: false, fallbackCount: 0, totalCount: modelUsageForEstimate.length };
     var codexApiSource = apiEquivalentEstimateSource('Codex history API-equivalent estimate');
 
+    var sourceBreakdown = computeSourceBreakdown(chart, points);
+    var sourceApiEquivalentLines = codexApiEst.available
+      ? formatSourceApiEquivalentLines(computeSourceApiEquivalentBreakdown(chart, points, false))
+      : undefined;
+
     return [
-      buildRangeHistoryMetricCard('codexHistoryActivity', codexRangeCardLabel(selectedRange, 'activity'), formatMetricNumber(totals.assistantMessages), '', true, chart.source),
-      buildRangeHistoryMetricCard('codexHistoryTokens', codexRangeCardLabel(selectedRange, 'tokens'), formatMetricNumber(totals.totalTokens), '', true, chart.source),
+      buildRangeHistoryMetricCard('codexHistoryActivity', codexRangeCardLabel(selectedRange, 'activity'), formatMetricNumber(totals.assistantMessages), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.assistantMessages); })),
+      buildRangeHistoryMetricCard('codexHistoryTokens', codexRangeCardLabel(selectedRange, 'tokens'), formatMetricNumber(totals.totalTokens), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.totalTokens); })),
       buildRangeHistoryMetricCard('codexHistoryInputOutput', codexRangeCardLabel(selectedRange, 'inputOutput'),
         formatMetricNumber(totals.inputTokens) + ' / ' + formatMetricNumber(totals.outputTokens),
-        '', true, chart.source),
-      buildRangeHistoryMetricCard('codexHistoryCache', codexRangeCardLabel(selectedRange, 'cache'), formatMetricNumber(totals.cacheTokens), '', true, chart.source),
+        '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.inputTokens) + ' / ' + formatMetricNumber(t.outputTokens); })),
+      buildRangeHistoryMetricCard('codexHistoryCache', codexRangeCardLabel(selectedRange, 'cache'), formatMetricNumber(totals.cacheTokens), '', true, chart.source,
+        formatSourceBreakdownLines(sourceBreakdown, function(t) { return formatMetricNumber(t.cacheTokens); })),
       buildRangeHistoryMetricCard('codexHistoryApiEquivalent', codexRangeCardLabel(selectedRange, 'apiEquivalent'),
         codexApiEst.available ? formatMetricUsd(codexApiEst.costUsd) : 'Unavailable',
         codexApiEst.available ? (codexApiEst.isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing')
           : (modelTokenTotal > 0 && modelTokenTotal < totals.totalTokens ? 'Unavailable for merged snapshot data' : 'No token data to estimate API-equivalent cost'),
-        codexApiEst.available, codexApiSource, undefined,
+        codexApiEst.available, codexApiSource, sourceApiEquivalentLines,
         formatApiEstimateTooltip('Codex ' + codexRangeCardLabel(selectedRange, 'apiEquivalent'), codexApiEst.isFallback,
           codexApiEst.available ? undefined : 'selected-range model token totals must cover all tokens'))
     ];

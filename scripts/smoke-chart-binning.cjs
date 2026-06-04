@@ -101,13 +101,13 @@ function main() {
   assert.ok(model.details.historyChart.rangeViews, 'single-provider Claude chart includes precomputed range views');
   assert.equal(
     model.details.historyChart.ranges.find(range => range.key === '1D').available,
-    false,
-    '1D is hidden from day-level-only history chart range controls'
+    true,
+    '1D is available through the normal history range controls'
   );
   assert.deepEqual(
     model.details.historyChart.ranges.filter(range => range.available).map(range => range.key),
-    ['1W', '1M', '1Y', 'ALL'],
-    'day-level-only history charts expose only useful non-1D ranges'
+    ['1D', '1W', '1M', '1Y', 'ALL'],
+    'day-level-only history charts expose 1D plus the longer ranges'
   );
   assert.equal(model.details.codexHistoryChart, undefined, 'single-provider Claude mode does not create Codex chart');
 
@@ -142,8 +142,8 @@ function main() {
   vm.runInNewContext(instrumentedScript, sandbox);
   const selectedChart = sandbox.__usageHistoryTest.selectClaudeHistoryChartRange(model.details.historyChart, '1D');
   const chartHtml = sandbox.__usageHistoryTest.renderHistoryChart(selectedChart, 'claude', '1D', selectedChart.source);
-  assert.equal(selectedChart.key, '1M', 'stale 1D selection falls back to 1M');
-  assert.doesNotMatch(chartHtml, /data-usage-history-range="1D"/, 'rendered range controls do not include visible 1D');
+  assert.equal(selectedChart.key, '1D', '1D selection stays on the normal 1D range');
+  assert.match(chartHtml, /data-usage-history-range="1D"/, 'rendered range controls include visible 1D');
   assert.match(chartHtml, /data-usage-history-range="1W"/, 'rendered range controls include 1W');
   assert.match(chartHtml, /data-usage-history-range="1M"/, 'rendered range controls include 1M');
   assert.match(chartHtml, /data-usage-history-range="1Y"/, 'rendered range controls include 1Y');
