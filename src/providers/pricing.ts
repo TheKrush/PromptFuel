@@ -3,6 +3,8 @@ import { findModelPricing } from '../modelPricing';
 export interface ModelPricingEntry {
   inputPerMillion: number;
   outputPerMillion: number;
+  cacheWritePerMillion?: number;
+  cacheReadPerMillion?: number;
   sourceUrl: string;
   sourceLabel: string;
   lastVerifiedDate: string;
@@ -17,7 +19,7 @@ export interface CostEstimate {
 export const CLAUDE_SOURCES = {
   url: 'https://platform.claude.com/docs/en/about-claude/pricing',
   label: 'Anthropic Claude API Pricing (official)',
-  verified: '2026-05-16'
+  verified: '2026-06-04'
 } as const;
 
 // Fallback rate used when model name does not match any known Claude entry
@@ -32,7 +34,7 @@ export const DEFAULT_CLAUDE_PRICING: ModelPricingEntry = {
 export const CODEX_SOURCES = {
   url: 'https://developers.openai.com/api/docs/pricing',
   label: 'OpenAI API Pricing (official)',
-  verified: '2026-05-16'
+  verified: '2026-06-04'
 } as const;
 
 // Fallback rate used when model name does not match any known Codex entry
@@ -61,6 +63,8 @@ function matchModelPricing(
       pricing: {
         inputPerMillion: match.row.inputPer1m,
         outputPerMillion: match.row.outputPer1m,
+        cacheWritePerMillion: match.row.cacheWrite5mPer1m,
+        cacheReadPerMillion: match.row.cacheReadPer1m,
         sourceUrl: sources.url,
         sourceLabel: sources.label,
         lastVerifiedDate: sources.verified
@@ -81,10 +85,12 @@ function computeCost(
   cacheReadMultiplier: number,
   cacheWriteMultiplier: number
 ): number {
+  const cacheReadRate = pricing.cacheReadPerMillion ?? pricing.inputPerMillion * cacheReadMultiplier;
+  const cacheWriteRate = pricing.cacheWritePerMillion ?? pricing.inputPerMillion * cacheWriteMultiplier;
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
-  const cacheReadCost = (cacheReadTokens / 1_000_000) * pricing.inputPerMillion * cacheReadMultiplier;
-  const cacheWriteCost = (cacheWriteTokens / 1_000_000) * pricing.inputPerMillion * cacheWriteMultiplier;
+  const cacheReadCost = (cacheReadTokens / 1_000_000) * cacheReadRate;
+  const cacheWriteCost = (cacheWriteTokens / 1_000_000) * cacheWriteRate;
   return inputCost + outputCost + cacheReadCost + cacheWriteCost;
 }
 
@@ -103,8 +109,9 @@ function computeOpenAiCost(
   // Anthropic-style cache-write surcharge. If a snapshot has only cache write data,
   // treat it as ordinary input so the API-equivalent estimate remains conservative.
   const cacheWriteOnlyTokens = inputTokens > 0 ? 0 : cacheWriteTokens;
+  const cachedInputRate = pricing.cacheReadPerMillion ?? pricing.inputPerMillion * CODEX_CACHE_READ_MULTIPLIER;
   const inputCost = ((uncachedInputTokens + cacheWriteOnlyTokens) / 1_000_000) * pricing.inputPerMillion;
-  const cachedInputCost = ((cachedInputTokens + cachedOnlyTokens) / 1_000_000) * pricing.inputPerMillion * CODEX_CACHE_READ_MULTIPLIER;
+  const cachedInputCost = ((cachedInputTokens + cachedOnlyTokens) / 1_000_000) * cachedInputRate;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   return inputCost + cachedInputCost + outputCost;
 }

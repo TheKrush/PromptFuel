@@ -4,19 +4,18 @@ import {
   parseModelPricingCsv,
   buildPricingTable,
   findModelPricingInTable,
-  type CsvPricingRow,
   type ModelPricingTable
 } from '../modelPricing';
 
-const CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_per_1m,cache_read_per_1m,currency,effective_date,notes';
+const CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_5m_per_1m,cache_write_1h_per_1m,cache_read_per_1m,currency,effective_date,notes';
 
 function sampleCsv(): string {
   return [
     CSV_HEADER,
-    'claude,claude-sonnet-4-6,3,15,,,USD,2026-06-01,Claude Sonnet 4.6',
-    'codex,gpt-5.4,2.50,15,,,USD,2026-06-01,GPT-5.4',
-    'codex,codex-auto-review,1.75,14,,,USD,2026-06-01,Codex Auto Review',
-    'claude,claude-opus-4-7,5,25,,,USD,2026-06-01,Claude Opus 4.7'
+    'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
+    'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
+    'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
+    'claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,Claude Opus 4.8'
   ].join('\n');
 }
 
@@ -44,6 +43,8 @@ describe('model pricing CSV parser', () => {
     const rows = parseModelPricingCsv(sampleCsv());
     assert.equal(rows[0].provider, 'claude');
     assert.equal(rows[0].model, 'claude-sonnet-4-6');
+    assert.equal(rows[0].currency, 'USD');
+    assert.equal(rows[0].effectiveDate, '2026-06-04');
   });
 
   it('returns empty array for empty content', () => {
@@ -60,31 +61,38 @@ describe('model pricing CSV parser', () => {
   });
 
   it('skips blank lines', () => {
-    const csv = `${CSV_HEADER}\n\nclaude,sonnet,3,15,,,USD,2026-06-01,\n\ncodex,gpt5,5,30,,,USD,2026-06-01,\n`;
+    const csv = `${CSV_HEADER}\n\nclaude,sonnet,3,15,3.75,6,0.30,USD,2026-06-04,\n\ncodex,gpt5,5,30,,,0.50,USD,2026-06-04,\n`;
     const rows = parseModelPricingCsv(csv);
     assert.equal(rows.length, 2);
   });
 });
 
 describe('blank optional numeric fields', () => {
-  it('parses blank cache_write as undefined', () => {
+  it('parses blank cache_write_5m as undefined', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    for (const row of rows) {
-      assert.equal(row.cacheWritePer1m, undefined);
-    }
+    const gpt54 = rows.find(r => r.model === 'gpt-5.4')!;
+    assert.equal(gpt54.cacheWrite5mPer1m, undefined);
   });
 
-  it('parses blank cache_read as undefined', () => {
+  it('parses blank cache_write_1h as undefined', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    for (const row of rows) {
-      assert.equal(row.cacheReadPer1m, undefined);
-    }
+    const gpt54 = rows.find(r => r.model === 'gpt-5.4')!;
+    assert.equal(gpt54.cacheWrite1hPer1m, undefined);
+  });
+
+  it('parses cache_write and cache_read values', () => {
+    const rows = parseModelPricingCsv(sampleCsv());
+    const sonnet = rows.find(r => r.model === 'claude-sonnet-4-6')!;
+    assert.equal(sonnet.cacheWrite5mPer1m, 3.75);
+    assert.equal(sonnet.cacheWrite1hPer1m, 6);
+    assert.equal(sonnet.cacheReadPer1m, 0.30);
   });
 
   it('parses explicit zero cache values correctly', () => {
-    const csv = `${CSV_HEADER}\nclaude,test,1,2,0,0,USD,2026-06-01,\n`;
+    const csv = `${CSV_HEADER}\nclaude,test,1,2,0,0,0,USD,2026-06-04,\n`;
     const rows = parseModelPricingCsv(csv);
-    assert.equal(rows[0].cacheWritePer1m, 0);
+    assert.equal(rows[0].cacheWrite5mPer1m, 0);
+    assert.equal(rows[0].cacheWrite1hPer1m, 0);
     assert.equal(rows[0].cacheReadPer1m, 0);
   });
 });
@@ -126,14 +134,21 @@ describe('findModelPricingInTable', () => {
   it('finds model with longest key match on partial prefix', () => {
     const csv = [
       CSV_HEADER,
-      'codex,gpt-5.4,2.50,15,,,USD,2026-06-01,',
-      'codex,gpt-5.4-mini,0.75,4.50,,,USD,2026-06-01,'
+      'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,',
+      'codex,gpt-5.4-mini,0.75,4.50,,,0.075,USD,2026-06-04,'
     ].join('\n');
     const t = buildPricingTable(parseModelPricingCsv(csv));
 
     const result = findModelPricingInTable(t, 'codex', 'gpt-5.4-mini-20260513');
     assert.ok(result);
     assert.equal(result.matchedKey, 'gpt-5.4-mini');
+  });
+
+  it('finds PromptFuel codex rows', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-5.4-20260513');
+    assert.ok(result);
+    assert.equal(result.matchedKey, 'gpt-5.4');
+    assert.equal(result.row.provider, 'codex');
   });
 
   it('returns undefined for unknown provider', () => {

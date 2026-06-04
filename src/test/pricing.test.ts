@@ -33,6 +33,11 @@ describe('pricing estimates', () => {
     assertApprox(opus.costUsd, 0.525);
     assert.equal(opus.matchedModel, 'claude-opus-4');
     assert.equal(opus.isFallback, false);
+
+    const opus48Fast = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-opus-4-8-fast']);
+    assertApprox(opus48Fast.costUsd, 0.35);
+    assert.equal(opus48Fast.matchedModel, 'claude-opus-4-8-fast');
+    assert.equal(opus48Fast.isFallback, false);
   });
 
   it('falls back for unknown or missing Claude models', () => {

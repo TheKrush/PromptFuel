@@ -6,8 +6,12 @@ export interface CsvPricingRow {
   model: string;
   inputPer1m: number | undefined;
   outputPer1m: number | undefined;
-  cacheWritePer1m: number | undefined;
+  cacheWrite5mPer1m: number | undefined;
+  cacheWrite1hPer1m: number | undefined;
   cacheReadPer1m: number | undefined;
+  currency: string;
+  effectiveDate: string;
+  notes: string;
 }
 
 export interface ModelPricingMatch {
@@ -17,7 +21,7 @@ export interface ModelPricingMatch {
 
 export type ModelPricingTable = Map<string, Map<string, CsvPricingRow>>;
 
-const EXPECTED_CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_per_1m,cache_read_per_1m,currency,effective_date,notes';
+const EXPECTED_CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_5m_per_1m,cache_write_1h_per_1m,cache_read_per_1m,currency,effective_date,notes';
 
 function parseOptionalNumber(s: string): number | undefined {
   const trimmed = s.trim();
@@ -40,7 +44,7 @@ export function parseModelPricingCsv(csvContent: string): CsvPricingRow[] {
     if (!line) continue;
 
     const fields = line.split(',');
-    if (fields.length < 6) continue;
+    if (fields.length < 10) continue;
 
     const provider = fields[0].trim();
     const model = fields[1].trim();
@@ -51,8 +55,12 @@ export function parseModelPricingCsv(csvContent: string): CsvPricingRow[] {
       model,
       inputPer1m: parseOptionalNumber(fields[2]),
       outputPer1m: parseOptionalNumber(fields[3]),
-      cacheWritePer1m: parseOptionalNumber(fields[4]),
-      cacheReadPer1m: parseOptionalNumber(fields[5]),
+      cacheWrite5mPer1m: parseOptionalNumber(fields[4]),
+      cacheWrite1hPer1m: parseOptionalNumber(fields[5]),
+      cacheReadPer1m: parseOptionalNumber(fields[6]),
+      currency: fields[7].trim(),
+      effectiveDate: fields[8].trim(),
+      notes: fields.slice(9).join(',').trim(),
     });
   }
 
