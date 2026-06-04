@@ -7,6 +7,7 @@ import { registerPromptFuelPanelCommands } from './panel/promptFuelPanel';
 import { buildUsageDashboardModel } from './panel/usageDashboardModel';
 import { readMachineSnapshots } from './snapshot/readMachineSnapshots';
 import { applyStatusBarItem, createStatusBarItem } from './statusBar';
+import { loadModelPricingCsv } from './modelPricing';
 import {
   cancelDebouncedRefresh,
   clearRefreshTimers,
@@ -30,6 +31,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   logPromptFuel('Activation started.');
   combinedStatusItem = createStatusBarItem(1, 'PromptFuel loading...');
   context.subscriptions.push(combinedStatusItem);
+
+  try {
+    await loadModelPricingCsv(context.extensionPath);
+    logPromptFuel('Model pricing CSV loaded.');
+  } catch (err) {
+    logSwallowedError('Loading model pricing CSV', err);
+  }
 
   initRefreshController({
     onStatusUpdate: (text, tooltip) => applyStatusBarItem(combinedStatusItem, text, tooltip)

@@ -2,7 +2,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
+const repoRoot = path.resolve(__dirname, '..');
+const { initModelPricingFromCsv } = require(path.join(repoRoot, 'out', 'modelPricing.js'));
 const { aggregateSnapshotBucketModels, buildRemoteUsageProjection } = require('../out/snapshot/remoteUsageProjection.js');
 const { buildUsageDashboardModel } = require('../out/panel/usageDashboardModel.js');
 const { buildStatusHoverModelBreakdown } = require('../out/display/modelBreakdown.js');
@@ -11,6 +15,7 @@ const { SNAPSHOT_SCHEMA_V1 } = require('../out/snapshot/types.js');
 const { displayTotalTokens } = require('../out/snapshot/tokenMath.js');
 const { estimateClaudeCostUsd, estimateCodexCostUsd } = require('../out/providers/pricing.js');
 const { createCanonicalUsageFixture } = require('../out/test/fixtures/canonicalUsageFixture.js');
+initModelPricingFromCsv(fs.readFileSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv'), 'utf8'));
 
 const TODAY_KEY = (() => {
   const now = new Date();

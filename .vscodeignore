@@ -15,6 +15,7 @@ DO_NOT_DELETE/**
 vsix-inspect/**
 local/**
 data/**
+!data/model-pricing-estimates.csv
 cache/**
 snapshots/**
 snapshot-imports/**

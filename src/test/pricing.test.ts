@@ -1,10 +1,19 @@
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { initModelPricingFromCsv } from '../modelPricing';
 import {
   estimateAggregateCostUsd,
   estimateClaudeCostUsd,
   estimateCodexCostUsd
 } from '../providers/pricing';
+
+before(() => {
+  const csvPath = path.join(__dirname, '..', '..', 'data', 'model-pricing-estimates.csv');
+  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+  initModelPricingFromCsv(csvContent);
+});
 
 function assertApprox(actual: number, expected: number, tolerance = 0.000001): void {
   assert.ok(

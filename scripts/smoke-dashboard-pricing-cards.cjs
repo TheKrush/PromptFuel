@@ -3,11 +3,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
+  const { initModelPricingFromCsv } = require(path.join(repoRoot, 'out', 'modelPricing.js'));
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
+  initModelPricingFromCsv(fs.readFileSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv'), 'utf8'));
 
   const claudeState = {
     provider: 'claude',

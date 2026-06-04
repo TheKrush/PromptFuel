@@ -1,0 +1,19 @@
+provider,model,input_per_1m,output_per_1m,cache_write_per_1m,cache_read_per_1m,currency,effective_date,notes
+claude,claude-opus-4-7,5,25,,,USD,2026-06-01,Claude Opus 4.7
+claude,claude-opus-4-6,5,25,,,USD,2026-06-01,Claude Opus 4.6
+claude,claude-opus-4-5,5,25,,,USD,2026-06-01,Claude Opus 4.5
+claude,claude-opus-4-1,15,75,,,USD,2026-06-01,Claude Opus 4.1 (legacy)
+claude,claude-opus-4,15,75,,,USD,2026-06-01,Claude Opus 4 (legacy)
+claude,claude-3-opus,15,75,,,USD,2026-06-01,Claude 3 Opus (legacy)
+claude,claude-sonnet-4-6,3,15,,,USD,2026-06-01,Claude Sonnet 4.6
+claude,claude-sonnet-4-5,3,15,,,USD,2026-06-01,Claude Sonnet 4.5
+claude,claude-sonnet-4,3,15,,,USD,2026-06-01,Claude Sonnet 4
+claude,claude-3.5-sonnet,3,15,,,USD,2026-06-01,Claude 3.5 Sonnet
+claude,claude-haiku-4-5,1,5,,,USD,2026-06-01,Claude Haiku 4.5
+claude,claude-haiku-3-5,0.80,4,,,USD,2026-06-01,Claude Haiku 3.5 (retired)
+codex,gpt-5.5,5,30,,,USD,2026-06-01,GPT-5.5
+codex,gpt-5.4,2.50,15,,,USD,2026-06-01,GPT-5.4
+codex,gpt-5.4-mini,0.75,4.50,,,USD,2026-06-01,GPT-5.4 Mini
+codex,gpt-5.4-nano,0.20,1.25,,,USD,2026-06-01,GPT-5.4 Nano
+codex,gpt-5.3-codex,1.75,14,,,USD,2026-06-01,GPT-5.3 Codex
+codex,codex-auto-review,1.75,14,,,USD,2026-06-01,Codex Auto Review
