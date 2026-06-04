@@ -507,6 +507,59 @@ describe('snapshotReader', () => {
       assert.equal(dp.stale, true);
       assert.ok(dp.source?.includes('stale snapshot'));
     });
+
+    it('maps snapshot remaining-percent to the same six-level scale as status bar dots', () => {
+      const testCases: Array<{ usedPercent: number; expectedLevel: string }> = [
+        { usedPercent: 0, expectedLevel: 'purple' },
+        { usedPercent: 9, expectedLevel: 'purple' },
+        { usedPercent: 10, expectedLevel: 'blue' },
+        { usedPercent: 29, expectedLevel: 'blue' },
+        { usedPercent: 30, expectedLevel: 'green' },
+        { usedPercent: 49, expectedLevel: 'green' },
+        { usedPercent: 50, expectedLevel: 'yellow' },
+        { usedPercent: 69, expectedLevel: 'yellow' },
+        { usedPercent: 70, expectedLevel: 'orange' },
+        { usedPercent: 89, expectedLevel: 'orange' },
+        { usedPercent: 90, expectedLevel: 'red' },
+        { usedPercent: 100, expectedLevel: 'red' },
+      ];
+
+      for (const { usedPercent, expectedLevel } of testCases) {
+        const dp = snapshotProviderToDashboardProvider({
+          provider: 'claude',
+          sourceLabel: 'Claude',
+          stale: false,
+          source: 'authenticated',
+          sourceConfidence: 'quotaState',
+          sevenDayUsedPercent: usedPercent,
+          fiveHourUsedPercent: 0,
+          fiveHourResetAtEpochSeconds: 1_800_000_000,
+          sevenDayResetAtEpochSeconds: 1_900_000_000,
+          lastUpdatedEpochMs: Date.now()
+        }, 'desktop');
+
+        const sevenDayWindow = dp.windows.find(w => w.key === 'sevenDay');
+        assert.ok(sevenDayWindow, `sevenDay window must exist at used=${usedPercent}`);
+        assert.equal(sevenDayWindow.level, expectedLevel,
+          `At ${usedPercent}% used (${100 - usedPercent}% remaining): expected level=${expectedLevel}, got=${sevenDayWindow.level}`);
+      }
+    });
+
+    it('produces undefined level for unavailable windows', () => {
+      const dp = snapshotProviderToDashboardProvider({
+        provider: 'claude',
+        sourceLabel: 'Claude',
+        stale: false,
+        source: 'authenticated',
+        sourceConfidence: 'quotaState'
+      }, 'desktop');
+
+      assert.equal(dp.windows.length, 2);
+      assert.equal(dp.windows[0].available, false);
+      assert.equal(dp.windows[0].level, undefined);
+      assert.equal(dp.windows[1].available, false);
+      assert.equal(dp.windows[1].level, undefined);
+    });
   });
 
   describe('remote provider grouping', () => {

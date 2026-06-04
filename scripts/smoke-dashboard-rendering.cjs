@@ -354,7 +354,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -424,6 +424,68 @@ function main() {
     { provider: 'claude', label: 'Claude', windows: [] },
     { provider: 'codex', label: 'Codex', windows: [] }
   ];
+  const glanceHtml = sandbox.__combinedDashboardTest.renderGlanceList([
+    {
+      provider: 'claude',
+      label: 'Claude',
+      windows: [
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 84, resetIso: '2026-06-04T12:00:00.000Z' },
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 42, resetIso: '2026-06-05T12:00:00.000Z' }
+      ]
+    },
+    {
+      provider: 'codex',
+      label: 'Codex snapshot',
+      machineLabel: 'snapshot',
+      windows: [
+        { key: 'fiveHour', label: '5h', available: false }
+      ]
+    }
+  ]);
+  const expectedGlanceColumns = ['provider', '7d-label', '7d-bar', '7d-percent', '7d-reset', '5h-label', '5h-bar', '5h-percent', '5h-reset', 'status'];
+  assert.equal(glanceRowCount(glanceHtml), 2, 'At-a-glance fixture renders one row per provider/source');
+  assert.deepEqual(glanceRowColumns(glanceHtml)[0], expectedGlanceColumns, 'At-a-glance rows render the shared ten-column structure');
+  assert.deepEqual(glanceRowColumns(glanceHtml)[1], expectedGlanceColumns, 'At-a-glance rows keep the ten-column structure when a window is missing');
+  assert.match(glanceHtml, /usage-glance-col-7d-bar/, 'At-a-glance markup includes stable 7d bar column class');
+  assert.match(glanceHtml, /usage-glance-col-5h-reset/, 'At-a-glance markup includes stable 5h reset column class');
+  assert.match(visibleTextFromHtml(glanceHtml), /Claude7d42%.*5h84%.*current/, 'At-a-glance fixture keeps provider, window values, and current status visible');
+  assert.match(visibleTextFromHtml(glanceHtml), /Codex snapshot5h—snapshot/, 'At-a-glance fixture keeps unavailable window text and snapshot status visible');
+  assert.match(glanceHtml, /data-glance-col="7d-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 7d bar cell');
+  assert.match(glanceHtml, /data-glance-col="5h-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 5h bar cell');
+  assert.match(glanceHtml, /data-glance-col="status">[^<]+<\/div>/, 'status text is inside the status cell');
+  const glanceStaleHtml = sandbox.__combinedDashboardTest.renderGlanceList([
+    {
+      provider: 'claude',
+      label: 'Claude',
+      stale: true,
+      windows: [
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 30, resetIso: '2026-06-05T12:00:00.000Z' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 60, resetIso: '2026-06-04T12:00:00.000Z' }
+      ]
+    },
+    {
+      provider: 'codex',
+      label: 'Codex',
+      windows: [
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 55, resetIso: '2026-06-05T18:00:00.000Z' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 80, resetIso: '2026-06-04T18:00:00.000Z' }
+      ]
+    },
+    {
+      provider: 'codex',
+      label: 'Codex snapshot',
+      machineLabel: 'snapshot',
+      windows: [
+        { key: 'sevenDay', label: '7d', available: false },
+        { key: 'fiveHour', label: '5h', available: false }
+      ]
+    }
+  ]);
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[0], expectedGlanceColumns, 'stale Claude row keeps the ten-column slot structure');
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[1], expectedGlanceColumns, 'Codex current row keeps the ten-column slot structure alongside a stale row');
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[2], expectedGlanceColumns, 'Codex snapshot row keeps the ten-column slot structure');
+  assert.match(glanceStaleHtml, /usage-glance-row stale/, 'stale row renders the stale modifier class');
+  assert.match(visibleTextFromHtml(glanceStaleHtml), /Claude.*30%.*stale/, 'stale Claude row keeps window values and stale badge visible');
   const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
   assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
@@ -658,6 +720,8 @@ function main() {
   assert.match(styles, /usage-history-bar-segment\.codex:not\(\.model\)[\s\S]*repeating-linear-gradient/, 'Codex fallback provider bars use hatch treatment');
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
+  assert.doesNotMatch(styles, /\.usage-glance-row\.stale > \.usage-glance-cell\{[^}]*\bborder-style:dashed/, 'stale glance cell rule does not use bare border-style which creates unwanted side borders');
+  assert.match(styles, /\.usage-glance-row\.stale > \.usage-glance-cell\{[^}]*border-top-style:dashed/, 'stale glance rows target only top and bottom border sides');
 
   console.log('PASS: usage dashboard rendering smoke tests passed.');
 }
@@ -668,6 +732,13 @@ function sectionProviderCardCount(html) {
 
 function glanceRowCount(html) {
   return (String(html || '').match(/class="usage-glance-row/g) || []).length;
+}
+
+function glanceRowColumns(html) {
+  return String(html || '')
+    .split('<div class="usage-glance-row')
+    .slice(1)
+    .map(rowHtml => Array.from(rowHtml.matchAll(/data-glance-col="([^"]+)"/g)).map(match => match[1]));
 }
 
 function countOccurrences(text, pattern) {

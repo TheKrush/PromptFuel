@@ -23,11 +23,18 @@ function main() {
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
 
   const cases = [
+    { remaining: 95, level: 'purple' },
+    { remaining: 91, level: 'purple' },
     { remaining: 90, level: 'blue' },
+    { remaining: 71, level: 'blue' },
     { remaining: 70, level: 'green' },
-    { remaining: 40, level: 'yellow' },
-    { remaining: 20, level: 'orange' },
-    { remaining: 5, level: 'red' }
+    { remaining: 51, level: 'green' },
+    { remaining: 50, level: 'yellow' },
+    { remaining: 31, level: 'yellow' },
+    { remaining: 30, level: 'orange' },
+    { remaining: 11, level: 'orange' },
+    { remaining: 10, level: 'red' },
+    { remaining: 0, level: 'red' }
   ];
 
   for (const testCase of cases) {
@@ -40,6 +47,25 @@ function main() {
   const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   assert.match(panelScript, /var levelClass = window\.level \? ' level-' \+ window\.level : '';/, 'quota window renderer derives level-* class from model level');
   assert.match(panelScript, /usage-progress-fill' \+ levelClass/, 'usage progress fill receives the resolved level class');
+
+  // Snapshot-derived providers use the same level scale
+  const { snapshotProviderToDashboardProvider } = require(path.join(repoRoot, 'out', 'snapshot', 'readMachineSnapshots.js'));
+  for (const testCase of cases) {
+    const dp = snapshotProviderToDashboardProvider({
+      provider: 'claude',
+      sourceLabel: 'Claude',
+      stale: false,
+      source: 'authenticated',
+      sourceConfidence: 'quotaState',
+      sevenDayUsedPercent: 100 - testCase.remaining,
+      fiveHourUsedPercent: 0,
+      fiveHourResetAtEpochSeconds: 1_800_000_000,
+      sevenDayResetAtEpochSeconds: 1_900_000_000,
+      lastUpdatedEpochMs: Date.now()
+    }, 'fixture');
+    const sevenDayWindow = dp.windows.find(w => w.key === 'sevenDay');
+    assert.equal(sevenDayWindow.level, testCase.level, `snapshot provider: ${testCase.remaining}% remaining → level=${testCase.level}`);
+  }
 
   const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   for (const level of cases.map(testCase => testCase.level)) {

@@ -2281,29 +2281,37 @@
     var label = provider.label || (provider.provider === 'claude' ? 'Claude' : 'Codex');
     var badge = provider.stale ? 'stale' : (provider.mergedSourceCount > 1 ? 'merged' : (provider.machineLabel ? 'snapshot' : 'current'));
     var badgeStaleClass = provider.stale ? ' stale' : '';
-    var windows = (provider.windows || []).filter(function(w) { return w && w.key !== 'sevenDayOpus'; });
+    var windows = provider.windows || [];
+    var cells = renderGlanceWindowCells(glanceWindowByKey(windows, 'sevenDay'), '7d') +
+      renderGlanceWindowCells(glanceWindowByKey(windows, 'fiveHour'), '5h');
 
-    // Flat grid: each window emits 4 cells (label, bar, value, reset) as direct row children
-    var cells = windows.map(renderGlanceWindowCells).join('');
-    // Pad to 2 windows so every row has 10 grid children and columns align
-    for (var i = windows.length; i < 2; i++) {
-      cells += '<span></span><span class="usage-glance-bar usage-progress"></span><span></span><span></span>';
-    }
-
-    return '<div class="usage-glance-row' + staleClass + '">' +
-      '<div class="usage-glance-label" title="' + escAttr(label) + '">' + esc(label) + '</div>' +
+    return '<div class="usage-glance-row' + staleClass + '" data-glance-row="provider">' +
+      '<div class="usage-glance-cell usage-glance-label usage-glance-col-provider" data-glance-col="provider" title="' + escAttr(label) + '">' + esc(label) + '</div>' +
       cells +
-      '<div class="usage-glance-badge' + badgeStaleClass + '">' + esc(badge) + '</div>' +
+      '<div class="usage-glance-cell usage-glance-badge usage-glance-col-status' + badgeStaleClass + '" data-glance-col="status">' + esc(badge) + '</div>' +
     '</div>';
   }
 
-  function renderGlanceWindowCells(window) {
+  function glanceWindowByKey(windows, key) {
+    for (var i = 0; i < windows.length; i += 1) {
+      if (windows[i] && windows[i].key === key) { return windows[i]; }
+    }
+    return undefined;
+  }
+
+  function renderGlanceWindowCells(window, prefix) {
     var label = window && window.label ? window.label : '';
+    if (!window) {
+      return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label"></span>' +
+        '<div class="usage-glance-cell usage-glance-bar-cell usage-glance-col-' + prefix + '-bar" data-glance-col="' + prefix + '-bar"><div class="usage-glance-bar usage-progress"></div></div>' +
+        '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent"></span>' +
+        '<span class="usage-glance-cell usage-glance-win-reset usage-glance-col-' + prefix + '-reset" data-glance-col="' + prefix + '-reset"></span>';
+    }
     if (!window || !window.available) {
-      return '<span class="usage-glance-win-label">' + esc(label) + '</span>' +
-        '<div class="usage-glance-bar usage-progress"><div class="usage-progress-fill" style="width:0%"></div></div>' +
-        '<span class="usage-glance-win-value">—</span>' +
-        '<span class="usage-glance-win-reset"></span>';
+      return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label">' + esc(label) + '</span>' +
+        '<div class="usage-glance-cell usage-glance-bar-cell usage-glance-col-' + prefix + '-bar" data-glance-col="' + prefix + '-bar"><div class="usage-glance-bar usage-progress"><div class="usage-progress-fill" style="width:0%"></div></div></div>' +
+        '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent">—</span>' +
+        '<span class="usage-glance-cell usage-glance-win-reset usage-glance-col-' + prefix + '-reset" data-glance-col="' + prefix + '-reset"></span>';
     }
     var remaining = clampPercent(window.remainingPercent);
     var levelClass = window.level ? ' level-' + window.level : '';
@@ -2311,12 +2319,12 @@
       ? new Date(window.resetIso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
       : '';
 
-    return '<span class="usage-glance-win-label">' + esc(label) + '</span>' +
-      '<div class="usage-glance-bar usage-progress">' +
-        '<div class="usage-progress-fill' + levelClass + '" style="width:' + remaining + '%"></div>' +
+    return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label">' + esc(label) + '</span>' +
+      '<div class="usage-glance-cell usage-glance-bar-cell usage-glance-col-' + prefix + '-bar" data-glance-col="' + prefix + '-bar">' +
+        '<div class="usage-glance-bar usage-progress"><div class="usage-progress-fill' + levelClass + '" style="width:' + remaining + '%"></div></div>' +
       '</div>' +
-      '<span class="usage-glance-win-value">' + Math.round(remaining) + '%</span>' +
-      '<span class="usage-glance-win-reset">' + esc(resetTime) + '</span>';
+      '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent">' + Math.round(remaining) + '%</span>' +
+      '<span class="usage-glance-cell usage-glance-win-reset usage-glance-col-' + prefix + '-reset" data-glance-col="' + prefix + '-reset">' + esc(resetTime) + '</span>';
   }
 
   function renderAtAGlanceTitle(source) {
