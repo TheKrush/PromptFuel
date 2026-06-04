@@ -10,7 +10,7 @@ import { sourceInfo, formatCount, formatUsd, shortenClaudeModel, shortenCodexMod
 
 function buildHistoryRanges(hasData: boolean): UsageDashboardHistoryChartRange[] {
   return [
-    { key: '1D', label: '1D', available: false, active: false },
+    { key: '1D', label: '1D', available: hasData, active: false },
     { key: '1W', label: '1W', available: hasData, active: false },
     { key: '1M', label: '1M', available: hasData, active: true },
     { key: '1Y', label: '1Y', available: hasData, active: false },
@@ -18,7 +18,25 @@ function buildHistoryRanges(hasData: boolean): UsageDashboardHistoryChartRange[]
   ];
 }
 
-export function buildClaudeHistoryChart(claudeUsageHistory: ClaudeUsageHistory | undefined, remoteHistoryPoints?: UsageHistoryPoint[]): UsageDashboardHistoryChart {
+function remoteSourceDisplayLabel(remoteMachineLabels?: string[], aliasMap?: Record<string, string>): string {
+  const aliases = Array.from(new Set(remoteMachineLabels ?? []))
+    .map(machineLabel => aliasMap?.[machineLabel]?.trim())
+    .filter((alias): alias is string => Boolean(alias));
+  if (aliases.length === 1) {
+    return aliases[0];
+  }
+  if (aliases.length > 1) {
+    return aliases.slice(0, 2).join(', ');
+  }
+  return 'Snapshot';
+}
+
+export function buildClaudeHistoryChart(
+  claudeUsageHistory: ClaudeUsageHistory | undefined,
+  remoteHistoryPoints?: UsageHistoryPoint[],
+  aliasMap?: Record<string, string>,
+  remoteMachineLabels?: string[]
+): UsageDashboardHistoryChart {
   const hasRemote = Boolean(remoteHistoryPoints?.length);
   const localAvailable = Boolean(claudeUsageHistory?.available);
 
@@ -56,12 +74,18 @@ export function buildClaudeHistoryChart(claudeUsageHistory: ClaudeUsageHistory |
       cacheCreationTokens: day.cacheCreationInputTokens,
       cacheReadTokens: day.cacheReadInputTokens,
       assistantMessages: day.assistantMessages,
-      models: mapModelUsageToHistory(day.modelUsage, shortenClaudeModel)
+      models: mapModelUsageToHistory(day.modelUsage, shortenClaudeModel),
+      source: 'local' as const,
+      sourceLabel: 'Local'
     }))
     : [];
 
   const remotePoints = hasRemote
-    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenClaudeModel)
+    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenClaudeModel).map(p => ({
+      ...p,
+      source: 'remote' as const,
+      sourceLabel: remoteSourceDisplayLabel(remoteMachineLabels, aliasMap)
+    }))
     : [];
   const points: UsageDashboardHistoryChartPoint[] = hasRemote
     ? [...localPoints, ...remotePoints]
@@ -80,7 +104,12 @@ export function buildClaudeHistoryChart(claudeUsageHistory: ClaudeUsageHistory |
   };
 }
 
-export function buildCodexHistoryChart(codexCorrelatedHistory: CodexCorrelatedHistory | undefined, remoteHistoryPoints?: UsageHistoryPoint[]): UsageDashboardHistoryChart {
+export function buildCodexHistoryChart(
+  codexCorrelatedHistory: CodexCorrelatedHistory | undefined,
+  remoteHistoryPoints?: UsageHistoryPoint[],
+  aliasMap?: Record<string, string>,
+  remoteMachineLabels?: string[]
+): UsageDashboardHistoryChart {
   const hasRemote = Boolean(remoteHistoryPoints?.length);
   const localAvailable = Boolean(codexCorrelatedHistory?.available);
 
@@ -118,12 +147,18 @@ export function buildCodexHistoryChart(codexCorrelatedHistory: CodexCorrelatedHi
       cacheCreationTokens: day.cacheCreationInputTokens,
       cacheReadTokens: day.cacheReadInputTokens,
       assistantMessages: day.correlatedTurns,
-      models: mapModelUsageToHistory(day.modelUsage, shortenCodexModel)
+      models: mapModelUsageToHistory(day.modelUsage, shortenCodexModel),
+      source: 'local' as const,
+      sourceLabel: 'Local'
     }))
     : [];
 
   const remotePoints = hasRemote
-    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenCodexModel)
+    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenCodexModel).map(p => ({
+      ...p,
+      source: 'remote' as const,
+      sourceLabel: remoteSourceDisplayLabel(remoteMachineLabels, aliasMap)
+    }))
     : [];
   const points: UsageDashboardHistoryChartPoint[] = hasRemote
     ? [...localPoints, ...remotePoints]
