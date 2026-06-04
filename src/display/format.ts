@@ -396,7 +396,7 @@ function formatCombinedTooltip(
 ): string {
   const lines = ['## PromptFuel', '', ...formatCombinedQuotaSummaryLines(states, options, remoteRows)];
 
-  const freshness = formatFreshnessLine(states, options.nextResetRefreshEpochMs);
+  const freshness = formatFreshnessLine(states);
   if (freshness) {
     lines.push('', freshness);
   }
@@ -531,7 +531,7 @@ function formatProviderTooltip(state: ProviderUsageState, options: FormatOptions
   const label = options.normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex');
   const lines = [`## ${label} Quota`, '', ...formatQuotaSummaryLines(state, options)];
 
-  const freshness = formatFreshnessLine([state], options.nextResetRefreshEpochMs);
+  const freshness = formatFreshnessLine([state]);
   if (freshness) {
     lines.push('', freshness);
   }
@@ -593,7 +593,7 @@ export function formatRemoteProviderTooltip(input: RemoteProviderTooltipInput): 
   return lines.join('\n');
 }
 
-function formatFreshnessLine(states: ProviderUsageState[], nextResetRefreshEpochMs?: number): string | undefined {
+function formatFreshnessLine(states: ProviderUsageState[]): string | undefined {
   const epochMs = Math.max(
     ...states.flatMap(state => [
       state.sevenDay?.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0,
@@ -605,15 +605,7 @@ function formatFreshnessLine(states: ProviderUsageState[], nextResetRefreshEpoch
     return undefined;
   }
 
-  let line = `Updated ${formatAgeLabel(epochMs)} ago`;
-  if (nextResetRefreshEpochMs && nextResetRefreshEpochMs > Date.now()) {
-    const next = formatRelativeTime(nextResetRefreshEpochMs / 1000);
-    if (next && next !== 'now') {
-      line += ` · refresh ${next}`;
-    }
-  }
-
-  return line;
+  return `Updated ${formatAgeLabel(epochMs)} ago`;
 }
 
 export function addThousandsSeparators(numStr: string): string {
