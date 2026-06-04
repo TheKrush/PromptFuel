@@ -86,6 +86,24 @@ describe('display formatting', () => {
     assert.equal(quotaIndicatorForRemaining(undefined, true), '\u26AB');
   });
 
+  it('formats compact status bar windows with per-window dots', () => {
+    const opts = baseOptions();
+    const text = formatStatus(makeState(35, 78), opts).text;
+    assert.equal(text, `C ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`);
+  });
+
+  it('separates compact status bar providers with pipe', () => {
+    const opts = baseOptions();
+    const remoteText = `XW ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`;
+    const text = formatStatus(makeState(3, 100), opts, [{
+      provider: 'codex',
+      text: remoteText,
+      tooltip: '',
+      severity: 'normal'
+    }]).text;
+    assert.equal(text, `C ${quotaIndicatorForRemaining(97)}97% \u00B7 ${quotaIndicatorForRemaining(0)}0% | ${remoteText}`);
+  });
+
   it('every quota level maps to a valid dashboard progress-bar CSS class', () => {
     const levels = ['purple', 'blue', 'green', 'yellow', 'orange', 'red'] as const;
     for (const level of levels) {

@@ -102,7 +102,7 @@ export function formatStatus(
     (current, provider) => maxSeverity(current, provider.severity),
     'normal'
   );
-  const separator = options.displayMode === 'compact' ? ' \u00B7 ' : ' | ';
+  const separator = ' | ';
 
   const localText = providers.map(provider => provider.text).join(separator);
   const remoteText = remoteSources && remoteSources.length > 0
@@ -151,7 +151,7 @@ function resolveDisplayParts(options: FormatOptions): ResolvedDisplayParts {
   switch (options.displayMode) {
     case 'compact':
       return {
-        showEmoji: true,
+        showEmoji: false,
         showProviderNames: false,
         showFiveHour: true,
         showSevenDay: true,
@@ -162,9 +162,9 @@ function resolveDisplayParts(options: FormatOptions): ResolvedDisplayParts {
         showStaleInline: false,
         providerNameStyle: 'short',
         showWindowLabels: false,
-        showWindowEmoji: false,
+        showWindowEmoji: true,
         countdownBeforeValue: false,
-        windowSeparator: '/'
+        windowSeparator: ' \u00B7 '
       };
     case 'standard':
     default:
@@ -250,7 +250,7 @@ function formatWindow(
   const shown = options.statusMode === 'remaining' ? remaining : used;
   const value = formatWindowPercent(shown, resolved.showPercentSymbol, options.statusMode === 'remaining');
   const suffix =
-    resolved.showWindowLabels && !resolved.countdownBeforeValue
+    resolved.showProviderNames && resolved.showWindowLabels && !resolved.countdownBeforeValue
       ? ` ${options.statusMode === 'remaining' ? 'left' : 'used'}`
       : '';
   const reset = formatInlineReset(window.resetsAtEpochSeconds, resolved.showCountdownInline, resolved.countdownBeforeValue);
@@ -260,7 +260,8 @@ function formatWindow(
     return joinStatusParts([prefix.trim(), reset, `${indicator}${value}${suffix}`]);
   }
 
-  return `${joinStatusParts([prefix.trim(), indicator, `${value}${suffix}`])}${reset ? ` ${reset}` : ''}`;
+  const valueWithIndicator = `${indicator}${value}${suffix}`;
+  return `${joinStatusParts([prefix.trim(), valueWithIndicator])}${reset ? ` ${reset}` : ''}`;
 }
 
 function formatCountdownValue(epochSeconds: number | undefined): string {

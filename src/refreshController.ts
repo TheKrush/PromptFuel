@@ -474,7 +474,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     readResult.snapshots,
     cfg.snapshot.statusBarSources ?? [],
     aliasMap,
-    cfg.displayMode
+    cfg.displayMode,
+    cfg.normalizedSources
   );
 
   if (effectiveProviders.includes('claude')) {
