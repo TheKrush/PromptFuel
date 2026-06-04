@@ -198,15 +198,17 @@ function makeRemoteItem(provider, label, withQuotaData = true) {
       assistantMessages: 5
     }]
   });
+
   assert.ok(result.startsWith('## VM Codex Quota'));
   assert.ok(result.includes('| 7d |'));
   assert.ok(result.includes('| 5h |'));
-  assert.ok(result.includes('**Models**'));
-  assert.ok(result.includes('gpt-5.5'));
-  assert.ok(result.includes('API est.'));
+  assert.ok(result.includes('Updated'));
+  assert.ok(!result.includes('**Models**'));
+  assert.ok(!result.includes('gpt-5.5'));
+  assert.ok(!result.includes('API est.'));
   assert.ok(!result.includes('Remote API estimates excluded'));
   assert.ok(!result.includes('API estimate unavailable'));
-  console.log('formatRemoteProviderTooltip renders remote model rows with computed API estimates: PASS');
+  console.log('formatRemoteProviderTooltip omits remote model rows from compact status tooltip: PASS');
 }
 
 {

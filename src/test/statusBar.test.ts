@@ -153,4 +153,73 @@ describe('buildRemoteStatusBarItems', () => {
     assert.ok(!result.text.startsWith('X '), `local Codex should be hidden from status bar, got "${result.text}"`);
     assert.equal(result.text, `XP ${quotaIndicatorForRemaining(69)}69% \u00B7 ${quotaIndicatorForRemaining(25)}25%`);
   });
+
+  it('combined status tooltip stays compact and omits model/details sections', () => {
+    const updatedAt = Date.now() - 60_000;
+    const localStates: ProviderUsageState[] = [{
+      provider: 'codex',
+      lastUpdatedEpochMs: updatedAt,
+      sevenDay: {
+        usedPercentage: 45,
+        sourceUpdatedEpochMs: updatedAt
+      },
+      fiveHour: {
+        usedPercentage: 95,
+        sourceUpdatedEpochMs: updatedAt
+      }
+    }];
+
+    const result = formatStatus(localStates, {
+      ...compactOptions(),
+      nextResetRefreshEpochMs: Date.now() + 3_600_000,
+      modelBreakdown: {
+        codex: [{
+          label: 'gpt-5.5',
+          totalTokens: 1_000_000,
+          assistantMessages: 1,
+          costUsd: 2.5,
+          isFallback: true
+        }]
+      }
+    });
+
+    assert.ok(result.tooltip.includes('## PromptFuel'), result.tooltip);
+    assert.ok(result.tooltip.includes('**Quota**'), result.tooltip);
+    assert.ok(result.tooltip.includes('Updated'), result.tooltip);
+    assert.ok(result.tooltip.includes('refresh'), result.tooltip);
+
+    assert.ok(!result.tooltip.includes('Models ('), result.tooltip);
+    assert.ok(!result.tooltip.includes('| Provider | Model |'), result.tooltip);
+    assert.ok(!result.tooltip.includes('| Model | Tokens |'), result.tooltip);
+    assert.ok(!result.tooltip.includes('Fallback pricing used'), result.tooltip);
+    assert.ok(!result.tooltip.includes('**Details**'), result.tooltip);
+    assert.ok(!result.tooltip.includes('- Source:'), result.tooltip);
+    assert.ok(!result.tooltip.includes('- Freshness:'), result.tooltip);
+  });
+
+  it('remote status tooltip stays compact and omits model/details sections', () => {
+    const items = buildRemoteStatusBarItems(
+      [makeSnapshot('WATCHER', 'codex', 35, 78)],
+      ['WATCHER/codex'],
+      emptyAliasMap,
+      'compact',
+      { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
+    );
+
+    assert.equal(items.length, 1);
+    const tooltip = items[0].tooltip;
+
+    assert.ok(tooltip.includes('## XW Quota'), tooltip);
+    assert.ok(tooltip.includes('7d'), tooltip);
+    assert.ok(tooltip.includes('5h'), tooltip);
+    assert.ok(tooltip.includes('Updated'), tooltip);
+
+    assert.ok(!tooltip.includes('Models ('), tooltip);
+    assert.ok(!tooltip.includes('| Provider | Model |'), tooltip);
+    assert.ok(!tooltip.includes('| Model | Tokens |'), tooltip);
+    assert.ok(!tooltip.includes('Fallback pricing used'), tooltip);
+    assert.ok(!tooltip.includes('**Details**'), tooltip);
+    assert.ok(!tooltip.includes('- Source:'), tooltip);
+    assert.ok(!tooltip.includes('- Freshness:'), tooltip);
+  });
 });

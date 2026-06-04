@@ -114,32 +114,11 @@ function main() {
       }
     };
     const result = formatStatus([baseState], options);
-    assert.ok(result.tooltip.includes('**Models (7d; API-equivalent estimate, not billing)**'));
-    assert.ok(result.tooltip.includes('| Provider | Model | Tokens | Msgs/Turns | API est. |'));
-    assert.ok(result.tooltip.includes('| Claude | Sonnet 4.6 | **150.0K** | 45 |'));
-    assert.ok(result.providers[0].tooltip.includes('**Models** (Claude 7d; API-equivalent estimate, not billing)'));
-    console.log('PASS: model breakdown section shows model label, tokens, msgs, and cost');
-  }
-
-  {
-    const options = {
-      ...baseOptions,
-      modelBreakdown: {
-        claude: [
-          { label: 'Large estimate', totalTokens: 999000, assistantMessages: 1, costUsd: 4859.5 },
-          { label: 'Medium estimate', totalTokens: 100000, assistantMessages: 1, costUsd: 227.76 },
-          { label: 'Small estimate', totalTokens: 90000, assistantMessages: 1, costUsd: 102.05 },
-          { label: 'Sub-dollar estimate', totalTokens: 10, assistantMessages: 1, costUsd: 0.004 }
-        ]
-      }
-    };
-    const result = formatStatus([baseState], options);
-    assert.ok(result.tooltip.includes('$4,859.50'), 'large API estimate uses thousands separator');
-    assert.ok(!result.tooltip.includes('$4859.50'), 'large API estimate is not ungrouped');
-    assert.ok(result.tooltip.includes('$227.76'), 'medium API estimate remains sane');
-    assert.ok(result.tooltip.includes('$102.05'), 'small three-digit API estimate remains sane');
-    assert.ok(result.tooltip.includes('&lt;\u00A21'), 'sub-cent API estimate remains explicit');
-    console.log('PASS: hover API estimates use sane cost formatting across sizes');
+    assert.ok(!result.tooltip.includes('Models ('), 'combined status tooltip omits model breakdown section');
+    assert.ok(!result.tooltip.includes('| Provider | Model | Tokens | Msgs/Turns | API est. |'), 'combined status tooltip omits model table header');
+    assert.ok(!result.tooltip.includes('| Claude | Sonnet 4.6 | **150.0K** | 45 |'), 'combined status tooltip omits model rows');
+    assert.ok(!result.providers[0].tooltip.includes('**Models**'), 'provider status tooltip omits model breakdown section');
+    console.log('PASS: status tooltip omits model breakdown data even when provided');
   }
 
   {
@@ -183,10 +162,10 @@ function main() {
     assert.equal(hoverBreakdown.codex[0].costUsd, 0.07);
 
     const result = formatStatus([baseState], { ...baseOptions, modelBreakdown: hoverBreakdown });
-    assert.ok(result.tooltip.includes('| Codex | gpt-5.5 | **7.0K** | 3 | ¢7.0 |'));
-    assert.ok(result.tooltip.includes('snapshot history included'));
-    assert.ok(!result.tooltip.includes('Remote API estimates excluded'));
-    console.log('PASS: selected remote historyBuckets model rows appear in hover model table');
+    assert.ok(!result.tooltip.includes('Models ('), 'status tooltip omits remote model table');
+    assert.ok(!result.tooltip.includes('| Codex | gpt-5.5 | **7.0K** | 3 | ¢7.0 |'), 'status tooltip omits remote model rows');
+    assert.ok(!result.tooltip.includes('snapshot history included'), 'status tooltip omits model-table snapshot note');
+    console.log('PASS: selected remote historyBuckets model rows aggregate but are omitted from status tooltip');
   }
 
   {
@@ -220,9 +199,9 @@ function main() {
     assert.equal(hoverBreakdown.codex[0].assistantMessages, 5);
     assert.equal(hoverBreakdown.codex[0].costUsd, 0.1);
     const result = formatStatus([codexState], { ...baseOptions, modelBreakdown: hoverBreakdown });
-    assert.equal((result.tooltip.match(/\| Codex \| gpt-5\.5 \|/g) || []).length, 1);
-    assert.ok(result.tooltip.includes('| Codex | gpt-5.5 | **10.0K** | 5 | ¢10.0 |'));
-    console.log('PASS: local and remote Codex model rows merge into one hover row');
+    assert.ok(!result.tooltip.includes('| Codex | gpt-5.5 |'), 'status tooltip omits merged model rows');
+    assert.ok(!result.tooltip.includes('Models ('), 'status tooltip omits model breakdown section');
+    console.log('PASS: local and remote Codex model rows merge but are omitted from status tooltip');
   }
 
   {

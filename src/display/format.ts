@@ -1,7 +1,5 @@
 import { DisplayMode, LimitWindow, ProviderName, ProviderUsageState, QuotaSourceKind, SourceConfigEntry } from '../types';
 import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime } from '../usageTime';
-import { STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './modelBreakdown';
-import { estimateClaudeCostUsd, estimateCodexCostUsd } from '../providers/pricing';
 
 export interface ModelBreakdownEntry {
   label: string;
@@ -398,17 +396,6 @@ function formatCombinedTooltip(
 ): string {
   const lines = ['## PromptFuel', '', ...formatCombinedQuotaSummaryLines(states, options, remoteRows)];
 
-  // model/API table is local-only; remote snapshot data does not contribute
-  const breakdown = options.modelBreakdown ? formatCombinedModelBreakdown(options.modelBreakdown, states) : [];
-  if (breakdown.length > 0) {
-    lines.push('', ...breakdown);
-  }
-
-  const details = formatSharedDetails(states, options);
-  if (details.length > 0) {
-    lines.push('', '**Details**', '', ...details);
-  }
-
   const freshness = formatFreshnessLine(states, options.nextResetRefreshEpochMs);
   if (freshness) {
     lines.push('', freshness);
@@ -543,14 +530,6 @@ function formatCombinedQuotaWindowRow(
 function formatProviderTooltip(state: ProviderUsageState, options: FormatOptions): string {
   const label = options.normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex');
   const lines = [`## ${label} Quota`, '', ...formatQuotaSummaryLines(state, options)];
-  const breakdown = options.modelBreakdown ? formatModelBreakdown(options.modelBreakdown, state.provider) : [];
-  if (breakdown.length > 0) {
-    lines.push('', ...breakdown);
-  }
-  const details = formatSharedDetails([state], options);
-  if (details.length > 0) {
-    lines.push('', '**Details**', '', ...details);
-  }
 
   const freshness = formatFreshnessLine([state], options.nextResetRefreshEpochMs);
   if (freshness) {
@@ -571,15 +550,6 @@ export interface RemoteProviderTooltipInput {
   staleReason?: string;
   snapshotAgeLabel: string;
   snapshotEpochMs?: number;
-  modelContributions?: Array<{
-    model: string;
-    tokens: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheCreationTokens?: number;
-    cacheReadTokens?: number;
-    assistantMessages?: number;
-  }>;
 }
 
 export function formatRemoteProviderTooltip(input: RemoteProviderTooltipInput): string {
@@ -610,84 +580,17 @@ export function formatRemoteProviderTooltip(input: RemoteProviderTooltipInput): 
 
   lines.push('', ...formatQuotaSummaryLines(fakeState, formatOptions));
 
-  const models = input.stale ? [] : (input.modelContributions ?? []).filter(m => m.tokens > 0);
-  if (models.length > 0) {
-    const modelBreakdown: ModelBreakdownData = {
-      [input.provider]: models.map(mc => ({
-        label: mc.model,
-        totalTokens: mc.tokens,
-        assistantMessages: mc.assistantMessages,
-        remoteTokens: mc.tokens,
-        costUsd: estimateRemoteContributionCost(input.provider, mc)
-      }))
-    };
-    const breakdownLines = formatModelBreakdown(modelBreakdown, input.provider);
-    if (breakdownLines.length > 0) {
-      lines.push('', ...breakdownLines);
-    }
-  }
-
-  lines.push('', '**Details**', '');
-
-  const sourceLabel = input.stale
-    ? 'snapshot-backed \u00B7 stale'
-    : 'snapshot-backed';
-  lines.push(`- Source: ${sourceLabel}`);
-
-  if (input.snapshotAgeLabel) {
-    const freshnessLabel = input.stale
-      ? `stale snapshot (${input.snapshotAgeLabel})`
-      : `snapshot (${input.snapshotAgeLabel} ago)`;
-    lines.push(`- Freshness: ${freshnessLabel}`);
-  }
-
-  if (input.snapshotEpochMs && input.snapshotEpochMs > 0) {
-    lines.push(`- Updated: ${formatClockTime(input.snapshotEpochMs)}`);
-  }
-
-  if (input.stale) {
-    lines.push(input.staleReason
-      ? `- Note: Snapshot stale: ${input.staleReason}`
-      : '- Note: Snapshot stale');
-  }
-
-  if (models.some(model => estimateRemoteContributionCost(input.provider, model) === undefined)) {
-    lines.push('- Note: Snapshot API estimate unavailable for rows without model/token components.');
-  }
-
   if (input.snapshotEpochMs && input.snapshotEpochMs > 0) {
     let freshnessLine = `Updated ${formatAgeLabel(input.snapshotEpochMs)} ago`;
     if (input.stale) {
-      freshnessLine += ' \u00B7 \u26A0 stale';
+      freshnessLine += ' · ⚠ stale';
     }
     lines.push('', freshnessLine);
+  } else if (input.snapshotAgeLabel) {
+    lines.push('', input.stale ? `Snapshot stale · ${input.snapshotAgeLabel}` : `Snapshot ${input.snapshotAgeLabel} ago`);
   }
 
   return lines.join('\n');
-}
-
-function estimateRemoteContributionCost(
-  provider: ProviderName,
-  model: {
-    model: string;
-    tokens: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheCreationTokens?: number;
-    cacheReadTokens?: number;
-  }
-): number | undefined {
-  const inputTokens = model.inputTokens ?? 0;
-  const outputTokens = model.outputTokens ?? 0;
-  const cacheCreationTokens = model.cacheCreationTokens ?? 0;
-  const cacheReadTokens = model.cacheReadTokens ?? 0;
-  const componentTotal = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
-  if (!model.model || componentTotal <= 0 || componentTotal !== model.tokens) {
-    return undefined;
-  }
-  return provider === 'claude'
-    ? estimateClaudeCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, [model.model]).costUsd
-    : estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, [model.model]).costUsd;
 }
 
 function formatFreshnessLine(states: ProviderUsageState[], nextResetRefreshEpochMs?: number): string | undefined {
@@ -727,100 +630,6 @@ export function formatTokenCount(value: number): string {
     return `${addThousandsSeparators((value / 1_000).toFixed(1))}K`;
   }
   return String(Math.round(value));
-}
-
-function formatModelBreakdown(breakdown: ModelBreakdownData, provider: string): string[] {
-  const rows = breakdown[provider];
-  if (!rows || rows.length === 0) return [];
-
-  const label = provider === 'claude' ? 'Claude' : 'Codex';
-  const includesRemote = rows.some(row => (row.remoteTokens ?? 0) > 0);
-  const hasIncompleteRemoteCost = rows.some(row => (row.remoteTokens ?? 0) > 0 && row.costUsd === undefined);
-  const lines: string[] = [
-    '',
-    includesRemote
-      ? `**Models** (${label} ${STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS}d; snapshot history included; API-equivalent estimate, not billing)`
-      : `**Models** (${label} ${STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS}d; API-equivalent estimate, not billing)`,
-    '',
-    '| Model | Tokens | Msgs | API est. |',
-    '|:---|---:|---:|---:|'
-  ];
-
-  const capped = rows.slice(0, 5);
-  for (const row of capped) {
-    const modelLabel = escapeMarkdownHtml(row.label);
-    const tokens = formatTokenCount(row.totalTokens);
-    const msgs = row.assistantMessages !== undefined ? `${row.assistantMessages}` : '';
-    const cost = row.costUsd !== undefined ? formatCostShort(row.costUsd) : '';
-    lines.push(`| ${modelLabel} | **${tokens}** | ${msgs} | ${cost} |`);
-  }
-
-  if (capped.some(r => r.isFallback)) {
-    lines.push('', '_Fallback pricing used for unrecognized models._');
-  }
-  if (hasIncompleteRemoteCost) {
-    lines.push('', '_API estimate unavailable for rows without model/token components._');
-  }
-
-  return lines;
-}
-
-function formatCombinedModelBreakdown(
-  breakdown: ModelBreakdownData,
-  states: ProviderUsageState[]
-): string[] {
-  const providerKeys = [
-    ...states.map(state => state.provider),
-    ...Object.keys(breakdown).filter(provider =>
-      !states.some(state => state.provider === provider) &&
-      (breakdown[provider] ?? []).some(row => (row.remoteTokens ?? 0) > 0)
-    )
-  ];
-  const providerOrder = new Map(providerKeys.map((provider, index) => [provider, index]));
-  const rows = providerKeys.flatMap(provider =>
-    (breakdown[provider] ?? []).slice(0, 5).map(row => ({
-      provider,
-      providerLabel: provider === 'claude' ? 'Claude' : 'Codex',
-      row
-    }))
-  );
-
-  if (rows.length === 0) {
-    return [];
-  }
-  const includesRemote = rows.some(item => (item.row.remoteTokens ?? 0) > 0);
-  const hasIncompleteRemoteCost = rows.some(item => (item.row.remoteTokens ?? 0) > 0 && item.row.costUsd === undefined);
-
-  rows.sort((a, b) => {
-    const providerDelta = (providerOrder.get(a.provider) ?? 0) - (providerOrder.get(b.provider) ?? 0);
-    return providerDelta !== 0 ? providerDelta : b.row.totalTokens - a.row.totalTokens;
-  });
-
-  const lines: string[] = [
-    includesRemote
-      ? `**Models (${STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS}d; snapshot history included; API-equivalent estimate, not billing)**`
-      : `**Models (${STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS}d; API-equivalent estimate, not billing)**`,
-    '',
-    '| Provider | Model | Tokens | Msgs/Turns | API est. |',
-    '|:---|:---|---:|---:|---:|'
-  ];
-
-  for (const item of rows) {
-    const modelLabel = escapeMarkdownHtml(item.row.label);
-    const tokens = formatTokenCount(item.row.totalTokens);
-    const msgs = item.row.assistantMessages !== undefined ? `${item.row.assistantMessages}` : '';
-    const cost = item.row.costUsd !== undefined ? formatCostShort(item.row.costUsd) : '';
-    lines.push(`| ${item.providerLabel} | ${modelLabel} | **${tokens}** | ${msgs} | ${cost} |`);
-  }
-
-  if (rows.some(r => r.row.isFallback)) {
-    lines.push('', '_Fallback pricing used for unrecognized models._');
-  }
-  if (hasIncompleteRemoteCost) {
-    lines.push('', '_API estimate unavailable for rows without model/token components._');
-  }
-
-  return lines;
 }
 
 function providerDisplayName(state: Pick<ProviderUsageState, 'provider'>, formatOptions?: FormatOptions): string {

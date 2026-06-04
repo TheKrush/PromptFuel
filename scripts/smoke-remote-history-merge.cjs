@@ -499,12 +499,18 @@ function makeNonCurrentSource(overrides = {}) {
     fiveHourRemainingPercent: 85,
     stale: false,
     snapshotAgeLabel: '1m',
-    snapshotEpochMs: Date.now(),
-    modelContributions: fixture.remoteProjection.codexModelEntries
+    snapshotEpochMs: Date.now()
   });
-  assert.match(remoteTooltip, /gpt-5\.5/, 'remote split tooltip model table includes selected remote model rows');
-  assert.doesNotMatch(remoteTooltip, /Remote API estimates excluded/, 'remote split tooltip no longer excludes computable remote API estimates');
-  assert.doesNotMatch(remoteTooltip, /API estimate unavailable/, 'remote split tooltip has complete model/token components');
+
+  assert.match(remoteTooltip, /^## Codex \(workstation\) Quota/, 'remote split tooltip keeps quota title');
+  assert.match(remoteTooltip, /\| 7d \|/, 'remote split tooltip keeps 7d quota row');
+  assert.match(remoteTooltip, /\| 5h \|/, 'remote split tooltip keeps 5h quota row');
+  assert.match(remoteTooltip, /Updated/, 'remote split tooltip keeps freshness line');
+  assert.doesNotMatch(remoteTooltip, /gpt-5\.5/, 'remote split tooltip omits selected remote model rows');
+  assert.doesNotMatch(remoteTooltip, /\*\*Models\*\*/, 'remote split tooltip omits model table');
+  assert.doesNotMatch(remoteTooltip, /API est\./, 'remote split tooltip omits API estimate table');
+  assert.doesNotMatch(remoteTooltip, /Remote API estimates excluded/, 'remote split tooltip omits old remote API estimate note');
+  assert.doesNotMatch(remoteTooltip, /API estimate unavailable/, 'remote split tooltip omits old incomplete API estimate note');
 
   console.log('canonical cross-surface agreement fixture: PASS');
 }

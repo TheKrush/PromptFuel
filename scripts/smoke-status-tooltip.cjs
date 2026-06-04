@@ -163,7 +163,9 @@ function main() {
 
     assert.ok(result.tooltip.includes('<span style="color:'), 'generated progress span remains HTML');
     assert.ok(!result.tooltip.includes(unsafeHtml), 'dynamic raw HTML is not present');
-    assert.ok(result.tooltip.includes('&lt;span data-unsafe'), 'dynamic hover text is escaped');
+    assert.ok(!result.tooltip.includes('&lt;span data-unsafe'), 'dynamic diagnostic text is omitted from compact tooltip');
+    assert.ok(!result.tooltip.includes('**Details**'), 'compact status tooltip omits details section');
+    assert.ok(!result.tooltip.includes('- Source:'), 'compact status tooltip omits source diagnostics');
   }
 
   {

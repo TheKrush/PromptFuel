@@ -1,7 +1,5 @@
 import { formatRemoteProviderTooltip, quotaIndicatorForRemaining, type FormattedProviderStatus } from './display/format';
-import { STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './display/modelBreakdown';
 import type { ValidatedSnapshot } from './snapshot/readMachineSnapshots';
-import { aggregateSnapshotBucketModels } from './snapshot/remoteUsageProjection';
 import { formatSourceLabel, parsePerWindowReset } from './snapshot/remoteSourceHelper';
 import type { DisplayMode, ProviderName, SourceConfigEntry } from './types';
 import { formatAgeLabel, formatCountdown } from './usageTime';
@@ -76,11 +74,6 @@ export function buildRemoteStatusBarItems(
         : vs.snapshot.generatedAtEpochMs;
       const ageStr = formatAgeLabel(snapshotAgeMs, true);
 
-      const isFresh = !(snapshotStale || sp.stale);
-      const modelContributions = isFresh
-        ? aggregateSnapshotBucketModels(sp.historyBuckets, { windowDays: STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS })
-        : undefined;
-
       const tooltip = formatRemoteProviderTooltip({
         label: statusBarLabel,
         provider: sp.provider as ProviderName,
@@ -91,8 +84,7 @@ export function buildRemoteStatusBarItems(
         stale: snapshotStale || sp.stale,
         staleReason: vs.staleReason,
         snapshotAgeLabel: ageStr,
-        snapshotEpochMs: snapshotAgeMs,
-        modelContributions: modelContributions && modelContributions.length > 0 ? modelContributions : undefined
+        snapshotEpochMs: snapshotAgeMs
       });
 
       items.push({
