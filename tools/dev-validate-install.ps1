@@ -65,6 +65,11 @@ if (-not $SkipCompile) {
     Write-Host "==> Compile skipped (-SkipCompile)" -ForegroundColor Yellow
 }
 
+Invoke-Step "Unit tests" {
+    npm run test:unit
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 Invoke-Step "Validate manifest" {
     npm run validate:manifest
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
