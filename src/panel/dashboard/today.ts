@@ -8,6 +8,17 @@ import type { UsageDashboardMetricCard, UsageDashboardToday, UsageDashboardSourc
 import type { UsageHistoryPoint } from '../usageHistoryBinning';
 import { formatCount, formatUsd, sourceInfo, buildUnavailableMetricCard } from './format';
 
+interface OverviewTodayPart {
+  label: 'Claude' | 'Codex';
+  assistantMessages?: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  totalTokens: number;
+  apiCostUsd?: number;
+  hasApiEstimateInput: boolean;
+}
+
 function buildRemoteSourceNote(remote: RemoteSourceTodaySummary): string {
   const sourceNote = remote.sourceCount === 1 ? '1 source' : `${remote.sourceCount} sources`;
   const uniqueLabels = [...new Set(remote.machineLabels)];
@@ -83,6 +94,89 @@ function costRowFromEstimate(
   estimate: { available: true; costUsd: number } | { available: false } | undefined
 ): { costUsd?: number } {
   return estimate?.available ? { costUsd: estimate.costUsd } : {};
+}
+
+function overviewPartHasValues(part: OverviewTodayPart): boolean {
+  return part.totalTokens > 0 ||
+    part.inputTokens > 0 ||
+    part.outputTokens > 0 ||
+    part.cacheTokens > 0 ||
+    (part.assistantMessages !== undefined && part.assistantMessages > 0) ||
+    part.hasApiEstimateInput;
+}
+
+function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetricCard[] | undefined {
+  const activeParts = parts.filter(overviewPartHasValues);
+  if (activeParts.length === 0) {
+    return undefined;
+  }
+
+  const totalMessages = activeParts.reduce((sum, part) => sum + (part.assistantMessages ?? 0), 0);
+  const messagesAvailable = activeParts.some(part => part.assistantMessages !== undefined);
+  const totalTokens = activeParts.reduce((sum, part) => sum + part.totalTokens, 0);
+  const totalInput = activeParts.reduce((sum, part) => sum + part.inputTokens, 0);
+  const totalOutput = activeParts.reduce((sum, part) => sum + part.outputTokens, 0);
+  const totalCache = activeParts.reduce((sum, part) => sum + part.cacheTokens, 0);
+  const apiRows = activeParts
+    .filter(part => part.hasApiEstimateInput)
+    .map(part => ({ costUsd: part.apiCostUsd }));
+  const totalApi = sumCostIfComplete(apiRows);
+
+  const overviewSource = sourceInfo(
+    'mixedDayBucket',
+    'Today - combined',
+    'Combined Today usage from enabled Claude and Codex sources.'
+  );
+
+  return [
+    {
+      key: 'overviewTodayMessages',
+      label: '1D Messages/Turns',
+      value: messagesAvailable ? formatCount(totalMessages) : '-',
+      detail: activeParts
+        .map(part => `${part.label} ${part.assistantMessages !== undefined ? formatCount(part.assistantMessages) : 'activity unavailable'}`)
+        .join(' | '),
+      available: messagesAvailable,
+      source: overviewSource
+    },
+    {
+      key: 'overviewTodayTokens',
+      label: '1D Tokens',
+      value: formatCount(totalTokens),
+      detail: activeParts.map(part => `${part.label} ${formatCount(part.totalTokens)}`).join(' | '),
+      available: true,
+      source: overviewSource
+    },
+    {
+      key: 'overviewTodayInputOutput',
+      label: '1D Input / Output',
+      value: `${formatCount(totalInput)} / ${formatCount(totalOutput)}`,
+      detail: activeParts.map(part => `${part.label} ${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`).join(' | '),
+      available: true,
+      source: overviewSource
+    },
+    {
+      key: 'overviewTodayCache',
+      label: '1D Cache',
+      value: formatCount(totalCache),
+      detail: activeParts.map(part => `${part.label} ${formatCount(part.cacheTokens)}`).join(' | '),
+      available: true,
+      source: overviewSource
+    },
+    {
+      key: 'overviewTodayApiEquivalent',
+      label: '1D API-equivalent',
+      value: totalApi !== undefined ? formatUsd(totalApi) : 'Unavailable',
+      detail: totalApi !== undefined
+        ? activeParts
+          .filter(part => part.hasApiEstimateInput)
+          .map(part => `${part.label} ${formatUsd(part.apiCostUsd ?? 0)}`)
+          .join(' | ')
+        : 'Estimate requires model/token data from all contributing Today sources',
+      available: totalApi !== undefined,
+      source: overviewSource
+    }
+  ];
 }
 
 function estimateRemoteTodayApiEquivalent(
@@ -207,19 +301,11 @@ export function buildTodayOverviewFromCharts(
   claudeEnabled: boolean,
   codexEnabled: boolean
 ): UsageDashboardMetricCard[] | undefined {
-  if (!claudeChart?.rangeViews || !codexChart?.rangeViews) {
-    return undefined;
-  }
-  const claudeView = claudeEnabled ? claudeChart.rangeViews['1D'] : undefined;
-  const codexView = codexEnabled ? codexChart.rangeViews['1D'] : undefined;
+  const claudeView = claudeEnabled ? claudeChart?.rangeViews?.['1D'] : undefined;
+  const codexView = codexEnabled ? codexChart?.rangeViews?.['1D'] : undefined;
   const claudeBin = claudeView && claudeView.activeBinCount > 0 ? claudeView.points[0] : undefined;
   const codexBin = codexView && codexView.activeBinCount > 0 ? codexView.points[0] : undefined;
-  if (!claudeBin || !codexBin) { return undefined; }
-
-  const totalTokens = claudeBin.totalTokens + codexBin.totalTokens;
-  const totalInput = claudeBin.inputTokens + codexBin.inputTokens;
-  const totalOutput = claudeBin.outputTokens + codexBin.outputTokens;
-  const totalCache = claudeBin.cacheTokens + codexBin.cacheTokens;
+  if (!claudeBin && !codexBin) { return undefined; }
 
   const toEstimateInput = (bin: UsageHistoryPoint, isClaude: boolean) =>
     bin.models.length > 0
@@ -231,6 +317,42 @@ export function buildTodayOverviewFromCharts(
           cacheReadInputTokens: m.cacheReadInputTokens ?? 0
         })), isClaude)
       : undefined;
+
+  if (!claudeBin || !codexBin) {
+    const parts: OverviewTodayPart[] = [];
+    if (claudeBin) {
+      const claudeApi = toEstimateInput(claudeBin, true);
+      parts.push({
+        label: 'Claude',
+        assistantMessages: claudeBin.assistantMessages,
+        inputTokens: claudeBin.inputTokens,
+        outputTokens: claudeBin.outputTokens,
+        cacheTokens: claudeBin.cacheTokens,
+        totalTokens: claudeBin.totalTokens,
+        apiCostUsd: claudeApi?.costUsd,
+        hasApiEstimateInput: claudeBin.models.length > 0
+      });
+    }
+    if (codexBin) {
+      const codexApi = toEstimateInput(codexBin, false);
+      parts.push({
+        label: 'Codex',
+        assistantMessages: codexBin.assistantMessages,
+        inputTokens: codexBin.inputTokens,
+        outputTokens: codexBin.outputTokens,
+        cacheTokens: codexBin.cacheTokens,
+        totalTokens: codexBin.totalTokens,
+        apiCostUsd: codexApi?.costUsd,
+        hasApiEstimateInput: codexBin.models.length > 0
+      });
+    }
+    return buildOverviewTodayCards(parts);
+  }
+
+  const totalTokens = claudeBin.totalTokens + codexBin.totalTokens;
+  const totalInput = claudeBin.inputTokens + codexBin.inputTokens;
+  const totalOutput = claudeBin.outputTokens + codexBin.outputTokens;
+  const totalCache = claudeBin.cacheTokens + codexBin.cacheTokens;
 
   const claudeApi = toEstimateInput(claudeBin, true);
   const codexApi = toEstimateInput(codexBin, false);
@@ -327,6 +449,7 @@ export function buildToday(
   const remoteCodex = codexEnabled ? remoteUsage?.codexToday : undefined;
   const remoteClaudeModels = remoteUsage?.claudeTodayModelEntries;
   const remoteCodexModels = remoteUsage?.codexTodayModelEntries;
+  const overviewParts: OverviewTodayPart[] = [];
 
   if (claudeEnabled) {
     if (claudeAvailable) {
@@ -357,6 +480,16 @@ export function buildToday(
           ? claudeTodayApiEstimate.costUsd
           : undefined;
       const claudeMergedApiAvailable = claudeMergedApiCost !== undefined;
+      overviewParts.push({
+        label: 'Claude',
+        assistantMessages: claudeTodayUsage!.assistantMessages + (remoteClaude?.assistantMessages ?? 0),
+        inputTokens: mergedInput,
+        outputTokens: mergedOutput,
+        cacheTokens: mergedCache,
+        totalTokens: hasRemote ? mergedTotal : localTotal,
+        apiCostUsd: claudeMergedApiCost,
+        hasApiEstimateInput: true
+      });
 
       if (hasRemote) {
         splitCards.push({
@@ -452,6 +585,16 @@ export function buildToday(
 
       scopeParts.push(`Claude snapshot (${sourceNote})`);
       const remoteClaudeMessages = remoteClaude.assistantMessages;
+      overviewParts.push({
+        label: 'Claude',
+        ...(remoteClaudeMessages !== undefined ? { assistantMessages: remoteClaudeMessages } : {}),
+        inputTokens: remoteClaude.inputTokens,
+        outputTokens: remoteClaude.outputTokens,
+        cacheTokens: remoteCache,
+        totalTokens: remoteTotal,
+        apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
+        hasApiEstimateInput: true
+      });
       cards.push({
         key: 'todayMessages',
         label: '1D Messages/Turns',
@@ -539,6 +682,16 @@ export function buildToday(
           ? codexTodayApiEstimate.costUsd
           : undefined;
       const codexMergedApiAvailable = codexMergedApiCost !== undefined;
+      overviewParts.push({
+        label: 'Codex',
+        assistantMessages: codexTodayUsage!.correlatedTurns + (remoteCodex?.assistantMessages ?? 0),
+        inputTokens: mergedInput,
+        outputTokens: mergedOutput,
+        cacheTokens: mergedCache,
+        totalTokens: hasRemote ? mergedTotal : localTotal,
+        apiCostUsd: codexMergedApiCost,
+        hasApiEstimateInput: true
+      });
 
       if (hasRemote) {
         splitCards.push({
@@ -634,6 +787,16 @@ export function buildToday(
 
       scopeParts.push(`Codex snapshot (${sourceNote})`);
       const remoteCodexMessages = remoteCodex.assistantMessages;
+      overviewParts.push({
+        label: 'Codex',
+        ...(remoteCodexMessages !== undefined ? { assistantMessages: remoteCodexMessages } : {}),
+        inputTokens: remoteCodex.inputTokens,
+        outputTokens: remoteCodex.outputTokens,
+        cacheTokens: remoteCache,
+        totalTokens: remoteTotal,
+        apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
+        hasApiEstimateInput: true
+      });
       cards.push({
         key: 'codexTodayMessages',
         label: '1D Messages/Turns',
@@ -697,6 +860,7 @@ export function buildToday(
   const codexSectionLabel = (codexAvailable || remoteCodex) && codexEnabled
     ? buildSectionLabel(['Codex'], remoteCodex?.machineLabels ?? [], 'codex', aliasMap)
     : undefined;
+  const overviewCards = buildOverviewTodayCards(overviewParts);
 
   return {
     available: claudeEnabled || codexEnabled || claudeAvailable || codexAvailable || Boolean(remoteClaude) || Boolean(remoteCodex),
@@ -704,7 +868,8 @@ export function buildToday(
     cards,
     ...(splitCards.length > 0 ? { splitCards } : {}),
     ...(claudeSectionLabel ? { claudeSectionLabel } : {}),
-    ...(codexSectionLabel ? { codexSectionLabel } : {})
+    ...(codexSectionLabel ? { codexSectionLabel } : {}),
+    ...(overviewCards ? { overviewCards } : {})
   };
 }
 

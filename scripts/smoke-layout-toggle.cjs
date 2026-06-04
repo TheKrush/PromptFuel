@@ -143,6 +143,115 @@ function makeCodexHistory() {
   };
 }
 
+function makeZeroClaudeHistory() {
+  return {
+    available: true,
+    rangeLabel: fixtureRangeLabel,
+    totalDays: 2,
+    activeDays: 0,
+    days: fixtureDateKeys.map(makeZeroClaudeDay),
+    assistantMessages: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    totalTokens: 0,
+    modelUsage: [],
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 2,
+    recordsMatched: 2,
+    fileReadErrors: 0
+  };
+}
+
+function makeZeroClaudeDay(dateKey) {
+  return {
+    available: true,
+    dateKey,
+    dateLabel: dateKey,
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    assistantMessages: 0,
+    models: [],
+    modelUsage: [],
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 1,
+    recordsMatched: 1,
+    fileReadErrors: 0
+  };
+}
+
+function makeZeroCodexHistory() {
+  return {
+    available: true,
+    rangeLabel: fixtureRangeLabel,
+    totalDays: 2,
+    activeDays: 0,
+    days: fixtureDateKeys.map(makeZeroCodexDay),
+    assistantMessages: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    reasoningOutputTokens: 0,
+    totalTokens: 0,
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 2,
+    recordsMatched: 2,
+    fileReadErrors: 0,
+    skippedMissingTokenData: 0,
+    skippedMissingModel: 0,
+    skippedMissingBaseline: 0,
+    skippedNegativeDelta: 0,
+    skippedTaskStartedWithoutTurnId: 0,
+    skippedTokenCountOutsideTurn: 0,
+    skippedCloseWithoutTurn: 0,
+    skippedCompletionTimestampMissing: 0,
+    modelUsage: []
+  };
+}
+
+function makeZeroCodexDay(dateKey) {
+  return {
+    available: true,
+    dateKey,
+    dateLabel: dateKey,
+    assistantMessages: 0,
+    correlatedTurns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    reasoningOutputTokens: 0,
+    totalTokens: 0,
+    models: [],
+    modelUsage: [],
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 1,
+    recordsMatched: 1,
+    fileReadErrors: 0,
+    skippedMissingTokenData: 0,
+    skippedMissingModel: 0,
+    skippedMissingBaseline: 0,
+    skippedNegativeDelta: 0
+  };
+}
+
+function withoutModelStacks(history) {
+  return {
+    ...history,
+    modelUsage: [],
+    days: history.days.map(day => ({ ...day, models: [], modelUsage: [] }))
+  };
+}
+
 function makeCodexDay(dateKey, totalTokens, modelTotals) {
   const parts = tokenParts(totalTokens, 0.5);
   return {
@@ -217,25 +326,31 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; } }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
   );
-  const fakeElement = {
-    value: '',
-    className: '',
-    disabled: false,
-    textContent: '',
-    innerHTML: '',
-    addEventListener: () => undefined,
-    classList: {
-      add: () => undefined,
-      remove: () => undefined
+  const fakeElements = {};
+  const fakeElementForId = id => {
+    if (!fakeElements[id]) {
+      fakeElements[id] = {
+        value: '',
+        className: '',
+        disabled: false,
+        textContent: '',
+        innerHTML: '',
+        addEventListener: () => undefined,
+        classList: {
+          add: () => undefined,
+          remove: () => undefined
+        }
+      };
     }
+    return fakeElements[id];
   };
   const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: () => undefined }),
     document: {
-      getElementById: () => fakeElement,
-      querySelector: () => fakeElement,
+      getElementById: id => fakeElementForId(id),
+      querySelector: () => fakeElementForId('__query'),
       querySelectorAll: () => []
     },
     window: {
@@ -244,6 +359,17 @@ function main() {
     setTimeout: () => undefined
   };
   vm.runInNewContext(instrumentedScript, sandbox);
+  assert.equal(typeof sandbox.__combinedDashboardTest.renderDashboardForSources, 'function', 'renderDashboardForSources exists');
+  assert.deepEqual(
+    Array.from(sandbox.__combinedDashboardTest.dashboardAggregateProviders([{ provider: 'claude' }, { provider: 'codex' }, { provider: 'claude' }])),
+    ['claude', 'codex'],
+    'dashboardAggregateProviders derives unique aggregate providers from selected rows'
+  );
+  assert.match(
+    webviewScript,
+    /function renderUsageDashboardSections[\s\S]*scopeProvidersByTab[\s\S]*scopeTodayByTab[\s\S]*scopeDetailsByTab[\s\S]*renderDashboardForSources/,
+    'renderUsageDashboardSections builds one context and enters renderDashboardForSources'
+  );
 
   const selectedCombinedChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1M');
   const combinedHtml = sandbox.__combinedDashboardTest.renderHistoryChart(selectedCombinedChart, 'combined', '1M', selectedCombinedChart.source);
@@ -266,9 +392,14 @@ function main() {
   assert.match(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /Claude/, 'combined fallback keeps provider legend when model stacks are unavailable');
   assert.doesNotMatch(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /correlated/i, 'combined fallback legend does not show visible correlated wording');
 
-  const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, []);
+  const selectedProviders = [
+    { provider: 'claude', label: 'Claude', windows: [] },
+    { provider: 'codex', label: 'Codex', windows: [] }
+  ];
+  const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
   assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
+  assert.equal(sectionProviderCardCount(combinedHistorySectionHtml), 1, 'Overview below At-a-glance renders exactly one aggregate card set');
   assert.doesNotMatch(combinedHistorySectionHtml, /data-history-layout/, 'combined history section has no layout toggle controls');
   assert.doesNotMatch(combinedHistorySectionHtml, />Merged</, 'combined history section has no Merged button');
   assert.doesNotMatch(combinedHistorySectionHtml, />Separate</, 'combined history section has no Separate button');
@@ -281,10 +412,86 @@ function main() {
   assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /correlated/i, 'combined history has no visible correlated chart label text');
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
     sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
-    const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, []);
+    const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
     const rangeText = visibleTextFromHtml(rangeHtml);
     assert.match(rangeText, /\$0\.05/, `combined ${range} API-equivalent is available`);
+    assert.equal(sectionProviderCardCount(rangeHtml), 1, `combined ${range} range re-render keeps one aggregate card set`);
   });
+
+  ['overview', 'claude', 'codex'].forEach(tabKey => {
+    sandbox.__combinedDashboardTest.setProviderTab(tabKey);
+    const providers = sandbox.__combinedDashboardTest.scopeProvidersByTab(selectedProviders, tabKey);
+    const scopedToday = sandbox.__combinedDashboardTest.scopeTodayByTab(model.today, tabKey);
+    const scopedDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(model.details, tabKey);
+    const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, scopedToday, providers);
+    assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
+
+    sandbox.__combinedDashboardTest.renderDashboardForSources({
+      tabKey,
+      label: tabKey === 'overview' ? 'Overview' : tabKey === 'claude' ? 'Claude' : 'Codex',
+      providers,
+      today: scopedToday,
+      details: scopedDetails
+    });
+    assert.equal(glanceRowCount(fakeElements.usageDashboardCards.innerHTML), providers.length, `${tabKey} At-a-glance row count matches selected providers`);
+    assert.equal(sectionProviderCardCount(fakeElements.usageDetails.innerHTML), 1, `${tabKey} renderer entry keeps one below-glance aggregate set`);
+  });
+
+  sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
+  const r2OneProviderHistoryModel = buildUsageDashboardModel({
+    states: [],
+    claudeUsageHistory: withoutModelStacks(makeClaudeHistory()),
+    enabledProviders: ['claude', 'codex']
+  });
+  sandbox.__combinedDashboardTest.setProviderTab('overview');
+  const r2Html = sandbox.__combinedDashboardTest.renderUsageHistorySection(
+    sandbox.__combinedDashboardTest.scopeDetailsByTab(r2OneProviderHistoryModel.details, 'overview'),
+    sandbox.__combinedDashboardTest.scopeTodayByTab(r2OneProviderHistoryModel.today, 'overview'),
+    selectedProviders
+  );
+  assert.equal(sectionProviderCardCount(r2Html), 1, 'R2 one-provider-history Overview renders exactly one below-glance set');
+  assert.match(r2Html, /usage-section-provider-grid combined/, 'R2 one-provider-history Overview still uses the combined aggregate container');
+  assert.match(r2Html, /usage-section-provider-title">Claude</, 'R2 Claude-only fallback labels the aggregate card as Claude');
+  assert.doesNotMatch(visibleTextFromHtml(r2Html), /Claude \+ Codex/, 'R2 Claude-only fallback does not label single-provider history as both providers');
+  assert.doesNotMatch(r2Html, /usage-history-legend/, 'R2 Claude-only fallback does not render a two-provider legend');
+  assert.match(visibleTextFromHtml(r2Html), /3\.0K/, 'R2 one-provider-history Overview keeps the available history data visible');
+  assert.doesNotMatch(visibleTextFromHtml(r2Html), /No Codex history data is available yet/, 'R2 one-provider-history Overview suppresses unavailable sibling provider card copy');
+
+  const r2CodexOnlyHistoryModel = buildUsageDashboardModel({
+    states: [],
+    codexCorrelatedHistory: withoutModelStacks(makeCodexHistory()),
+    enabledProviders: ['claude', 'codex']
+  });
+  const r2CodexHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
+    sandbox.__combinedDashboardTest.scopeDetailsByTab(r2CodexOnlyHistoryModel.details, 'overview'),
+    sandbox.__combinedDashboardTest.scopeTodayByTab(r2CodexOnlyHistoryModel.today, 'overview'),
+    selectedProviders
+  );
+  assert.equal(sectionProviderCardCount(r2CodexHtml), 1, 'R2 Codex-only fallback renders exactly one below-glance set');
+  assert.match(r2CodexHtml, /usage-section-provider-grid combined/, 'R2 Codex-only fallback keeps the combined aggregate container');
+  assert.match(r2CodexHtml, /usage-section-provider-title">Codex</, 'R2 Codex-only fallback labels the aggregate card as Codex');
+  assert.doesNotMatch(visibleTextFromHtml(r2CodexHtml), /Claude \+ Codex/, 'R2 Codex-only fallback does not label single-provider history as both providers');
+  assert.doesNotMatch(r2CodexHtml, /usage-history-legend/, 'R2 Codex-only fallback does not render a two-provider legend');
+  assert.match(visibleTextFromHtml(r2CodexHtml), /1\.0K/, 'R2 Codex-only fallback keeps the available history data visible');
+  assert.doesNotMatch(visibleTextFromHtml(r2CodexHtml), /No Claude history data is available yet/, 'R2 Codex-only fallback suppresses unavailable sibling provider card copy');
+
+  const zeroHistoryModel = buildUsageDashboardModel({
+    states: [],
+    claudeUsageHistory: makeZeroClaudeHistory(),
+    codexCorrelatedHistory: makeZeroCodexHistory(),
+    enabledProviders: ['claude', 'codex']
+  });
+  assert.ok(zeroHistoryModel.details.historyChart.available, 'available zero Claude history chart remains available');
+  assert.ok(zeroHistoryModel.details.codexHistoryChart.available, 'available zero Codex history chart remains available');
+  assert.ok(zeroHistoryModel.details.combinedHistoryChart.available, 'available zero combined history chart remains available');
+  const zeroHistoryHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
+    sandbox.__combinedDashboardTest.scopeDetailsByTab(zeroHistoryModel.details, 'overview'),
+    sandbox.__combinedDashboardTest.scopeTodayByTab(zeroHistoryModel.today, 'overview'),
+    selectedProviders
+  );
+  assert.equal(sectionProviderCardCount(zeroHistoryHtml), 1, 'available zero history Overview renders one aggregate set');
+  assert.match(zeroHistoryHtml, /usage-history-chart/, 'available zero history renders the chart frame');
+  assert.doesNotMatch(visibleTextFromHtml(zeroHistoryHtml), /History unavailable/, 'available zero history does not render the unavailable state');
 
   const combinedDistributionHtml = sandbox.__combinedDashboardTest.renderUsageModelDistributionSection(model.details);
   assert.match(combinedDistributionHtml, /usage-model-distribution/, 'combined view renders model distribution content');
@@ -340,6 +547,14 @@ function main() {
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
 
   console.log('PASS: usage dashboard combined layout smoke tests passed.');
+}
+
+function sectionProviderCardCount(html) {
+  return (String(html || '').match(/<section class="usage-section-provider-card/g) || []).length;
+}
+
+function glanceRowCount(html) {
+  return (String(html || '').match(/class="usage-glance-row/g) || []).length;
 }
 
 function visibleTextFromHtml(html) {

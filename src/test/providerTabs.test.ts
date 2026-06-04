@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
+import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
+import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
 import type { ProviderUsageState } from '../types';
 
 const now = Date.now();
@@ -27,6 +29,71 @@ function codexState(overrides: Partial<ProviderUsageState> = {}): ProviderUsageS
     lastUpdatedEpochMs: now,
     stale: false,
     ...overrides
+  };
+}
+
+function claudeToday(): ClaudeTodayUsageBucket {
+  return {
+    available: true,
+    dateKey: '2026-06-04',
+    dateLabel: '2026-06-04',
+    assistantMessages: 2,
+    inputTokens: 1000,
+    outputTokens: 500,
+    cacheCreationInputTokens: 200,
+    cacheReadInputTokens: 100,
+    totalTokens: 1800,
+    models: ['claude-sonnet-4-20250514'],
+    modelUsage: [{
+      model: 'claude-sonnet-4-20250514',
+      assistantMessages: 2,
+      inputTokens: 1000,
+      outputTokens: 500,
+      cacheCreationInputTokens: 200,
+      cacheReadInputTokens: 100,
+      totalTokens: 1800
+    }],
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 2,
+    recordsMatched: 2,
+    fileReadErrors: 0
+  };
+}
+
+function codexToday(): CodexCorrelatedDayBucket {
+  return {
+    available: true,
+    dateKey: '2026-06-04',
+    dateLabel: '2026-06-04',
+    assistantMessages: 3,
+    correlatedTurns: 3,
+    inputTokens: 2000,
+    outputTokens: 900,
+    cacheCreationInputTokens: 300,
+    cacheReadInputTokens: 100,
+    reasoningOutputTokens: 50,
+    totalTokens: 3350,
+    models: ['gpt-5-codex-20260517'],
+    modelUsage: [{
+      model: 'gpt-5-codex-20260517',
+      assistantMessages: 3,
+      inputTokens: 2000,
+      outputTokens: 900,
+      cacheCreationInputTokens: 300,
+      cacheReadInputTokens: 100,
+      reasoningOutputTokens: 50,
+      totalTokens: 3350
+    }],
+    filesFound: 1,
+    filesInspected: 1,
+    recordsRead: 3,
+    recordsMatched: 3,
+    fileReadErrors: 0,
+    skippedMissingTokenData: 0,
+    skippedMissingModel: 0,
+    skippedMissingBaseline: 0,
+    skippedNegativeDelta: 0
   };
 }
 
@@ -99,6 +166,34 @@ describe('provider tabs model', () => {
     assert.equal(model.tabs.length, 3);
   });
 
+  it('overview today cards aggregate Claude and Codex into one card set', () => {
+    const model = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: claudeToday(),
+      codexTodayUsage: codexToday(),
+      enabledProviders: ['claude', 'codex']
+    });
+
+    assert.equal(model.today.overviewCards?.length, 5, 'Overview has one five-card Today set');
+    assert.deepEqual(
+      model.today.overviewCards?.map(card => card.key),
+      [
+        'overviewTodayMessages',
+        'overviewTodayTokens',
+        'overviewTodayInputOutput',
+        'overviewTodayCache',
+        'overviewTodayApiEquivalent'
+      ],
+      'Overview Today cards use aggregate keys only'
+    );
+    assert.equal(model.today.overviewCards?.find(card => card.key === 'overviewTodayMessages')?.value, '5');
+    assert.equal(model.today.overviewCards?.find(card => card.key === 'overviewTodayTokens')?.value, '5.1K');
+    assert.equal(model.today.overviewCards?.find(card => card.key === 'overviewTodayInputOutput')?.value, '3.0K / 1.4K');
+    assert.equal(model.today.overviewCards?.find(card => card.key === 'overviewTodayCache')?.value, '700');
+    assert.ok(model.today.cards.some(card => card.key === 'todayTokens'), 'Claude provider Today cards remain in model');
+    assert.ok(model.today.cards.some(card => card.key === 'codexTodayTokens'), 'Codex provider Today cards remain in model');
+  });
+
   describe('scopedToProvider filtering', () => {
     it('scopedToProvider=claude filters providers to Claude only', () => {
       const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], scopedToProvider: 'claude' });
@@ -121,18 +216,20 @@ describe('provider tabs model', () => {
     });
 
     it('scopedToProvider=claude today cards are scoped to Claude', () => {
-      const model = buildUsageDashboardModel({ states: [claudeState()], scopedToProvider: 'claude' });
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], claudeTodayUsage: claudeToday(), codexTodayUsage: codexToday(), scopedToProvider: 'claude' });
       const todayAvailable = model.today.available;
       assert.equal(typeof todayAvailable, 'boolean');
       const allKeys = model.today.cards.map(c => c.key);
       assert.ok(!allKeys.some(k => k.indexOf('codexToday') === 0), 'No Codex-prefixed cards should appear when scoped to Claude');
+      assert.equal(model.today.overviewCards?.find(c => c.key === 'overviewTodayTokens')?.value, '1.8K', 'Claude tab model overview fallback stays Claude-scoped');
     });
 
     it('scopedToProvider=codex today cards are scoped to Codex', () => {
-      const model = buildUsageDashboardModel({ states: [codexState()], scopedToProvider: 'codex' });
+      const model = buildUsageDashboardModel({ states: [claudeState(), codexState()], claudeTodayUsage: claudeToday(), codexTodayUsage: codexToday(), scopedToProvider: 'codex' });
       const allKeys = model.today.cards.map(c => c.key);
       assert.ok(allKeys.some(k => k.indexOf('codexToday') === 0), 'Codex today cards must include codexToday-prefixed keys');
       assert.ok(!allKeys.some(k => k === 'todayTokens' || k === 'todayInputOutput' || k === 'todayCache'), 'No Claude-only cards should appear when scoped to Codex');
+      assert.equal(model.today.overviewCards?.find(c => c.key === 'overviewTodayTokens')?.value, '3.3K', 'Codex tab model overview fallback stays Codex-scoped');
     });
 
     it('overview has both tabs present even with scopedToProvider set', () => {
