@@ -142,8 +142,8 @@ export function buildCodexHistoryChart(codexCorrelatedHistory: CodexCorrelatedHi
   };
 }
 
-function hasUsableHistoryChart(chart: UsageDashboardHistoryChart | undefined): boolean {
-  return Boolean(chart?.available && chart.points?.some(point => Number(point.totalTokens || 0) > 0 || Number(point.assistantMessages || 0) > 0));
+function hasAvailableHistoryChart(chart: UsageDashboardHistoryChart | undefined): boolean {
+  return Boolean(chart?.available && chart.points?.length);
 }
 
 function historyProviderPoints(
@@ -179,7 +179,7 @@ export function buildCombinedHistoryChart(
   claudeChart: UsageDashboardHistoryChart | undefined,
   codexChart: UsageDashboardHistoryChart | undefined
 ): UsageDashboardHistoryChart | undefined {
-  if (!hasUsableHistoryChart(claudeChart) || !hasUsableHistoryChart(codexChart)) {
+  if (!hasAvailableHistoryChart(claudeChart) || !hasAvailableHistoryChart(codexChart)) {
     return undefined;
   }
 

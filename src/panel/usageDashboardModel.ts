@@ -346,7 +346,7 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
       const details = buildDetails(states, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
       const today = buildToday(claudeTodayUsage, codexTodayUsage, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
       return {
-        today: details.todayOverviewCards ? { ...today, overviewCards: details.todayOverviewCards } : today,
+        today: today.overviewCards ? today : details.todayOverviewCards ? { ...today, overviewCards: details.todayOverviewCards } : today,
         details
       };
     })(),

@@ -100,7 +100,7 @@
     }
   }
 
-  function renderUsageDetails(details, today) {
+  function renderUsageDetails(details, today, providers) {
     var el = byId('usageDetails');
     if (!el) {
       return;
@@ -116,18 +116,10 @@
     resetHistoryTooltipPayloads();
     hideHistoryTooltip();
 
-    var historyCards = selectClaudeHistoryMetricCardsRange(usageCardsByKey(details.cards, [
-      'historyActivity',
-      'historyTokens',
-      'historyInputOutput',
-      'historyCache',
-      'historyApiEquivalent'
-    ]), details.historyChart, currentClaudeHistoryRange);
-
     el.innerHTML =
-      renderUsageHistorySection(details, historyCards, today);
+      renderUsageHistorySection(details, today, providers);
 
-    bindHistoryRangeControls(details, today);
+    bindHistoryRangeControls(details, today, providers);
     bindHistoryTooltipControls(el);
   }
 
@@ -162,7 +154,7 @@
     var cards;
     var src;
     if (providerContext === 'combined') {
-      cards = (today.overviewCards && today.overviewCards.length > 0) ? today.overviewCards : today.cards;
+      cards = (today.overviewCards && today.overviewCards.length > 0) ? today.overviewCards : [];
     } else if (providerContext === 'codex') {
       cards = today.cards.filter(function(c) {
         return c && c.key && (c.key.indexOf('codexToday') === 0 || c.key.indexOf('remoteTodayCodex') === 0);
@@ -213,103 +205,168 @@
     '</div>';
   }
 
-  function renderUsageHistorySection(details, claudeCards, today) {
-    if (isCombinedHistoryAvailable(details)) {
-      var selectedCombinedChart = selectCombinedHistoryChartRange(details.combinedHistoryChart, currentCombinedHistoryRange);
-      var combinedHistoryUnavailable = selectedCombinedChart && !selectedCombinedChart.available;
-      var combinedCards = selectCombinedHistoryMetricCardsRange(details.cards, selectedCombinedChart, currentCombinedHistoryRange);
-      var selectedCombinedDistribution = selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange);
-      var combinedDistributionHtml = selectedCombinedDistribution && selectedCombinedDistribution.available
-        ? renderClaudeModelDistribution(selectedCombinedDistribution, selectedCombinedDistribution && selectedCombinedDistribution.source)
-        : renderModelDistributionUnavailable(selectedCombinedDistribution, 'combined');
-      var combinedTodayHtml = renderTodayInHistory(getTodayCardsForContext(today, 'combined'), today && today.source);
-      var combinedBody = combinedTodayHtml +
-        (combinedHistoryUnavailable
-          ? renderProviderUnavailable('History unavailable', selectedCombinedChart.unavailableReason || 'Combined history needs both Claude and Codex data.')
-          : renderHistoryChart(selectedCombinedChart, 'combined', currentCombinedHistoryRange, selectedCombinedChart && selectedCombinedChart.source) +
-            renderCombinedHistoryLegend(selectedCombinedChart) +
-            renderActiveDaysLabel(selectedCombinedChart)) +
-          combinedDistributionHtml +
-          renderMetricGrid(combinedCards, 'No combined history cards available.', selectedCombinedChart && selectedCombinedChart.source);
-      var combinedHistLabel = details.combinedHistorySectionLabel || 'Claude + Codex';
-
-      return '<section class="usage-dashboard-section">' +
-        '<div class="usage-history-section-head">' +
-          '<div>' +
-            renderUsageSectionTitle('h3', 'usage-section-title', 'History', sectionSourceFromProviderCharts(details.historyChart, details.codexHistoryChart, details.source)) +
-            '<p class="usage-section-copy">Range-controlled usage trends by provider.</p>' +
-          '</div>' +
-        '</div>' +
-        '<div class="usage-section-provider-grid combined">' +
-          '<section class="usage-section-provider-card combined-history' + (combinedHistoryUnavailable ? ' unavailable' : '') + '">' +
-            '<div class="usage-section-provider-head">' +
-              '<div class="usage-section-provider-title">' + esc(combinedHistLabel) + '</div>' +
-            '</div>' +
-            combinedBody +
-          '</section>' +
-        '</div>' +
-      '</section>';
-    }
-
-    var providerCards = [];
-    if (details.historyChart) {
-      var selectedClaudeChart = selectClaudeHistoryChartRange(details.historyChart, currentClaudeHistoryRange);
-      var claudeHistoryUnavailable = selectedClaudeChart && !selectedClaudeChart.available;
-      var selectedClaudeDistribution = selectClaudeModelDistributionRange(details.modelDistribution, details.historyChart, currentClaudeHistoryRange);
-      var claudeDistributionHtml = selectedClaudeDistribution && selectedClaudeDistribution.available
-        ? renderClaudeModelDistribution(selectedClaudeDistribution, selectedClaudeDistribution && selectedClaudeDistribution.source)
-        : renderModelDistributionUnavailable(selectedClaudeDistribution, 'Claude');
-      var claudeTodayHtml = renderTodayInHistory(getTodayCardsForContext(today, 'claude'), today && today.source);
-      var claudeChartHtml = claudeTodayHtml +
-        (claudeHistoryUnavailable
-          ? renderProviderUnavailable('History unavailable', selectedClaudeChart.unavailableReason || 'No Claude history data is available yet.')
-          : renderHistoryChart(selectedClaudeChart, 'claude', currentClaudeHistoryRange, selectedClaudeChart && selectedClaudeChart.source) +
-            renderActiveDaysLabel(selectedClaudeChart) +
-            claudeDistributionHtml +
-            renderMetricGrid(claudeCards, 'No Claude history cards available.', selectedClaudeChart && selectedClaudeChart.source));
-      var claudeHistLabel = details.claudeHistorySectionLabel || 'Claude';
-      providerCards.push(renderSectionProviderCard(claudeHistLabel, selectedClaudeChart && selectedClaudeChart.source, claudeChartHtml, claudeHistoryUnavailable));
-    }
-
-    if (details.codexHistoryChart) {
-      var selectedCodexChart = selectCodexHistoryChartRange(details.codexHistoryChart, currentCodexHistoryRange);
-      var codexHistoryUnavailable = selectedCodexChart && !selectedCodexChart.available;
-      var codexCards = selectCodexHistoryMetricCardsRange(
-        usageCardsByKey(details.cards, [
-          'codexHistoryActivity',
-          'codexHistoryTokens',
-          'codexHistoryInputOutput',
-          'codexHistoryCache',
-          'codexHistoryApiEquivalent'
-        ]),
-        details.codexHistoryChart,
-        currentCodexHistoryRange
-      );
-      var selectedCodexDistribution = selectCodexModelDistributionRange(details.codexModelDistribution, details.codexHistoryChart, currentCodexHistoryRange);
-      var codexDistributionHtml = selectedCodexDistribution && selectedCodexDistribution.available
-        ? renderClaudeModelDistribution(selectedCodexDistribution, selectedCodexDistribution && selectedCodexDistribution.source)
-        : renderModelDistributionUnavailable(selectedCodexDistribution, 'Codex');
-      var codexTodayHtml = renderTodayInHistory(getTodayCardsForContext(today, 'codex'), today && today.source);
-      var codexChartHtml = codexTodayHtml +
-        (codexHistoryUnavailable
-          ? renderProviderUnavailable('History unavailable', selectedCodexChart.unavailableReason || 'No Codex history data is available yet.')
-          : renderHistoryChart(selectedCodexChart, 'codex', currentCodexHistoryRange, selectedCodexChart && selectedCodexChart.source) +
-            renderActiveDaysLabel(selectedCodexChart) +
-            codexDistributionHtml +
-            renderMetricGrid(codexCards, 'No Codex history cards available.', selectedCodexChart && selectedCodexChart.source));
-      var codexHistLabel = details.codexHistorySectionLabel || 'Codex';
-      providerCards.push(renderSectionProviderCard(codexHistLabel, selectedCodexChart && selectedCodexChart.source, codexChartHtml, codexHistoryUnavailable));
-    }
+  function renderUsageHistorySection(details, today, providers) {
+    var aggregate = selectDashboardHistoryAggregate(details, providers);
+    var aggregateBody = renderDashboardHistoryAggregateBody(aggregate, today);
+    var gridClass = aggregate.provider === 'combined' ? 'usage-section-provider-grid combined' : 'usage-section-provider-grid';
+    var titleSource = aggregate.source || sectionSourceFromProviderCharts(details && details.historyChart, details && details.codexHistoryChart, details && details.source);
 
     return '<section class="usage-dashboard-section">' +
       '<div class="usage-history-section-head">' +
         '<div>' +
-          renderUsageSectionTitle('h3', 'usage-section-title', 'History', sectionSourceFromProviderCharts(details.historyChart, details.codexHistoryChart, details.source)) +
+          renderUsageSectionTitle('h3', 'usage-section-title', 'History', titleSource) +
           '<p class="usage-section-copy">Range-controlled usage trends by provider.</p>' +
         '</div>' +
       '</div>' +
-      renderSectionProviderGrid(providerCards, 'No history data is available yet.') +
+      '<div class="' + gridClass + '">' +
+        '<section class="usage-section-provider-card' + (aggregate.provider === 'combined' ? ' combined-history' : '') + (aggregate.unavailable ? ' unavailable' : '') + '">' +
+          '<div class="usage-section-provider-head">' +
+            '<div class="usage-section-provider-title">' + esc(aggregate.label) + '</div>' +
+          '</div>' +
+          aggregateBody +
+        '</section>' +
+      '</div>' +
     '</section>';
+  }
+
+  function renderDashboardHistoryAggregateBody(aggregate, today) {
+    var todayHtml = renderTodayInHistory(getTodayCardsForContext(today, aggregate.todayContext), today && today.source);
+    var unavailableReason = aggregate.unavailableReason || 'No selected provider history data is available yet.';
+    var chartHtml = aggregate.unavailable
+      ? renderProviderUnavailable('History unavailable', unavailableReason)
+      : renderHistoryChart(aggregate.chart, aggregate.provider, aggregate.range, aggregate.source) +
+        (aggregate.showCombinedLegend ? renderCombinedHistoryLegend(aggregate.chart) : '') +
+        renderActiveDaysLabel(aggregate.chart);
+    var distributionHtml = aggregate.distribution && aggregate.distribution.available
+      ? renderClaudeModelDistribution(aggregate.distribution, aggregate.distribution && aggregate.distribution.source)
+      : renderModelDistributionUnavailable(aggregate.distribution, aggregate.label);
+    var metricGridHtml = renderMetricGrid(aggregate.cards, aggregate.emptyCardsText, aggregate.source);
+    return todayHtml + chartHtml + distributionHtml + metricGridHtml;
+  }
+
+  function selectDashboardHistoryAggregate(details, providers) {
+    var selectedProviders = dashboardAggregateProviders(providers);
+    if (!selectedProviders.length) {
+      selectedProviders = inferDashboardAggregateProviders(details);
+    }
+    var includeClaude = selectedProviders.indexOf('claude') >= 0;
+    var includeCodex = selectedProviders.indexOf('codex') >= 0;
+
+    if (includeClaude && includeCodex) {
+      if (historyChartHasAvailablePoints(details && details.combinedHistoryChart)) {
+        return buildCombinedHistoryAggregate(details);
+      }
+
+      var claudeAvailable = historyChartHasAvailablePoints(details && details.historyChart);
+      var codexAvailable = historyChartHasAvailablePoints(details && details.codexHistoryChart);
+      if (claudeAvailable && !codexAvailable) {
+        return buildProviderHistoryAggregate(details, 'claude', details && details.claudeHistorySectionLabel || 'Claude', 'combined', 'combined', currentCombinedHistoryRange);
+      }
+      if (codexAvailable && !claudeAvailable) {
+        return buildProviderHistoryAggregate(details, 'codex', details && details.codexHistorySectionLabel || 'Codex', 'combined', 'combined', currentCombinedHistoryRange);
+      }
+      if (claudeAvailable && codexAvailable) {
+        return buildCombinedHistoryAggregate(details);
+      }
+      return buildUnavailableHistoryAggregate(details, 'combined', details && details.combinedHistorySectionLabel || 'Claude + Codex');
+    }
+
+    if (includeCodex) {
+      return buildProviderHistoryAggregate(details, 'codex');
+    }
+    return buildProviderHistoryAggregate(details, 'claude');
+  }
+
+  function buildCombinedHistoryAggregate(details) {
+    var selectedCombinedChart = selectCombinedHistoryChartRange(details && details.combinedHistoryChart, currentCombinedHistoryRange);
+    var unavailable = !selectedCombinedChart || !selectedCombinedChart.available;
+    return {
+      provider: 'combined',
+      todayContext: 'combined',
+      range: currentCombinedHistoryRange,
+      label: details && details.combinedHistorySectionLabel || 'Claude + Codex',
+      chart: selectedCombinedChart,
+      cards: selectCombinedHistoryMetricCardsRange(details && details.cards, selectedCombinedChart, currentCombinedHistoryRange),
+      distribution: selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange),
+      source: selectedCombinedChart && selectedCombinedChart.source,
+      unavailable: unavailable,
+      unavailableReason: selectedCombinedChart && selectedCombinedChart.unavailableReason || 'Combined history needs selected provider data.',
+      emptyCardsText: 'No combined history cards available.',
+      showCombinedLegend: true
+    };
+  }
+
+  function buildProviderHistoryAggregate(details, provider, labelOverride, todayContextOverride, renderProviderOverride, rangeOverride) {
+    var isCodex = provider === 'codex';
+    var baseChart = isCodex ? details && details.codexHistoryChart : details && details.historyChart;
+    var range = rangeOverride || (isCodex ? currentCodexHistoryRange : currentClaudeHistoryRange);
+    var selectedChart = isCodex
+      ? selectCodexHistoryChartRange(baseChart, range)
+      : selectClaudeHistoryChartRange(baseChart, range);
+    var cards = isCodex
+      ? selectCodexHistoryMetricCardsRange(usageCardsByKey(details && details.cards, [
+        'codexHistoryActivity',
+        'codexHistoryTokens',
+        'codexHistoryInputOutput',
+        'codexHistoryCache',
+        'codexHistoryApiEquivalent'
+      ]), baseChart, range)
+      : selectClaudeHistoryMetricCardsRange(usageCardsByKey(details && details.cards, [
+        'historyActivity',
+        'historyTokens',
+        'historyInputOutput',
+        'historyCache',
+        'historyApiEquivalent'
+      ]), baseChart, range);
+    var distribution = isCodex
+      ? selectCodexModelDistributionRange(details && details.codexModelDistribution, baseChart, range)
+      : selectClaudeModelDistributionRange(details && details.modelDistribution, baseChart, range);
+    var label = labelOverride || (isCodex
+      ? details && details.codexHistorySectionLabel || 'Codex'
+      : details && details.claudeHistorySectionLabel || 'Claude');
+    return {
+      provider: renderProviderOverride || provider,
+      todayContext: todayContextOverride || (isCodex ? 'codex' : 'claude'),
+      range: range,
+      label: label,
+      chart: selectedChart,
+      cards: cards,
+      distribution: distribution,
+      source: selectedChart && selectedChart.source,
+      unavailable: !selectedChart || !selectedChart.available,
+      unavailableReason: selectedChart && selectedChart.unavailableReason || 'No ' + label + ' history data is available yet.',
+      emptyCardsText: 'No ' + label + ' history cards available.'
+    };
+  }
+
+  function buildUnavailableHistoryAggregate(details, provider, label) {
+    var fallbackChart = provider === 'codex' ? details && details.codexHistoryChart : details && details.historyChart;
+    var fallbackDistribution = provider === 'codex' ? details && details.codexModelDistribution : details && details.modelDistribution;
+    var reason = fallbackChart && fallbackChart.unavailableReason || 'No selected provider history data is available yet.';
+    return {
+      provider: provider,
+      todayContext: provider === 'combined' ? 'combined' : provider,
+      range: provider === 'codex' ? currentCodexHistoryRange : provider === 'combined' ? currentCombinedHistoryRange : currentClaudeHistoryRange,
+      label: label,
+      chart: fallbackChart,
+      cards: [],
+      distribution: fallbackDistribution,
+      source: fallbackChart && fallbackChart.source,
+      unavailable: true,
+      unavailableReason: reason,
+      emptyCardsText: 'No selected provider history cards available.'
+    };
+  }
+
+  function historyChartHasAvailablePoints(chart) {
+    return Boolean(chart && chart.available && chart.points && chart.points.length);
+  }
+
+  function inferDashboardAggregateProviders(details) {
+    var inferred = [];
+    if (details && details.historyChart) { inferred.push('claude'); }
+    if (details && details.codexHistoryChart) { inferred.push('codex'); }
+    return inferred;
   }
 
   function isCombinedHistoryAvailable(details) {
@@ -1211,7 +1268,7 @@
     historyTooltipEl.setAttribute('data-placement', placement);
   }
 
-  function bindHistoryRangeControls(details, today) {
+  function bindHistoryRangeControls(details, today, providers) {
     var buttons = document.querySelectorAll('[data-usage-history-range]');
     Array.prototype.forEach.call(buttons, function(button) {
       button.addEventListener('click', function() {
@@ -1229,7 +1286,7 @@
           if (range === currentCodexHistoryRange) { return; }
           currentCodexHistoryRange = range;
         }
-        renderUsageDetails(details || lastUsageDetails, today);
+        renderUsageDetails(details || lastUsageDetails, today, providers);
       });
     });
   }
@@ -1270,9 +1327,10 @@
       };
     });
 
-    var unavailableReason = view && view.unavailableReason
+    var hasSourceData = historyPointsHaveSourceData(points);
+    var unavailableReason = view && view.unavailableReason && !hasSourceData
       ? view.unavailableReason
-      : maxTotalTokens > 0
+      : points.length
         ? undefined
         : 'No ' + providerLabel + ' usage records for this calendar range.';
     var limitation = view && view.limitation ? view.limitation : undefined;
@@ -1295,6 +1353,12 @@
       limitation: limitation,
       source: chart.source
     };
+  }
+
+  function historyPointsHaveSourceData(points) {
+    return (points || []).some(function(point) {
+      return !point.isEmpty || Number(point.sourcePointCount || 0) > 0;
+    });
   }
 
   function selectClaudeModelDistributionRange(distribution, chart, rangeKey) {
@@ -1979,6 +2043,19 @@
     return (providers || []).filter(function(p) { return p && p.provider === tab; });
   }
 
+  function dashboardAggregateProviders(providers) {
+    var seen = {};
+    var result = [];
+    (providers || []).forEach(function(provider) {
+      var key = provider && provider.provider;
+      if ((key === 'claude' || key === 'codex') && !seen[key]) {
+        seen[key] = true;
+        result.push(key);
+      }
+    });
+    return result;
+  }
+
   function isProviderSourceSplitAvailable(providers) {
     return Boolean(providers && providers.filter(Boolean).length > 1);
   }
@@ -2074,17 +2151,38 @@
   }
 
   function renderUsageDashboardSections(model) {
-    var providers = scopeProvidersByTab(model.providers, currentUsageProviderTab);
+    var tabKey = currentUsageProviderTab;
+    var providers = scopeProvidersByTab(model.providers, tabKey);
+    var scopedToday = scopeTodayByTab(model.today, tabKey);
+    var scopedDetails = scopeDetailsByTab(model.details, tabKey);
+    renderDashboardForSources({
+      tabKey: tabKey,
+      label: dashboardTabLabel(model, tabKey),
+      providers: providers,
+      today: scopedToday,
+      details: scopedDetails
+    });
+  }
+
+  function dashboardTabLabel(model, tabKey) {
+    var tab = model && model.tabs && model.tabs.find(function(t) { return t && t.key === tabKey; });
+    if (tab && tab.label) { return tab.label; }
+    if (tabKey === 'claude') { return 'Claude'; }
+    if (tabKey === 'codex') { return 'Codex'; }
+    return 'Overview';
+  }
+
+  function renderDashboardForSources(ctx) {
+    var providers = ctx && ctx.providers || [];
     var cards = byId('usageDashboardCards');
     if (cards) {
       cards.className = 'usage-provider-grid';
       cards.innerHTML = renderGlanceList(providers);
     }
-    renderSourceModeControls(model);
+    renderSourceModeControls(ctx);
     renderAtAGlanceTitle(sectionSourceFromProviderWindows(providers));
-    var scopedToday = scopeTodayByTab(model.today, currentUsageProviderTab);
-    renderUsageToday(scopedToday);
-    renderUsageDetails(scopeDetailsByTab(model.details, currentUsageProviderTab), scopedToday);
+    renderUsageToday(ctx && ctx.today);
+    renderUsageDetails(ctx && ctx.details, ctx && ctx.today, providers);
   }
 
   function renderSourceModeControls(model) {

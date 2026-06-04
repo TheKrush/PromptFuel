@@ -170,6 +170,33 @@ function main() {
   }
 
   {
+    const model = buildUsageDashboardModel({
+      states: [claudeState, codexState],
+      claudeTodayUsage: claudeTodayUsage,
+      codexTodayUsage: codexTodayUsage,
+      enabledProviders: ['claude', 'codex']
+    });
+    const overviewCards = model.today.overviewCards || [];
+    assert.equal(overviewCards.length, 5, 'overview renders one aggregate Today card set');
+    assert.deepEqual(
+      overviewCards.map(card => card.key),
+      [
+        'overviewTodayMessages',
+        'overviewTodayTokens',
+        'overviewTodayInputOutput',
+        'overviewTodayCache',
+        'overviewTodayApiEquivalent'
+      ],
+      'overview aggregate Today cards do not contain provider-specific card keys'
+    );
+    assert.equal(overviewCards.find(card => card.key === 'overviewTodayMessages').value, '44', 'overview Today messages include Claude and Codex');
+    assert.equal(overviewCards.find(card => card.key === 'overviewTodayTokens').value, '60.0K', 'overview Today tokens include Claude and Codex displayed tokens');
+    assert.equal(model.today.cards.find(card => card.key === 'todayTokens').value, '51.5K', 'Claude provider Today card remains scoped');
+    assert.equal(model.today.cards.find(card => card.key === 'codexTodayTokens').value, '8.5K', 'Codex provider Today card remains scoped');
+    console.log('PASS: Overview Today cards aggregate providers while provider cards stay scoped');
+  }
+
+  {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude', 'codex'] });
     const codexTodayTokens = model.today.cards.find(c => c.key === 'codexTodayTokens');
     assert.ok(codexTodayTokens, 'codex zero card appears when codex enabled but missing today data');
@@ -314,6 +341,7 @@ function main() {
     const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
     assert.match(panelScript, /overviewCards/, 'Today overview uses model-computed combined cards');
     assert.match(panelScript, /overviewCards: undefined/, 'Today provider tabs strip overview cards so provider-specific cards render');
+    assert.doesNotMatch(panelScript, /\? today\.overviewCards : today\.cards/, 'Overview Today does not fall back to provider-specific card arrays');
     assert.match(panelScript, /scopeTodayByTab[\s\S]*tab === 'overview'[\s\S]*return today/, 'Provider tabs keep scopeTodayByTab unchanged');
     assert.match(panelScript, /setUsageLoading\(true\)/, 'refresh path dims existing dashboard frames instead of blanking them');
     assert.doesNotMatch(panelScript, /Refreshing today section/, 'refresh path no longer blanks the Today section');
