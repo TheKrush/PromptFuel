@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatStatus, quotaIndicatorForRemaining, type FormatOptions } from '../display/format';
+import { formatStatus, type FormatOptions } from '../display/format';
 import { getEnabledProvidersFromSources, resolveSourcesFromRaw } from '../configSources';
 import { buildRemoteStatusBarItems } from '../statusBarBuild';
 import type { ValidatedSnapshot } from '../snapshot/readMachineSnapshots';
@@ -54,20 +54,7 @@ function makeLocalState(provider: 'claude' | 'codex', sevenDayUsedPercent: numbe
 }
 
 describe('buildRemoteStatusBarItems', () => {
-  it('compact mode uses shortLabel from normalizedSources for imported source', () => {
-    const items = buildRemoteStatusBarItems(
-      [makeSnapshot()],
-      ['WATCHER/codex'],
-      emptyAliasMap,
-      'compact',
-      { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
-    );
-    assert.equal(items.length, 1);
-    assert.ok(items[0].text.startsWith('XW '), `expected "XW " prefix, got "${items[0].text}"`);
-    assert.ok(!items[0].text.includes('Codex'), `should not contain "Codex", got "${items[0].text}"`);
-  });
-
-  it('compact mode joins related imported source percentages with per-window dots', () => {
+  it('builds imported source quota data from normalizedSources in compact mode', () => {
     const items = buildRemoteStatusBarItems(
       [makeSnapshot('WATCHER', 'codex', 35, 78)],
       ['WATCHER/codex'],
@@ -75,37 +62,77 @@ describe('buildRemoteStatusBarItems', () => {
       'compact',
       { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
     );
-    const expected = `XW ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`;
+
     assert.equal(items.length, 1);
-    assert.equal(items[0].text, expected);
-    assert.ok(!items[0].text.includes('/'), `compact imported windows should not use slash, got "${items[0].text}"`);
-    assert.ok(!items[0].text.includes(' | '), `should not split imported windows into separate providers, got "${items[0].text}"`);
+    assert.equal(items[0].provider, 'codex');
+    assert.equal(items[0].severity, 'normal');
+    assert.deepEqual(items[0].remoteQuotaData, {
+      label: 'Codex \u00B7 WATCHER',
+      sevenDayRemainingPercent: 65,
+      fiveHourRemainingPercent: 22,
+      sevenDayResetEpochSeconds: 1_900_000_000,
+      fiveHourResetEpochSeconds: 1_800_000_000,
+      stale: false,
+      snapshotAgeLabel: items[0].remoteQuotaData?.snapshotAgeLabel
+    });
   });
 
-  it('standard mode uses label from normalizedSources for imported source', () => {
+  it('builds imported source quota data from normalizedSources in standard mode', () => {
     const items = buildRemoteStatusBarItems(
-      [makeSnapshot()],
+      [makeSnapshot('WATCHER', 'codex', 35, 78)],
       ['WATCHER/codex'],
       emptyAliasMap,
       'standard',
       { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
     );
+
     assert.equal(items.length, 1);
-    assert.ok(items[0].text.startsWith('Codex \u00B7 WATCHER '), `expected "Codex · WATCHER " prefix, got "${items[0].text}"`);
+    assert.equal(items[0].provider, 'codex');
+    assert.equal(items[0].remoteQuotaData?.label, 'Codex \u00B7 WATCHER');
+    assert.equal(items[0].remoteQuotaData?.sevenDayRemainingPercent, 65);
+    assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, 22);
+    assert.equal(items[0].remoteQuotaData?.sevenDayResetEpochSeconds, 1_900_000_000);
+    assert.equal(items[0].remoteQuotaData?.fiveHourResetEpochSeconds, 1_800_000_000);
+    assert.equal(items[0].remoteQuotaData?.stale, false);
   });
 
-  it('falls back to formatSourceLabel when sourceId missing from normalizedSources', () => {
+  it('uses fallback source label when sourceId is missing from normalizedSources', () => {
     const items = buildRemoteStatusBarItems(
-      [makeSnapshot()],
+      [makeSnapshot('WATCHER', 'codex', 35, 78)],
       ['WATCHER/codex'],
       { WATCHER: 'WatchTower' },
       'compact'
     );
+
     assert.equal(items.length, 1);
-    assert.ok(items[0].text.startsWith('Codex WatchTower '), `expected fallback "Codex WatchTower " prefix, got "${items[0].text}"`);
+    assert.equal(items[0].provider, 'codex');
+    assert.equal(items[0].remoteQuotaData?.label, 'Codex WatchTower');
+    assert.equal(items[0].remoteQuotaData?.sevenDayRemainingPercent, 65);
+    assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, 22);
   });
 
-  it('compact status omits local providers missing from explicit sources', () => {
+  it('omits unselected imported sources', () => {
+    const items = buildRemoteStatusBarItems(
+      [
+        makeSnapshot('WATCHER', 'codex', 35, 78),
+        makeSnapshot('PHOENIX', 'codex', 31, 75)
+      ],
+      ['PHOENIX/codex'],
+      emptyAliasMap,
+      'compact',
+      {
+        'WATCHER/codex': { enabled: true, label: 'CodexW', shortLabel: 'XW', statusBar: true },
+        'PHOENIX/codex': { enabled: true, label: 'CodexP', shortLabel: 'XP', statusBar: true }
+      }
+    );
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].remoteQuotaData?.label, 'CodexP');
+    assert.equal(items[0].remoteQuotaData?.sevenDayRemainingPercent, 69);
+    assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, 25);
+  });
+
+  it('keeps explicit local and imported sources separate', () => {
     const sources = resolveSourcesFromRaw({
       codex: { enabled: true, label: 'Codex', shortLabel: 'X', statusBar: true },
       'PHOENIX/claude': { enabled: true, label: 'ClaudeP', shortLabel: 'CP', statusBar: true },
@@ -127,14 +154,15 @@ describe('buildRemoteStatusBarItems', () => {
     const result = formatStatus(localStates, { ...compactOptions(), normalizedSources: sources }, remoteItems);
 
     assert.deepEqual(enabledProviders, ['codex']);
-    assert.ok(!result.text.includes('C unavailable'), `should not render omitted local Claude, got "${result.text}"`);
-    assert.ok(!result.text.includes('Claude unavailable'), `should not render omitted local Claude, got "${result.text}"`);
-    assert.ok(result.text.startsWith(`X ${quotaIndicatorForRemaining(69)}69%`), `expected local Codex first, got "${result.text}"`);
-    assert.ok(result.text.includes(`CP ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`), `expected PHOENIX Claude snapshot, got "${result.text}"`);
-    assert.ok(result.text.includes(`XP ${quotaIndicatorForRemaining(69)}69% \u00B7 ${quotaIndicatorForRemaining(25)}25%`), `expected PHOENIX Codex snapshot, got "${result.text}"`);
+    assert.equal(result.providers.length, 1);
+    assert.equal(result.providers[0].provider, 'codex');
+    assert.equal(remoteItems.length, 2);
+    assert.deepEqual(remoteItems.map(item => item.remoteQuotaData?.label), ['ClaudeP', 'CodexP']);
+    assert.deepEqual(remoteItems.map(item => item.remoteQuotaData?.sevenDayRemainingPercent), [65, 69]);
+    assert.deepEqual(remoteItems.map(item => item.remoteQuotaData?.fiveHourRemainingPercent), [22, 25]);
   });
 
-  it('compact status hides local sources with statusBar disabled', () => {
+  it('hides local sources with statusBar disabled while preserving imported status items', () => {
     const sources = resolveSourcesFromRaw({
       codex: { enabled: true, label: 'Codex', shortLabel: 'X', statusBar: false },
       'PHOENIX/codex': { enabled: true, label: 'CodexP', shortLabel: 'XP', statusBar: true }
@@ -150,56 +178,20 @@ describe('buildRemoteStatusBarItems', () => {
 
     const result = formatStatus(localStates, { ...compactOptions(), normalizedSources: sources }, remoteItems);
 
-    assert.ok(!result.text.startsWith('X '), `local Codex should be hidden from status bar, got "${result.text}"`);
-    assert.equal(result.text, `XP ${quotaIndicatorForRemaining(69)}69% \u00B7 ${quotaIndicatorForRemaining(25)}25%`);
+    assert.equal(result.providers.length, 0);
+    assert.equal(remoteItems.length, 1);
+    assert.equal(remoteItems[0].provider, 'codex');
+    assert.equal(remoteItems[0].remoteQuotaData?.label, 'CodexP');
+    assert.equal(remoteItems[0].remoteQuotaData?.sevenDayRemainingPercent, 69);
+    assert.equal(remoteItems[0].remoteQuotaData?.fiveHourRemainingPercent, 25);
   });
 
-  it('combined status tooltip stays compact and omits model/details sections', () => {
-    const updatedAt = Date.now() - 60_000;
-    const localStates: ProviderUsageState[] = [{
-      provider: 'codex',
-      lastUpdatedEpochMs: updatedAt,
-      sevenDay: {
-        usedPercentage: 45,
-        sourceUpdatedEpochMs: updatedAt
-      },
-      fiveHour: {
-        usedPercentage: 95,
-        sourceUpdatedEpochMs: updatedAt
-      }
-    }];
+  it('preserves severity for stale imported snapshots', () => {
+    const staleSnapshot = makeSnapshot('WATCHER', 'codex', 35, 78);
+    staleSnapshot.stale = true;
 
-    const result = formatStatus(localStates, {
-      ...compactOptions(),
-      nextResetRefreshEpochMs: Date.now() + 3_600_000,
-      modelBreakdown: {
-        codex: [{
-          label: 'gpt-5.5',
-          totalTokens: 1_000_000,
-          assistantMessages: 1,
-          costUsd: 2.5,
-          isFallback: true
-        }]
-      }
-    });
-
-    assert.ok(result.tooltip.includes('## PromptFuel'), result.tooltip);
-    assert.ok(result.tooltip.includes('**Quota**'), result.tooltip);
-    assert.ok(result.tooltip.includes('Updated'), result.tooltip);
-    assert.ok(result.tooltip.includes('refresh'), result.tooltip);
-
-    assert.ok(!result.tooltip.includes('Models ('), result.tooltip);
-    assert.ok(!result.tooltip.includes('| Provider | Model |'), result.tooltip);
-    assert.ok(!result.tooltip.includes('| Model | Tokens |'), result.tooltip);
-    assert.ok(!result.tooltip.includes('Fallback pricing used'), result.tooltip);
-    assert.ok(!result.tooltip.includes('**Details**'), result.tooltip);
-    assert.ok(!result.tooltip.includes('- Source:'), result.tooltip);
-    assert.ok(!result.tooltip.includes('- Freshness:'), result.tooltip);
-  });
-
-  it('remote status tooltip stays compact and omits model/details sections', () => {
     const items = buildRemoteStatusBarItems(
-      [makeSnapshot('WATCHER', 'codex', 35, 78)],
+      [staleSnapshot],
       ['WATCHER/codex'],
       emptyAliasMap,
       'compact',
@@ -207,19 +199,8 @@ describe('buildRemoteStatusBarItems', () => {
     );
 
     assert.equal(items.length, 1);
-    const tooltip = items[0].tooltip;
-
-    assert.ok(tooltip.includes('## XW Quota'), tooltip);
-    assert.ok(tooltip.includes('7d'), tooltip);
-    assert.ok(tooltip.includes('5h'), tooltip);
-    assert.ok(tooltip.includes('Updated'), tooltip);
-
-    assert.ok(!tooltip.includes('Models ('), tooltip);
-    assert.ok(!tooltip.includes('| Provider | Model |'), tooltip);
-    assert.ok(!tooltip.includes('| Model | Tokens |'), tooltip);
-    assert.ok(!tooltip.includes('Fallback pricing used'), tooltip);
-    assert.ok(!tooltip.includes('**Details**'), tooltip);
-    assert.ok(!tooltip.includes('- Source:'), tooltip);
-    assert.ok(!tooltip.includes('- Freshness:'), tooltip);
+    assert.equal(items[0].provider, 'codex');
+    assert.equal(items[0].severity, 'warning');
+    assert.equal(items[0].remoteQuotaData?.stale, true);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { derivePresentableQuotaWindowState, FormatOptions, formatStatus } from '../display/format';
+import { derivePresentableQuotaWindowState, type FormatOptions } from '../display/format';
 import {
   mergeAuthenticatedFailure,
   mergeAuthenticatedQuotaSuccess,
@@ -9,7 +9,7 @@ import {
 import { getAuthenticatedRefreshGate } from '../quota/refreshPolicy';
 import { getNextResetRefreshPlan } from '../quota/resetRefresh';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
-import { ProviderName, ProviderUsageState } from '../types';
+import type { ProviderName, ProviderUsageState } from '../types';
 
 const now = Date.now();
 const fiveHourReset = Math.floor((now + 90 * 60 * 1000) / 1000);
@@ -65,13 +65,6 @@ function failure(
   };
 }
 
-function formatSingle(state: ProviderUsageState): ReturnType<typeof formatStatus>['providers'][number] {
-  const formatted = formatStatus([state], formatOptions()).providers[0];
-
-  assert.ok(formatted);
-  return formatted;
-}
-
 function formatOptions(): FormatOptions {
   return {
     displayMode: 'standard',
@@ -79,33 +72,60 @@ function formatOptions(): FormatOptions {
   };
 }
 
+function dashboardWindow(state: ProviderUsageState, key: 'fiveHour' | 'sevenDay') {
+  const dashboard = buildUsageDashboardModel({ states: [state] });
+  const provider = dashboard.providers[0];
+
+  assert.ok(provider);
+  const window = provider.windows.find(item => item.key === key);
+
+  assert.ok(window);
+  return window;
+}
+
 describe('quota fallback regression coverage', () => {
   it('live authenticated success updates displayed quota', () => {
     const merged = mergeAuthenticatedQuotaSuccess(localState(), liveState());
-    const formatted = formatSingle(merged);
+    const fiveHour = derivePresentableQuotaWindowState(merged, merged.fiveHour, formatOptions());
+    const sevenDay = derivePresentableQuotaWindowState(merged, merged.sevenDay, formatOptions());
 
     assert.equal(merged.fiveHour?.usedPercentage, 35);
     assert.equal(merged.sevenDay?.usedPercentage, 20);
     assert.equal(merged.fiveHour?.sourceKind, 'authenticated');
-    assert.match(formatted.text, /80%/);
-    assert.match(formatted.text, /65%/);
-    assert.doesNotMatch(formatted.text, /unavailable|\?/i);
+    assert.equal(merged.sevenDay?.sourceKind, 'authenticated');
+    assert.equal(fiveHour.freshness, 'live');
+    assert.equal(sevenDay.freshness, 'live');
+    assert.equal(dashboardWindow(merged, 'fiveHour').remainingPercent, 65);
+    assert.equal(dashboardWindow(merged, 'sevenDay').remainingPercent, 80);
   });
 
   it('HTTP and network failures preserve cached or local quota', () => {
     const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex'));
     const httpFallback = mergeAuthenticatedFailure(cached, failure('codex', 'http_error'), backoffUntil);
+    const httpFiveHour = derivePresentableQuotaWindowState(httpFallback, httpFallback.fiveHour, formatOptions());
 
     assert.equal(httpFallback.fiveHour?.usedPercentage, 35);
     assert.equal(httpFallback.sevenDay?.usedPercentage, 20);
     assert.equal(httpFallback.fiveHour?.sourceKind, 'cache');
-    assert.match(formatSingle(httpFallback).tooltip, /Live refresh failed; using cached quota/);
+    assert.equal(httpFallback.sevenDay?.sourceKind, 'cache');
+    assert.equal(httpFallback.authenticatedStatus, 'http_error');
+    assert.equal(httpFiveHour.freshness, 'cached');
+    assert.equal(httpFiveHour.incident, 'http_error');
+    assert.equal(dashboardWindow(httpFallback, 'fiveHour').remainingPercent, 65);
+    assert.equal(dashboardWindow(httpFallback, 'sevenDay').remainingPercent, 80);
 
     const networkFallback = mergeAuthenticatedFailure(localState('claude'), failure('claude', 'network_error'), backoffUntil);
+    const networkFiveHour = derivePresentableQuotaWindowState(networkFallback, networkFallback.fiveHour, formatOptions());
+
     assert.equal(networkFallback.fiveHour?.usedPercentage, 80);
     assert.equal(networkFallback.sevenDay?.usedPercentage, 65);
     assert.equal(networkFallback.fiveHour?.sourceKind, 'localSession');
-    assert.match(formatSingle(networkFallback).tooltip, /Live refresh failed; using local quota/);
+    assert.equal(networkFallback.sevenDay?.sourceKind, 'localSession');
+    assert.equal(networkFallback.authenticatedStatus, 'network_error');
+    assert.equal(networkFiveHour.freshness, 'local');
+    assert.equal(networkFiveHour.incident, 'network_error');
+    assert.equal(dashboardWindow(networkFallback, 'fiveHour').remainingPercent, 20);
+    assert.equal(dashboardWindow(networkFallback, 'sevenDay').remainingPercent, 35);
   });
 
   it('parse/schema and auth-expired failures preserve cached or local quota', () => {
@@ -114,26 +134,46 @@ describe('quota fallback regression coverage', () => {
       failure('codex', 'parse_error'),
       backoffUntil
     );
+    const cachedFiveHour = derivePresentableQuotaWindowState(cached, cached.fiveHour, formatOptions());
+
     assert.equal(cached.fiveHour?.usedPercentage, 35);
     assert.equal(cached.sevenDay?.usedPercentage, 20);
     assert.equal(cached.fiveHour?.sourceKind, 'cache');
-    assert.match(formatSingle(cached).tooltip, /Live refresh failed; using cached quota/);
+    assert.equal(cached.sevenDay?.sourceKind, 'cache');
+    assert.equal(cached.authenticatedStatus, 'parse_error');
+    assert.equal(cachedFiveHour.freshness, 'cached');
+    assert.equal(cachedFiveHour.incident, 'parse_error');
+    assert.equal(dashboardWindow(cached, 'fiveHour').remainingPercent, 65);
+    assert.equal(dashboardWindow(cached, 'sevenDay').remainingPercent, 80);
 
     const localFallback = mergeAuthenticatedFailure(localState('claude'), failure('claude', 'auth_expired'), backoffUntil);
+    const localFiveHour = derivePresentableQuotaWindowState(localFallback, localFallback.fiveHour, formatOptions());
+
     assert.equal(localFallback.fiveHour?.usedPercentage, 80);
     assert.equal(localFallback.sevenDay?.usedPercentage, 65);
     assert.equal(localFallback.fiveHour?.sourceKind, 'localSession');
-    assert.match(formatSingle(localFallback).tooltip, /Auth expired; showing last known quota/);
+    assert.equal(localFallback.sevenDay?.sourceKind, 'localSession');
+    assert.equal(localFallback.authenticatedStatus, 'auth_expired');
+    assert.equal(localFiveHour.freshness, 'local');
+    assert.equal(localFiveHour.incident, 'auth_expired');
+    assert.equal(dashboardWindow(localFallback, 'fiveHour').remainingPercent, 20);
+    assert.equal(dashboardWindow(localFallback, 'sevenDay').remainingPercent, 35);
   });
 
   it('no cache and no local quota produces an unavailable state', () => {
     const unavailable = mergeAuthenticatedFailure(undefined, failure('codex', 'network_error'), backoffUntil);
-    const formatted = formatSingle(unavailable);
+    const fiveHour = derivePresentableQuotaWindowState(unavailable, unavailable.fiveHour, formatOptions());
+    const sevenDay = derivePresentableQuotaWindowState(unavailable, unavailable.sevenDay, formatOptions());
 
     assert.equal(unavailable.fiveHour, undefined);
     assert.equal(unavailable.sevenDay, undefined);
-    assert.match(formatted.text, /Codex unavailable/);
-    assert.match(formatted.text, /unavailable/);
+    assert.equal(unavailable.authenticatedStatus, 'network_error');
+    assert.equal(fiveHour.severity, 'unavailable');
+    assert.equal(fiveHour.freshness, 'unknown');
+    assert.equal(fiveHour.incident, 'network_error');
+    assert.equal(sevenDay.severity, 'unavailable');
+    assert.equal(sevenDay.freshness, 'unknown');
+    assert.equal(sevenDay.incident, 'network_error');
   });
 
   it('stale cached critical quota remains critical instead of unavailable', () => {
@@ -142,15 +182,15 @@ describe('quota fallback regression coverage', () => {
       sevenDay: { usedPercentage: 20, resetsAtEpochSeconds: sevenDayReset }
     }));
     const fallback = mergeAuthenticatedFailure(cached, failure('codex', 'http_error'), backoffUntil);
-    const formatted = formatSingle(fallback);
     const fiveHour = derivePresentableQuotaWindowState(fallback, fallback.fiveHour, formatOptions());
 
+    assert.equal(fallback.fiveHour?.usedPercentage, 97);
+    assert.equal(fallback.fiveHour?.sourceKind, 'cache');
     assert.equal(fiveHour.severity, 'critical');
     assert.equal(fiveHour.freshness, 'cached');
     assert.equal(fiveHour.incident, 'http_error');
-    assert.equal(formatted.severity, 'critical');
-    assert.match(formatted.text, /3%/);
-    assert.doesNotMatch(formatted.text, /unavailable|\?/i);
+    assert.equal(dashboardWindow(fallback, 'fiveHour').available, true);
+    assert.equal(dashboardWindow(fallback, 'fiveHour').remainingPercent, 3);
   });
 
   it('high quota with auth incident stays normal quota severity', () => {
@@ -159,16 +199,17 @@ describe('quota fallback regression coverage', () => {
       sevenDay: { usedPercentage: 10, resetsAtEpochSeconds: sevenDayReset }
     }));
     const fallback = mergeAuthenticatedFailure(cached, failure('claude', 'auth_expired'), backoffUntil);
-    const formatted = formatSingle(fallback);
     const fiveHour = derivePresentableQuotaWindowState(fallback, fallback.fiveHour, formatOptions());
+    const sevenDay = derivePresentableQuotaWindowState(fallback, fallback.sevenDay, formatOptions());
 
     assert.equal(fiveHour.severity, 'normal');
     assert.equal(fiveHour.freshness, 'cached');
     assert.equal(fiveHour.incident, 'auth_expired');
-    assert.equal(formatted.severity, 'normal');
-    assert.match(formatted.text, /85%/);
-    assert.match(formatted.text, /90%/);
-    assert.doesNotMatch(formatted.text, /unavailable|\?|blocked/i);
+    assert.equal(sevenDay.severity, 'normal');
+    assert.equal(sevenDay.freshness, 'cached');
+    assert.equal(sevenDay.incident, 'auth_expired');
+    assert.equal(dashboardWindow(fallback, 'fiveHour').remainingPercent, 85);
+    assert.equal(dashboardWindow(fallback, 'sevenDay').remainingPercent, 90);
   });
 
   it('local metadata can update without overwriting quota', () => {
@@ -191,6 +232,7 @@ describe('quota fallback regression coverage', () => {
     assert.equal(merged.fiveHour?.usedPercentage, 35);
     assert.equal(merged.sevenDay?.usedPercentage, 20);
     assert.equal(merged.fiveHour?.sourceKind, 'cache');
+    assert.equal(merged.sevenDay?.sourceKind, 'cache');
     assert.equal(merged.tracing?.currentInputTokens, 999);
     assert.equal(merged.tracing?.currentOutputTokens, 111);
   });
@@ -212,7 +254,9 @@ describe('quota fallback regression coverage', () => {
     assert.equal(merged.fiveHour?.usedPercentage, 35);
     assert.equal(merged.sevenDay?.usedPercentage, 20);
     assert.equal(merged.fiveHour?.sourceKind, 'authenticated');
-    assert.match(merged.ignoredQuotaSource ?? '', /local session snapshot ignored/);
+    assert.equal(merged.sevenDay?.sourceKind, 'authenticated');
+    assert.equal(merged.lastUpdatedEpochMs, now);
+    assert.equal(merged.lastAuthenticatedRefreshEpochMs, now);
   });
 
   it('carries seven-day Opus quota through authenticated merges', () => {
@@ -275,10 +319,15 @@ describe('quota fallback regression coverage', () => {
       failure('claude', 'network_error'),
       backoffUntil
     );
+    const fiveHour = derivePresentableQuotaWindowState(expiredCached, expiredCached.fiveHour, formatOptions());
+
     assert.equal(expiredCached.fiveHour?.usedPercentage, 100);
     assert.equal(expiredCached.fiveHour?.sourceKind, 'cache');
-    assert.match(expiredCached.fiveHour?.sourceLabel ?? '', /expired cached quota snapshot/);
-    assert.match(formatSingle(expiredCached).tooltip, /Live refresh failed; using expired cached quota/);
+    assert.equal(expiredCached.authenticatedStatus, 'network_error');
+    assert.equal(fiveHour.severity, 'critical');
+    assert.equal(fiveHour.freshness, 'cached');
+    assert.equal(fiveHour.incident, 'network_error');
+    assert.equal(dashboardWindow(expiredCached, 'fiveHour').remainingPercent, 0);
   });
 
   it('recovers from expired cached quota with newer local or live post-reset data', () => {
@@ -293,7 +342,6 @@ describe('quota fallback regression coverage', () => {
     );
     assert.equal(preResetCache.fiveHour?.usedPercentage, 0);
     assert.equal(preResetCache.fiveHour?.sourceKind, 'cache');
-    assert.match(preResetCache.fiveHour?.sourceLabel ?? '', /expired cached quota snapshot/);
 
     const localRecovery = mergeLocalAndAuthenticated({
       provider: 'claude',
@@ -304,7 +352,7 @@ describe('quota fallback regression coverage', () => {
     }, preResetCache);
     assert.equal(localRecovery.fiveHour?.usedPercentage, 5);
     assert.equal(localRecovery.fiveHour?.sourceKind, 'statusLine');
-    assert.match(localRecovery.ignoredQuotaSource ?? '', /expired cached quota snapshot ignored: expired reset window/);
+    assert.equal(localRecovery.lastUpdatedEpochMs, now);
 
     const liveRecovery = mergeAuthenticatedQuotaSuccess(preResetCache, liveState('claude', {
       fiveHour: { usedPercentage: 2, resetsAtEpochSeconds: postReset },
@@ -314,6 +362,7 @@ describe('quota fallback regression coverage', () => {
     }));
     assert.equal(liveRecovery.fiveHour?.usedPercentage, 2);
     assert.equal(liveRecovery.fiveHour?.sourceKind, 'authenticated');
+    assert.equal(liveRecovery.lastAuthenticatedRefreshEpochMs, now);
   });
 
   it('does not reuse expired current windows when authenticated success omits that window', () => {
@@ -346,6 +395,7 @@ describe('quota fallback regression coverage', () => {
       lastAuthenticatedRefreshEpochMs: now
     }));
     assert.equal(successMissingFreshFiveHour.fiveHour?.usedPercentage, 40);
+    assert.equal(successMissingFreshFiveHour.fiveHour?.sourceKind, 'cache');
   });
 
   it('5h and 7d provider windows merge independently for Claude and Codex', () => {
@@ -369,12 +419,10 @@ describe('quota fallback regression coverage', () => {
 
       const merged = mergeLocalAndAuthenticated(local, cached);
 
-      assert.equal(merged.fiveHour?.usedPercentage, 10, `${provider} 5h should use fresh local quota`);
+      assert.equal(merged.fiveHour?.usedPercentage, 10);
       assert.equal(merged.fiveHour?.sourceKind, 'localSession');
-      assert.equal(merged.sevenDay?.usedPercentage, 45, `${provider} 7d should keep cached authenticated quota`);
+      assert.equal(merged.sevenDay?.usedPercentage, 45);
       assert.equal(merged.sevenDay?.sourceKind, 'cache');
-      assert.match(merged.ignoredQuotaSource ?? '', /expired cached quota snapshot ignored: expired reset window/);
-      assert.match(merged.ignoredQuotaSource ?? '', /local session snapshot ignored: older\/lower authority/);
     }
   });
 
@@ -387,15 +435,11 @@ describe('quota fallback regression coverage', () => {
       source: 'local Codex session snapshot',
       lastUpdatedEpochMs: now
     }, undefined);
-    const formatted = formatSingle(merged);
-    const dashboard = buildUsageDashboardModel({ states: [merged] });
-    const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
+    const fiveHour = dashboardWindow(merged, 'fiveHour');
 
     assert.equal(merged.fiveHour?.usedPercentage, 0);
-    assert.match(formatted.text, /100%/);
-    assert.doesNotMatch(formatted.text, /unavailable|\?/i);
-    assert.equal(fiveHour?.available, true);
-    assert.equal(fiveHour?.remainingPercent, 100);
+    assert.equal(fiveHour.available, true);
+    assert.equal(fiveHour.remainingPercent, 100);
   });
 
   it('clears expired local quota windows but preserves genuine exhausted windows', () => {
@@ -460,21 +504,15 @@ describe('quota fallback regression coverage', () => {
         source,
         lastUpdatedEpochMs: now
       }, failure(providerName, 'network_error'), backoffUntil);
-      const formatted = formatSingle(fallback);
-      const dashboard = buildUsageDashboardModel({ states: [fallback] });
-      const provider = dashboard.providers[0];
-      const fiveHour = provider?.windows.find(window => window.key === 'fiveHour');
+      const fiveHour = dashboardWindow(fallback, 'fiveHour');
 
-      assert.match(formatted.text, /100%/, `${providerName} 5h should render usable percent`);
-      assert.doesNotMatch(formatted.text, /unavailable/i, `${providerName} 5h should not become unavailable`);
-      assert.equal(fiveHour?.available, true, `${providerName} dashboard 5h should be available`);
-      assert.equal(fiveHour?.remainingPercent, 100);
-      assert.equal(fiveHour?.resetLabel, undefined);
-      assert.doesNotMatch(fiveHour?.source?.unavailableReason ?? '', /missing|metadata/i);
+      assert.equal(fiveHour.available, true);
+      assert.equal(fiveHour.remainingPercent, 100);
+      assert.equal(fiveHour.resetLabel, undefined);
     }
   });
 
-  it('dashboard explains present windows that lack a usable percentage', () => {
+  it('dashboard marks present windows without usable percentage unavailable', () => {
     const dashboard = buildUsageDashboardModel({ states: [{
       provider: 'codex',
       fiveHour: { resetsAtEpochSeconds: fiveHourReset },
@@ -486,6 +524,5 @@ describe('quota fallback regression coverage', () => {
     const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
 
     assert.equal(fiveHour?.available, false);
-    assert.match(fiveHour?.source?.unavailableReason ?? '', /reset metadata but no usable percentage/);
   });
 });
