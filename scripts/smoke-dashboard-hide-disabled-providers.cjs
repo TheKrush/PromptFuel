@@ -215,6 +215,7 @@ function main() {
     assert.equal(overviewApiEquivalent.available, false, 'overview Today API-equivalent stays unavailable when one provider estimate is incomplete');
     assert.equal(overviewApiEquivalent.detailLines, undefined, 'overview Today API-equivalent does not emit partial provider dollar detailLines');
     assert.match(overviewApiEquivalent.detail, /Estimate requires model\/token data from all contributing Today sources/, 'overview Today API-equivalent preserves explanatory unavailable detail');
+    assert.match(overviewApiEquivalent.detailTooltip, /1D API-equivalent estimate unavailable: every contributing Today source must include model and token component data\. Not actual billing\./, 'overview Today API-equivalent carries unavailable tooltip detail');
     assert.equal(model.today.cards.find(card => card.key === 'todayTokens').value, '51.5K', 'Claude provider Today card remains scoped');
     assert.equal(model.today.cards.find(card => card.key === 'codexTodayTokens').value, '8.5K', 'Codex provider Today card remains scoped');
     console.log('PASS: Overview Today cards aggregate providers while provider cards stay scoped');

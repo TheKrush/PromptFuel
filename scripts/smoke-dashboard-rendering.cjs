@@ -452,6 +452,16 @@ function main() {
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /\$0\.05/, 'combined history API-equivalent uses per-model selected-range pricing');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude: \$0\.05 Codex: \$0\.01/, 'combined history API-equivalent shows line-based provider cost attribution');
   assert.match(combinedHistorySectionHtml, /Claude: \$0\.05<br>Codex: \$0\.01/, 'combined history API-equivalent renders provider cost attribution with br-separated detail lines');
+  assert.match(combinedHistorySectionHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1D API-equivalent:/, 'Overview 1D API-equivalent footer carries an estimate tooltip');
+  assert.match(combinedHistorySectionHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1M API-equivalent:/, 'Overview 1M API-equivalent footer carries an estimate tooltip');
+  assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /not actual billing/i, 'API-equivalent footer does not show redundant visible billing-note text');
+  const oneDayApiHtml = firstApiEstimateStrip(combinedHistorySectionHtml, '1D API-equivalent');
+  const oneMonthApiHtml = firstApiEstimateStrip(combinedHistorySectionHtml, '1M API-equivalent');
+  assert.match(oneDayApiHtml, /title="1D API-equivalent estimate; fallback pricing used; not actual billing\."/i, 'Overview 1D fallback API-equivalent tooltip uses standardized wording');
+  assert.match(oneMonthApiHtml, /title="1M API-equivalent estimate; fallback pricing used; not actual billing\."/i, 'Overview 1M fallback API-equivalent tooltip uses standardized wording');
+  assert.match(oneDayApiHtml, /Claude: \$[0-9.]+<br>Codex: \$[0-9.]+/, 'Overview 1D API-equivalent renders one br-separated provider breakdown');
+  assert.equal(countOccurrences(visibleTextFromHtml(oneDayApiHtml), /Claude: \$/g), 1, 'Overview 1D API-equivalent includes Claude breakdown exactly once');
+  assert.equal(countOccurrences(visibleTextFromHtml(oneDayApiHtml), /Codex: \$/g), 1, 'Overview 1D API-equivalent includes Codex breakdown exactly once');
   assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /correlated/i, 'combined history has no visible correlated chart label text');
   assert.doesNotMatch(combinedHistorySectionHtml, /\(stale\)/, 'combined history detail lines do not add stale markers');
 
@@ -464,6 +474,19 @@ function main() {
   });
   assert.match(escapedMetricHtml, /Claude: &lt;b&gt;1&lt;\/b&gt;<br>Codex: A &amp; B/, 'detailLines are escaped individually before br joining');
   assert.doesNotMatch(escapedMetricHtml, /Claude: <b>1<\/b>/, 'detailLines do not render raw HTML');
+
+  const escapedApiHtml = sandbox.__combinedDashboardTest.renderApiEstimateStrip({
+    key: 'escapedApiEquivalent',
+    label: '1D API-equivalent',
+    value: '$171',
+    detail: 'Claude $57.34 | Codex $114',
+    detailLines: ['Claude: <b>$57.34</b>', 'Codex: $114 & fees'],
+    detailTooltip: 'Estimated <combined> "cost"; not actual billing',
+    available: true
+  });
+  assert.match(escapedApiHtml, /title="Estimated &lt;combined&gt; &quot;cost&quot;; not actual billing"/, 'API-equivalent tooltip is escaped as an attribute');
+  assert.match(escapedApiHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API-equivalent detailLines are escaped and br-joined');
+  assert.doesNotMatch(visibleTextFromHtml(escapedApiHtml), /Claude \$57\.34 \| Codex \$114/, 'API-equivalent detailLines suppress fallback detail text');
 
   const staleProviderHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, [
     { provider: 'claude', label: 'Claude', stale: true, windows: [] },
@@ -491,6 +514,7 @@ function main() {
     assert.equal(sectionProviderCardCount(rangeHtml), 1, `combined ${range} range re-render keeps one aggregate card set`);
   });
 
+  sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
   ['overview', 'claude', 'codex'].forEach(tabKey => {
     sandbox.__combinedDashboardTest.setProviderTab(tabKey);
     const providers = sandbox.__combinedDashboardTest.scopeProvidersByTab(selectedProviders, tabKey);
@@ -499,6 +523,7 @@ function main() {
     const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, scopedToday, providers);
     const tabText = visibleTextFromHtml(tabHtml);
     assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
+    assert.match(tabHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1M API-equivalent:/i, `${tabKey} 1M API-equivalent footer carries an estimate tooltip`);
     assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
     if (tabKey === 'overview') {
       assert.match(tabText, /Claude . sonnet-4/, 'Overview live model distribution labels Claude models with provider attribution');
@@ -643,6 +668,17 @@ function sectionProviderCardCount(html) {
 
 function glanceRowCount(html) {
   return (String(html || '').match(/class="usage-glance-row/g) || []).length;
+}
+
+function countOccurrences(text, pattern) {
+  return (String(text || '').match(pattern) || []).length;
+}
+
+function firstApiEstimateStrip(html, label) {
+  const pattern = new RegExp(`<div class="usage-api-estimate-strip[^"]*"[^>]*>${label}:[\\s\\S]*?<\\/div>`);
+  const match = String(html || '').match(pattern);
+  assert.ok(match, `${label} API-equivalent strip exists`);
+  return match[0];
 }
 
 function visibleTextFromHtml(html) {

@@ -404,26 +404,13 @@
   function renderApiEstimateStrip(card) {
     if (!card) { return ''; }
     var unavailableClass = card.available ? '' : ' unavailable';
-    var titleAttr = card.detailTooltip ? ' title="' + esc(card.detailTooltip) + '"' : '';
+    var tooltip = card.detailTooltip || (card.source && (card.source.detail || card.source.unavailableReason)) || '';
+    var titleAttr = tooltip ? ' title="' + escAttr(tooltip) + '"' : '';
     var detail = card.detail || '';
     var detailLines = renderMetricDetailLines(card);
-    var hasBillingNote = detail.indexOf('not actual billing') >= 0;
+    var visibleDetail = detailLines || (detail && detail.indexOf('not actual billing') < 0 ? esc(detail) : '');
     var parts = [esc(card.label || 'API estimate') + ': <span class="usage-api-estimate-value">' + esc(card.value || 'Unavailable') + '</span>'];
-    if (detailLines) {
-      parts.push(detailLines);
-      if (card.available) {
-        if (detail) {
-          parts.push(esc(detail));
-        } else if (!hasBillingNote) {
-          parts.push('not actual billing');
-        }
-      }
-    } else if (card.available) {
-      if (detail && !hasBillingNote) { parts.push(esc(detail)); }
-      parts.push('not actual billing');
-    } else {
-      if (detail) { parts.push(esc(detail)); }
-    }
+    if (visibleDetail) { parts.push(visibleDetail); }
     return '<div class="usage-api-estimate-strip' + unavailableClass + '"' + titleAttr + '>' +
       parts.join(detailLines ? '<br>' : ' · ') +
     '</div>';
@@ -1772,6 +1759,14 @@
     };
   }
 
+  function formatApiEstimateTooltip(label, fallbackPricingUsed, unavailableReason) {
+    var prefix = label + ' estimate';
+    if (unavailableReason) {
+      return prefix + ' unavailable: ' + unavailableReason + '. Not actual billing.';
+    }
+    return prefix + '; ' + (fallbackPricingUsed ? 'fallback pricing used; ' : '') + 'not actual billing.';
+  }
+
   function buildCombinedApiEquivalentCard(rangeKey, source, points) {
     var cardSource = apiEquivalentEstimateSource('Combined API-equivalent estimate', 'Combined from selected-range provider API-equivalent estimates when available.');
     var label = rangeCardLabel(rangeKey, 'apiEquivalent');
@@ -1788,16 +1783,16 @@
     if (claudeEst.available && codexEst.available) {
       return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(claudeEst.costUsd + codexEst.costUsd), detail: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
         detailLines: ['Claude: ' + formatMetricUsd(claudeEst.costUsd), 'Codex: ' + formatMetricUsd(codexEst.costUsd)],
-        detailTooltip: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing', available: true, source: cardSource };
+        detailTooltip: formatApiEstimateTooltip(label, isFallback), available: true, source: cardSource };
     }
     if (claudeEst.available || codexEst.available) {
       return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable',
         detail: 'Estimate requires per-model token data from all providers',
-        detailTooltip: 'Combined API-equivalent is hidden unless every contributing provider can be estimated.',
+        detailTooltip: formatApiEstimateTooltip(label, false, 'every contributing provider must include per-model token data'),
         available: false, source: cardSource };
     }
     return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable', detail: 'Provider estimates unavailable',
-      detailTooltip: 'No token data to estimate API-equivalent cost.', available: false, source: cardSource };
+      detailTooltip: formatApiEstimateTooltip(label, false, 'no token data is available'), available: false, source: cardSource };
   }
 
   function selectCombinedModelDistributionRange(details, chart, rangeKey) {
@@ -1889,7 +1884,9 @@
         apiEst.available ? formatMetricUsd(apiEst.costUsd) : 'Unavailable',
         apiEst.available ? (apiEst.isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing')
           : (modelTokenTotal > 0 && modelTokenTotal < totals.totalTokens ? 'Unavailable for merged snapshot data' : 'No token data to estimate API-equivalent cost'),
-        apiEst.available, apiSource)
+        apiEst.available, apiSource, undefined,
+        formatApiEstimateTooltip('Claude ' + rangeCardLabel(selectedRange, 'apiEquivalent'), apiEst.isFallback,
+          apiEst.available ? undefined : 'selected-range model token totals must cover all tokens'))
     ];
   }
 
@@ -1932,7 +1929,9 @@
         codexApiEst.available ? formatMetricUsd(codexApiEst.costUsd) : 'Unavailable',
         codexApiEst.available ? (codexApiEst.isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing')
           : (modelTokenTotal > 0 && modelTokenTotal < totals.totalTokens ? 'Unavailable for merged snapshot data' : 'No token data to estimate API-equivalent cost'),
-        codexApiEst.available, codexApiSource)
+        codexApiEst.available, codexApiSource, undefined,
+        formatApiEstimateTooltip('Codex ' + codexRangeCardLabel(selectedRange, 'apiEquivalent'), codexApiEst.isFallback,
+          codexApiEst.available ? undefined : 'selected-range model token totals must cover all tokens'))
     ];
   }
 
@@ -1962,9 +1961,10 @@
     }, { totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, assistantMessages: 0 });
   }
 
-  function buildRangeHistoryMetricCard(key, label, value, detail, available, source, detailLines) {
+  function buildRangeHistoryMetricCard(key, label, value, detail, available, source, detailLines, detailTooltip) {
     var card = { key: key, label: label, value: value, detail: detail, available: available, source: source };
     if (detailLines && detailLines.length) { card.detailLines = detailLines; }
+    if (detailTooltip) { card.detailTooltip = detailTooltip; }
     return card;
   }
 
