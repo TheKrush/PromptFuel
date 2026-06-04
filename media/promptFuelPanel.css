@@ -1128,12 +1128,18 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 }
 .usage-model-row{
   display:grid;
-  grid-template-columns:minmax(72px,.75fr) minmax(120px,1.35fr) minmax(72px,.65fr) minmax(46px,.45fr) minmax(92px,.8fr) minmax(132px,1.05fr);
+  grid-template-columns:10ch minmax(150px,1fr) minmax(78px,max-content) minmax(52px,max-content) minmax(96px,max-content) minmax(132px,max-content);
   min-width:590px;
   gap:10px;
   align-items:center;
   font-size:11px;
   border-radius:4px
+}
+.usage-model-row > span:nth-child(3),
+.usage-model-row > span:nth-child(4),
+.usage-model-row > span:nth-child(5),
+.usage-model-row > span:nth-child(6){
+  text-align:right
 }
 .usage-model-row-head{
   color:var(--vscode-descriptionForeground);
@@ -1169,12 +1175,14 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 }
 .usage-model-value,
 .usage-model-cost{
-  font-family:var(--vscode-editor-font-family,monospace)
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-variant-numeric:tabular-nums
 }
 .usage-model-percent,
 .usage-model-rate{
   color:var(--vscode-descriptionForeground);
-  font-family:var(--vscode-editor-font-family,monospace)
+  font-family:var(--vscode-editor-font-family,monospace);
+  font-variant-numeric:tabular-nums
 }
 .usage-metric-grid{
   display:grid;
