@@ -374,10 +374,6 @@
     return inferred;
   }
 
-  function isCombinedHistoryAvailable(details) {
-    return Boolean(details && details.combinedHistoryChart && details.combinedHistoryChart.available);
-  }
-
   function renderCombinedHistoryLegend(chart) {
     if (hasHistoryModelStacks(chart)) {
       return '';
@@ -399,50 +395,6 @@
       '<span class="usage-history-active-days-count">' + esc(activeBins + ' / ' + totalBins + ' active ' + unitLabel) + '</span>' +
       '<span class="usage-history-active-days-pct">' + esc(percent + '% of ' + adj + ' bins') + '</span>' +
     '</div>';
-  }
-
-  function renderUsageModelDistributionSection(details) {
-    if (isCombinedHistoryAvailable(details)) {
-      var selectedCombinedChart = selectCombinedHistoryChartRange(details.combinedHistoryChart, currentCombinedHistoryRange);
-      var selectedCombinedDistribution = selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange);
-      var combinedDistributionHtml = selectedCombinedDistribution && selectedCombinedDistribution.available
-        ? renderClaudeModelDistribution(selectedCombinedDistribution, selectedCombinedDistribution && selectedCombinedDistribution.source)
-        : renderModelDistributionUnavailable(selectedCombinedDistribution, 'combined');
-      var combinedModelLabel = details.combinedModelDistributionSectionLabel || 'Claude + Codex';
-
-      return '<section class="usage-dashboard-section">' +
-        renderUsageSectionTitle('h3', 'usage-section-title', 'Model distribution', selectedCombinedDistribution && selectedCombinedDistribution.source) +
-        '<p class="usage-section-copy">Combined model breakdown for the selected history range.</p>' +
-        '<div class="usage-section-provider-grid combined">' +
-          renderSectionProviderCard(combinedModelLabel, selectedCombinedDistribution && selectedCombinedDistribution.source, combinedDistributionHtml, selectedCombinedDistribution && !selectedCombinedDistribution.available) +
-        '</div>' +
-      '</section>';
-    }
-
-    var providerCards = [];
-    if (details.modelDistribution) {
-      var selectedClaudeDistribution = selectClaudeModelDistributionRange(details.modelDistribution, details.historyChart, currentClaudeHistoryRange);
-      var claudeDistributionHtml = selectedClaudeDistribution && selectedClaudeDistribution.available
-        ? renderClaudeModelDistribution(selectedClaudeDistribution, selectedClaudeDistribution && selectedClaudeDistribution.source)
-        : renderModelDistributionUnavailable(selectedClaudeDistribution, 'Claude');
-      var claudeModelLabel = details.claudeModelDistributionSectionLabel || 'Claude';
-      providerCards.push(renderSectionProviderCard(claudeModelLabel, selectedClaudeDistribution && selectedClaudeDistribution.source, claudeDistributionHtml, selectedClaudeDistribution && !selectedClaudeDistribution.available));
-    }
-
-    if (details.codexModelDistribution) {
-      var selectedCodexDistribution = selectCodexModelDistributionRange(details.codexModelDistribution, details.codexHistoryChart, currentCodexHistoryRange);
-      var codexDistributionHtml = selectedCodexDistribution && selectedCodexDistribution.available
-        ? renderClaudeModelDistribution(selectedCodexDistribution, selectedCodexDistribution && selectedCodexDistribution.source)
-        : renderModelDistributionUnavailable(selectedCodexDistribution, 'Codex');
-      var codexModelLabel = details.codexModelDistributionSectionLabel || 'Codex';
-      providerCards.push(renderSectionProviderCard(codexModelLabel, selectedCodexDistribution && selectedCodexDistribution.source, codexDistributionHtml, selectedCodexDistribution && !selectedCodexDistribution.available));
-    }
-
-    return '<section class="usage-dashboard-section">' +
-      renderUsageSectionTitle('h3', 'usage-section-title', 'Model distribution', sectionSourceFromProviderCharts(details.modelDistribution, details.codexModelDistribution, details.source)) +
-      '<p class="usage-section-copy">Per-provider model breakdowns for the selected history range.</p>' +
-      renderSectionProviderGrid(providerCards, 'No model distribution data is available yet.') +
-    '</section>';
   }
 
   function isApiEstimateCard(card) {
