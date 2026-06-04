@@ -1187,7 +1187,9 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   margin-top:5px;
   color:var(--vscode-descriptionForeground);
   font-size:11px;
-  line-height:1.4
+  line-height:1.45;
+  white-space:normal;
+  overflow-wrap:anywhere
 }
 @container (max-width:135px){
   .usage-metric-card .source-chip.compact{

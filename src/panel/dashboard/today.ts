@@ -105,6 +105,17 @@ function overviewPartHasValues(part: OverviewTodayPart): boolean {
     part.hasApiEstimateInput;
 }
 
+function overviewDetailLines(
+  parts: OverviewTodayPart[],
+  formatValue: (part: OverviewTodayPart) => string,
+  isMeaningful: (part: OverviewTodayPart) => boolean
+): string[] | undefined {
+  const lines = parts
+    .filter(isMeaningful)
+    .map(part => `${part.label}: ${formatValue(part)}`);
+  return lines.length >= 2 ? lines : undefined;
+}
+
 function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetricCard[] | undefined {
   const activeParts = parts.filter(overviewPartHasValues);
   if (activeParts.length === 0) {
@@ -136,6 +147,11 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       detail: activeParts
         .map(part => `${part.label} ${part.assistantMessages !== undefined ? formatCount(part.assistantMessages) : 'activity unavailable'}`)
         .join(' | '),
+      detailLines: overviewDetailLines(
+        activeParts,
+        part => part.assistantMessages !== undefined ? formatCount(part.assistantMessages) : 'activity unavailable',
+        part => part.assistantMessages !== undefined && part.assistantMessages > 0
+      ),
       available: messagesAvailable,
       source: overviewSource
     },
@@ -144,6 +160,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       label: '1D Tokens',
       value: formatCount(totalTokens),
       detail: activeParts.map(part => `${part.label} ${formatCount(part.totalTokens)}`).join(' | '),
+      detailLines: overviewDetailLines(activeParts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
       available: true,
       source: overviewSource
     },
@@ -152,6 +169,11 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       label: '1D Input / Output',
       value: `${formatCount(totalInput)} / ${formatCount(totalOutput)}`,
       detail: activeParts.map(part => `${part.label} ${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`).join(' | '),
+      detailLines: overviewDetailLines(
+        activeParts,
+        part => `${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`,
+        part => part.inputTokens > 0 || part.outputTokens > 0
+      ),
       available: true,
       source: overviewSource
     },
@@ -160,6 +182,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       label: '1D Cache',
       value: formatCount(totalCache),
       detail: activeParts.map(part => `${part.label} ${formatCount(part.cacheTokens)}`).join(' | '),
+      detailLines: overviewDetailLines(activeParts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
       available: true,
       source: overviewSource
     },
@@ -173,6 +196,13 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
           .map(part => `${part.label} ${formatUsd(part.apiCostUsd ?? 0)}`)
           .join(' | ')
         : 'Estimate requires model/token data from all contributing Today sources',
+      detailLines: totalApi !== undefined
+        ? overviewDetailLines(
+          activeParts,
+          part => formatUsd(part.apiCostUsd ?? 0),
+          part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
+        )
+        : undefined,
       available: totalApi !== undefined,
       source: overviewSource
     }
@@ -357,6 +387,28 @@ export function buildTodayOverviewFromCharts(
   const claudeApi = toEstimateInput(claudeBin, true);
   const codexApi = toEstimateInput(codexBin, false);
   const totalApi = claudeApi && codexApi ? claudeApi.costUsd + codexApi.costUsd : undefined;
+  const parts: OverviewTodayPart[] = [
+    {
+      label: 'Claude',
+      assistantMessages: claudeBin.assistantMessages,
+      inputTokens: claudeBin.inputTokens,
+      outputTokens: claudeBin.outputTokens,
+      cacheTokens: claudeBin.cacheTokens,
+      totalTokens: claudeBin.totalTokens,
+      apiCostUsd: claudeApi?.costUsd,
+      hasApiEstimateInput: claudeBin.models.length > 0
+    },
+    {
+      label: 'Codex',
+      assistantMessages: codexBin.assistantMessages,
+      inputTokens: codexBin.inputTokens,
+      outputTokens: codexBin.outputTokens,
+      cacheTokens: codexBin.cacheTokens,
+      totalTokens: codexBin.totalTokens,
+      apiCostUsd: codexApi?.costUsd,
+      hasApiEstimateInput: codexBin.models.length > 0
+    }
+  ];
 
   const overviewSource = sourceInfo('mixedDayBucket', 'Today — combined', 'Claude and Codex today usage from 1D history bins.');
   return [
@@ -365,6 +417,7 @@ export function buildTodayOverviewFromCharts(
       label: '1D Messages/Turns',
       value: formatCount(claudeBin.assistantMessages + codexBin.assistantMessages),
       detail: `Claude ${formatCount(claudeBin.assistantMessages)} · Codex ${formatCount(codexBin.assistantMessages)}`,
+      detailLines: overviewDetailLines(parts, part => formatCount(part.assistantMessages ?? 0), part => (part.assistantMessages ?? 0) > 0),
       available: true,
       source: overviewSource
     },
@@ -373,6 +426,7 @@ export function buildTodayOverviewFromCharts(
       label: '1D Tokens',
       value: formatCount(totalTokens),
       detail: `Claude ${formatCount(claudeBin.totalTokens)} · Codex ${formatCount(codexBin.totalTokens)}`,
+      detailLines: overviewDetailLines(parts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
       available: true,
       source: overviewSource
     },
@@ -381,6 +435,11 @@ export function buildTodayOverviewFromCharts(
       label: '1D Input / Output',
       value: `${formatCount(totalInput)} / ${formatCount(totalOutput)}`,
       detail: `Claude ${formatCount(claudeBin.inputTokens)} / ${formatCount(claudeBin.outputTokens)} · Codex ${formatCount(codexBin.inputTokens)} / ${formatCount(codexBin.outputTokens)}`,
+      detailLines: overviewDetailLines(
+        parts,
+        part => `${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`,
+        part => part.inputTokens > 0 || part.outputTokens > 0
+      ),
       available: true,
       source: overviewSource
     },
@@ -389,6 +448,7 @@ export function buildTodayOverviewFromCharts(
       label: '1D Cache',
       value: formatCount(totalCache),
       detail: `Claude ${formatCount(claudeBin.cacheTokens)} · Codex ${formatCount(codexBin.cacheTokens)}`,
+      detailLines: overviewDetailLines(parts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
       available: true,
       source: overviewSource
     },
@@ -399,6 +459,13 @@ export function buildTodayOverviewFromCharts(
       detail: totalApi !== undefined
         ? `Claude ${formatUsd(claudeApi!.costUsd)} · Codex ${formatUsd(codexApi!.costUsd)}`
         : 'Estimate requires per-model token data from all sources',
+      detailLines: totalApi !== undefined
+        ? overviewDetailLines(
+          parts,
+          part => formatUsd(part.apiCostUsd ?? 0),
+          part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
+        )
+        : undefined,
       available: totalApi !== undefined,
       source: overviewSource
     }
