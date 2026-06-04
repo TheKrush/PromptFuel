@@ -354,7 +354,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -497,7 +497,19 @@ function main() {
     const scopedToday = sandbox.__combinedDashboardTest.scopeTodayByTab(model.today, tabKey);
     const scopedDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(model.details, tabKey);
     const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, scopedToday, providers);
+    const tabText = visibleTextFromHtml(tabHtml);
     assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
+    assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
+    if (tabKey === 'overview') {
+      assert.match(tabText, /Claude . sonnet-4/, 'Overview live model distribution labels Claude models with provider attribution');
+      assert.match(tabText, /Codex . gpt-5-codex/, 'Overview live model distribution labels Codex models with provider attribution');
+    } else if (tabKey === 'claude') {
+      assert.match(tabText, /sonnet-4/, 'Claude provider tab live path renders Claude model distribution');
+      assert.doesNotMatch(tabText, /gpt-5-codex/, 'Claude provider tab live distribution excludes Codex models');
+    } else {
+      assert.match(tabText, /gpt-5-codex/, 'Codex provider tab live path renders Codex model distribution');
+      assert.doesNotMatch(tabText, /sonnet-4/, 'Codex provider tab live distribution excludes Claude models');
+    }
 
     sandbox.__combinedDashboardTest.renderDashboardForSources({
       tabKey,
@@ -508,6 +520,7 @@ function main() {
     });
     assert.equal(glanceRowCount(fakeElements.usageDashboardCards.innerHTML), providers.length, `${tabKey} At-a-glance row count matches selected providers`);
     assert.equal(sectionProviderCardCount(fakeElements.usageDetails.innerHTML), 1, `${tabKey} renderer entry keeps one below-glance aggregate set`);
+    assert.match(fakeElements.usageDetails.innerHTML, /usage-model-distribution/, `${tabKey} renderer entry uses live model distribution path`);
   });
 
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
@@ -565,9 +578,10 @@ function main() {
   assert.equal(sectionProviderCardCount(zeroHistoryHtml), 1, 'available zero history Overview renders one aggregate set');
   assert.match(zeroHistoryHtml, /usage-history-chart/, 'available zero history renders the chart frame');
   assert.doesNotMatch(visibleTextFromHtml(zeroHistoryHtml), /History unavailable/, 'available zero history does not render the unavailable state');
+  assert.match(visibleTextFromHtml(zeroHistoryHtml), /No combined model distribution is available for this range/, 'missing live model distribution renders the explicit unavailable state');
 
-  const combinedDistributionHtml = sandbox.__combinedDashboardTest.renderUsageModelDistributionSection(model.details);
-  assert.match(combinedDistributionHtml, /usage-model-distribution/, 'combined view renders model distribution content');
+  const combinedDistributionHtml = combinedHistorySectionHtml;
+  assert.match(combinedDistributionHtml, /usage-model-distribution/, 'Overview live path renders model distribution content');
   assert.match(combinedDistributionHtml, /usage-section-provider-grid combined/, 'model distribution uses the combined provider grid');
   assert.match(visibleTextFromHtml(combinedDistributionHtml), /Claude · sonnet-4/, 'combined model distribution labels Claude models with provider attribution');
   assert.match(visibleTextFromHtml(combinedDistributionHtml), /Codex · gpt-5-codex/, 'combined model distribution labels Codex models with provider attribution');
@@ -597,6 +611,7 @@ function main() {
   assert.doesNotMatch(scriptSource, />Separate</, 'webview has no visible Separate button label');
   assert.doesNotMatch(scriptSource, /currentHistoryLayout/, 'webview has no mutable history layout state');
   assert.doesNotMatch(scriptSource, /renderHistoryLayoutToggle/, 'webview has no history layout toggle renderer');
+  assert.doesNotMatch(scriptSource, /renderUsageModelDistributionSection/, 'dead standalone model distribution renderer is removed');
 
   const viewSource = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelView.ts'), 'utf8');
   assert.match(viewSource, /data-provider-tab="overview"[\s\S]*>Overview<\/button>/, 'existing Overview tab still renders');
@@ -619,7 +634,7 @@ function main() {
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
 
-  console.log('PASS: usage dashboard combined layout smoke tests passed.');
+  console.log('PASS: usage dashboard rendering smoke tests passed.');
 }
 
 function sectionProviderCardCount(html) {
