@@ -310,7 +310,8 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
   const claudeEnabled = ep.has('claude') || hasRemoteClaude;
   const codexEnabled = ep.has('codex') || hasRemoteCodex;
 
-  const localProviders = states.map(s => buildProvider(s, normalizedSources));
+  const localStates = enabledProviders ? states.filter(s => ep.has(s.provider)) : states;
+  const localProviders = localStates.map(s => buildProvider(s, normalizedSources));
   const allProviders = selectedRemoteProviders && selectedRemoteProviders.length > 0
     ? [...localProviders, ...selectedRemoteProviders]
     : localProviders;
@@ -348,7 +349,7 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     generatedAtIso: new Date().toISOString(),
     providers: scopedProviders,
     ...(() => {
-      const details = buildDetails(states, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap, normalizedSources);
+      const details = buildDetails(localStates, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap, normalizedSources);
       const today = buildToday(claudeTodayUsage, codexTodayUsage, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
       return {
         today: today.overviewCards ? today : details.todayOverviewCards ? { ...today, overviewCards: details.todayOverviewCards } : today,

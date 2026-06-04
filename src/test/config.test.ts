@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeThresholds, DEFAULT_LOW_REMAINING_PERCENT, DEFAULT_WARN_REMAINING_PERCENT, DEFAULT_CRITICAL_REMAINING_PERCENT, DEFAULT_EMPTY_REMAINING_PERCENT } from '../configThresholds';
-import { resolveSourcesFromRaw, getEnabledProvidersFromSources, getSnapshotSourcesFromSources } from '../configSources';
+import {
+  resolveConfiguredSourcesFromInspection,
+  resolveSourcesFromRaw,
+  getEnabledProvidersFromSources,
+  getSnapshotSourcesFromSources
+} from '../configSources';
 import type { SourceConfigEntry } from '../types';
 
 describe('config thresholds', () => {
@@ -57,6 +62,27 @@ describe('source config normalization', () => {
     assert.equal(result.codex.shortLabel, 'X'); // default fallback
   });
 
+  it('does not synthesize omitted known providers for explicit sources', () => {
+    const result = resolveSourcesFromRaw({
+      codex: { enabled: true }
+    });
+    assert.deepEqual(Object.keys(result), ['codex']);
+    assert.equal(result.codex.label, 'Codex');
+    assert.equal(result.codex.shortLabel, 'X');
+    assert.equal(result.claude, undefined);
+  });
+
+  it('keeps explicit local and snapshot sources without adding omitted locals', () => {
+    const result = resolveSourcesFromRaw({
+      codex: { enabled: true },
+      'PHOENIX/claude': { enabled: true, label: 'ClaudeP', shortLabel: 'CP', statusBar: true }
+    });
+    assert.deepEqual(Object.keys(result), ['codex', 'PHOENIX/claude']);
+    assert.equal(result.codex.label, 'Codex');
+    assert.equal(result['PHOENIX/claude'].shortLabel, 'CP');
+    assert.equal(result.claude, undefined);
+  });
+
   it('adds snapshot sources alongside known providers', () => {
     const raw = {
       claude: { enabled: true, label: 'Claude', shortLabel: 'C', statusBar: true },
@@ -79,6 +105,33 @@ describe('source config normalization', () => {
     assert.equal(result.claude.enabled, true);
     assert.equal(result.claude.label, 'Claude'); // default
     assert.equal(result.claude.shortLabel, 'C'); // default
+  });
+});
+
+describe('source config inspection', () => {
+  it('ignores extension defaults when explicit sources are configured', () => {
+    const result = resolveConfiguredSourcesFromInspection({
+      defaultValue: {
+        claude: { enabled: true, label: 'Claude', shortLabel: 'C', statusBar: true },
+        codex: { enabled: true, label: 'Codex', shortLabel: 'X', statusBar: true }
+      },
+      workspaceValue: {
+        codex: { enabled: true }
+      }
+    });
+    assert.deepEqual(result, {
+      codex: { enabled: true }
+    });
+  });
+
+  it('returns undefined when no explicit sources are configured', () => {
+    const result = resolveConfiguredSourcesFromInspection({
+      defaultValue: {
+        claude: { enabled: true, label: 'Claude', shortLabel: 'C', statusBar: true },
+        codex: { enabled: true, label: 'Codex', shortLabel: 'X', statusBar: true }
+      }
+    });
+    assert.equal(result, undefined);
   });
 });
 
@@ -107,6 +160,24 @@ describe('getEnabledProvidersFromSources', () => {
       claude: { enabled: false, label: 'Claude', shortLabel: 'C', statusBar: true },
       codex: { enabled: false, label: 'Codex', shortLabel: 'X', statusBar: true }
     };
+    const result = getEnabledProvidersFromSources(sources);
+    assert.deepEqual(result, []);
+  });
+
+  it('returns only explicitly configured enabled local providers', () => {
+    const sources = resolveSourcesFromRaw({
+      codex: { enabled: true },
+      'PHOENIX/claude': { enabled: true, label: 'ClaudeP', shortLabel: 'CP', statusBar: true }
+    });
+    const result = getEnabledProvidersFromSources(sources);
+    assert.deepEqual(result, ['codex']);
+  });
+
+  it('does not return imported snapshot sources as local providers', () => {
+    const sources = resolveSourcesFromRaw({
+      'PHOENIX/claude': { enabled: true, label: 'ClaudeP', shortLabel: 'CP', statusBar: true },
+      'PHOENIX/codex': { enabled: true, label: 'CodexP', shortLabel: 'XP', statusBar: true }
+    });
     const result = getEnabledProvidersFromSources(sources);
     assert.deepEqual(result, []);
   });

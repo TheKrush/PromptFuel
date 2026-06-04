@@ -1,5 +1,33 @@
 import { KNOWN_PROVIDERS, LOCAL_PROVIDER_IDS, ProviderName, SourceConfigEntry } from './types';
 
+export interface SourceConfigInspection {
+  defaultValue?: Record<string, Partial<SourceConfigEntry>>;
+  globalValue?: Record<string, Partial<SourceConfigEntry>>;
+  workspaceValue?: Record<string, Partial<SourceConfigEntry>>;
+  workspaceFolderValue?: Record<string, Partial<SourceConfigEntry>>;
+}
+
+export function resolveConfiguredSourcesFromInspection(
+  inspection: SourceConfigInspection | undefined
+): Record<string, Partial<SourceConfigEntry>> | undefined {
+  if (!inspection) {
+    return undefined;
+  }
+
+  const configured: Record<string, Partial<SourceConfigEntry>> = {};
+  let hasConfiguredSources = false;
+
+  for (const value of [inspection.globalValue, inspection.workspaceValue, inspection.workspaceFolderValue]) {
+    if (!value || typeof value !== 'object' || Object.keys(value).length === 0) {
+      continue;
+    }
+    Object.assign(configured, value);
+    hasConfiguredSources = true;
+  }
+
+  return hasConfiguredSources ? configured : undefined;
+}
+
 export function resolveSourcesFromRaw(raw: Record<string, Partial<SourceConfigEntry>> | undefined): Record<string, SourceConfigEntry> {
   const result: Record<string, SourceConfigEntry> = {};
 

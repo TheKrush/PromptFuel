@@ -83,7 +83,7 @@ function main() {
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude'] });
 
-    assert.equal(model.providers.length, 2, 'providers array length unchanged by filter');
+    assert.deepEqual(model.providers.map(provider => provider.provider), ['claude'], 'providers array excludes disabled Codex');
 
     const todayCards = model.today.cards;
     assert.ok(todayCards.length > 0, 'today has cards when claude enabled and day-bucket data present');
@@ -112,7 +112,7 @@ function main() {
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['codex'] });
 
-    assert.equal(model.providers.length, 2, 'providers array length unchanged by filter');
+    assert.deepEqual(model.providers.map(provider => provider.provider), ['codex'], 'providers array excludes disabled Claude');
 
     // Codex today cards present
     assert.ok(model.today.cards.find(c => c.key === 'codexTodayTokens'), 'codex todayTokens card present when codex enabled');

@@ -139,6 +139,17 @@ describe('provider tabs model', () => {
     assert.ok(!keys.includes('claude'), 'Claude tab must not appear when only Codex is enabled');
   });
 
+  it('filters disabled local provider states from dashboard visibility', () => {
+    const model = buildUsageDashboardModel({
+      states: [claudeState({ error: 'unavailable' }), codexState()],
+      enabledProviders: ['codex']
+    });
+    const keys = model.tabs.map(t => t.key);
+    assert.deepEqual(model.providers.map(provider => provider.provider), ['codex']);
+    assert.deepEqual(model.details.providers.map(provider => provider.provider), ['codex']);
+    assert.ok(!keys.includes('claude'), 'Omitted local Claude must not appear as a dashboard tab');
+  });
+
   it('tab order: overview first, then providers', () => {
     const model = buildUsageDashboardModel({ states: [claudeState(), codexState()] });
     assert.equal(model.tabs[0].key, 'overview');

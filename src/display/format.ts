@@ -83,7 +83,7 @@ export function formatStatus(
   options: FormatOptions,
   remoteSources?: FormattedProviderStatus[]
 ): { text: string; tooltip: string; severity: StatusSeverity; providers: FormattedProviderStatus[] } {
-  const active = states.filter(Boolean);
+  const active = states.filter(state => Boolean(state) && isStatusBarSourceVisible(state, options));
   if (active.length === 0 && (!remoteSources || remoteSources.length === 0)) {
     return {
       text: '$(circle-slash) AI usage unavailable',
@@ -122,6 +122,15 @@ export function formatStatus(
     severity,
     providers
   };
+}
+
+function isStatusBarSourceVisible(state: ProviderUsageState, options: FormatOptions): boolean {
+  if (!options.normalizedSources) {
+    return true;
+  }
+
+  const source = options.normalizedSources[state.provider];
+  return Boolean(source?.enabled && source.statusBar);
 }
 
 function formatProviderStatus(state: ProviderUsageState, options: FormatOptions): FormattedProviderStatus {

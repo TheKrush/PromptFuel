@@ -9,7 +9,12 @@ import {
   normalizeThresholds
 } from './configThresholds';
 import { DisplayMode, ProviderName, SourceConfigEntry } from './types';
-import { resolveSourcesFromRaw, getEnabledProvidersFromSources, getSnapshotSourcesFromSources } from './configSources';
+import {
+  resolveConfiguredSourcesFromInspection,
+  resolveSourcesFromRaw,
+  getEnabledProvidersFromSources,
+  getSnapshotSourcesFromSources
+} from './configSources';
 
 export interface PromptFuelConfig {
   enabledProviders: ProviderName[];
@@ -62,7 +67,9 @@ export function getConfig(): PromptFuelConfig {
   const rawEmpty = DEFAULT_EMPTY_REMAINING_PERCENT;
   const { lowRemainingPercent, warnRemainingPercent, criticalRemainingPercent, emptyRemainingPercent } = normalizeThresholds(rawLow, rawWarn, rawCritical, rawEmpty);
 
-  const rawSources = cfg.get<Record<string, Partial<SourceConfigEntry>>>('sources');
+  const rawSources = resolveConfiguredSourcesFromInspection(
+    cfg.inspect<Record<string, Partial<SourceConfigEntry>>>('sources')
+  );
   const normalizedSources = resolveSourcesFromRaw(rawSources);
   const enabledProviders = getEnabledProvidersFromSources(normalizedSources);
   const snapshotSources = getSnapshotSourcesFromSources(normalizedSources);
