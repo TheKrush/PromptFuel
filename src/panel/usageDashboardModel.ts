@@ -230,6 +230,7 @@ export interface UsageDashboardMetricCard {
   label: string;
   value: string;
   detail?: string;
+  detailLines?: string[];
   detailTooltip?: string;
   available: boolean;
   source?: UsageDashboardSourceInfo;

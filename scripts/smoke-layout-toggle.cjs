@@ -252,6 +252,29 @@ function withoutModelStacks(history) {
   };
 }
 
+function withoutCache(history) {
+  return {
+    ...history,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    days: history.days.map(day => ({
+      ...day,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      modelUsage: day.modelUsage.map(model => ({
+        ...model,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0
+      }))
+    })),
+    modelUsage: history.modelUsage.map(model => ({
+      ...model,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0
+    }))
+  };
+}
+
 function makeCodexDay(dateKey, totalTokens, modelTotals) {
   const parts = tokenParts(totalTokens, 0.5);
   return {
@@ -322,11 +345,16 @@ function main() {
 
   const claudeOnlyModel = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), enabledProviders: ['claude'] });
   assert.equal(claudeOnlyModel.details.combinedHistoryChart, undefined, 'single-provider history does not build combined chart');
+  assert.equal(
+    claudeOnlyModel.details.todayOverviewCards.find(card => card.key === 'overviewTodayTokens').detailLines,
+    undefined,
+    'single-provider Today aggregate does not emit redundant provider detailLines'
+  );
 
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; } }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -406,10 +434,55 @@ function main() {
   assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Claude</, 'combined history does not require a separate Claude comparison card');
   assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Codex</, 'combined history does not require a separate Codex comparison card');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /4\.0K/, 'combined history cards show combined displayed token totals including cache');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude 3\.0K · Codex 1\.0K/, 'combined history cards show provider displayed-token attribution');
+  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude: 3\.0K Codex: 1\.0K/, 'combined history cards show line-based provider displayed-token attribution');
+  assert.match(combinedHistorySectionHtml, /Claude: 3\.0K<br>Codex: 1\.0K/, 'combined history provider attribution renders with br-separated detail lines');
+  const oneProviderCacheModel = buildUsageDashboardModel({
+    states: [],
+    claudeUsageHistory: makeClaudeHistory(),
+    codexCorrelatedHistory: withoutCache(makeCodexHistory()),
+    enabledProviders: ['claude', 'codex']
+  });
+  const oneProviderCacheHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(oneProviderCacheModel.details, oneProviderCacheModel.today, selectedProviders);
+  const oneProviderCacheChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(oneProviderCacheModel.details.combinedHistoryChart, '1M');
+  const oneProviderCacheCard = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, oneProviderCacheChart, '1M')
+    .find(card => card.key === 'combinedHistoryCache');
+  assert.match(visibleTextFromHtml(oneProviderCacheHtml), /1M cache300Claude 300 · Codex 0/, 'combined history cache keeps old provider attribution when only one provider has cache tokens');
+  assert.equal(oneProviderCacheCard.detail, 'Claude 300 · Codex 0', 'combined history cache fallback detail is the old provider attribution');
+  assert.equal(oneProviderCacheCard.detailLines, undefined, 'combined history cache does not force detailLines when only one provider contributes');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /\$0\.05/, 'combined history API-equivalent uses per-model selected-range pricing');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude \$0\.05 .* Codex \$0\.01/, 'combined history API-equivalent shows provider cost attribution');
+  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude: \$0\.05 Codex: \$0\.01/, 'combined history API-equivalent shows line-based provider cost attribution');
+  assert.match(combinedHistorySectionHtml, /Claude: \$0\.05<br>Codex: \$0\.01/, 'combined history API-equivalent renders provider cost attribution with br-separated detail lines');
   assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /correlated/i, 'combined history has no visible correlated chart label text');
+  assert.doesNotMatch(combinedHistorySectionHtml, /\(stale\)/, 'combined history detail lines do not add stale markers');
+
+  const escapedMetricHtml = sandbox.__combinedDashboardTest.renderUsageMetricCard({
+    key: 'escaped',
+    label: 'Escaped',
+    value: '2',
+    detailLines: ['Claude: <b>1</b>', 'Codex: A & B'],
+    available: true
+  });
+  assert.match(escapedMetricHtml, /Claude: &lt;b&gt;1&lt;\/b&gt;<br>Codex: A &amp; B/, 'detailLines are escaped individually before br joining');
+  assert.doesNotMatch(escapedMetricHtml, /Claude: <b>1<\/b>/, 'detailLines do not render raw HTML');
+
+  const staleProviderHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, [
+    { provider: 'claude', label: 'Claude', stale: true, windows: [] },
+    { provider: 'codex', label: 'Codex', windows: [] }
+  ]);
+  assert.match(staleProviderHtml, /Claude: 3\.0K<br>Codex: 1\.0K/, 'stale selected provider rows still leave aggregate breakdown values visible');
+  assert.doesNotMatch(staleProviderHtml, /\(stale\)/, 'stale context remains outside per-line breakdown text');
+
+  const partialApiModel = buildUsageDashboardModel({
+    states: [],
+    claudeUsageHistory: makeClaudeHistory(),
+    codexCorrelatedHistory: withoutModelStacks(makeCodexHistory()),
+    enabledProviders: ['claude', 'codex']
+  });
+  const partialApiHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(partialApiModel.details, partialApiModel.today, selectedProviders);
+  assert.match(visibleTextFromHtml(partialApiHtml), /1M API-equivalent: Unavailable/, 'partial provider API-equivalent does not expose a partial combined value');
+  assert.match(visibleTextFromHtml(partialApiHtml), /Estimate requires per-model token data from all providers/, 'partial provider API-equivalent keeps explanatory unavailable detail');
+  assert.doesNotMatch(visibleTextFromHtml(partialApiHtml), /Partial/, 'partial provider API-equivalent no longer renders partial estimate copy');
+  assert.doesNotMatch(partialApiHtml, /Claude: \$0\.[0-9]+<br>Codex:/, 'partial provider API-equivalent does not emit fake per-provider dollar detailLines');
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
     sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
     const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
@@ -561,6 +634,7 @@ function visibleTextFromHtml(html) {
   return String(html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<[^>]+>/g, '')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')

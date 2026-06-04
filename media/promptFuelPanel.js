@@ -143,7 +143,12 @@
       var localCard = localMap[card.key];
       var remoteCard = remoteMap[remotePrefix + suffix];
       if (localCard && localCard.available && remoteCard && remoteCard.available) {
-        return Object.assign({}, card, { detail: 'Local ' + localCard.value + ' · ' + remoteSourceLabel + ' ' + remoteCard.value });
+        return Object.assign({}, card, {
+          detailLines: [
+            'Local: ' + localCard.value,
+            remoteSourceLabel + ': ' + remoteCard.value
+          ]
+        });
       }
       return card;
     });
@@ -449,16 +454,26 @@
     var unavailableClass = card.available ? '' : ' unavailable';
     var titleAttr = card.detailTooltip ? ' title="' + esc(card.detailTooltip) + '"' : '';
     var detail = card.detail || '';
+    var detailLines = renderMetricDetailLines(card);
     var hasBillingNote = detail.indexOf('not actual billing') >= 0;
     var parts = [esc(card.label || 'API estimate') + ': <span class="usage-api-estimate-value">' + esc(card.value || 'Unavailable') + '</span>'];
-    if (card.available) {
+    if (detailLines) {
+      parts.push(detailLines);
+      if (card.available) {
+        if (detail) {
+          parts.push(esc(detail));
+        } else if (!hasBillingNote) {
+          parts.push('not actual billing');
+        }
+      }
+    } else if (card.available) {
       if (detail && !hasBillingNote) { parts.push(esc(detail)); }
       parts.push('not actual billing');
     } else {
       if (detail) { parts.push(esc(detail)); }
     }
     return '<div class="usage-api-estimate-strip' + unavailableClass + '"' + titleAttr + '>' +
-      parts.join(' · ') +
+      parts.join(detailLines ? '<br>' : ' · ') +
     '</div>';
   }
 
@@ -1582,19 +1597,23 @@
       buildRangeHistoryMetricCard('combinedHistoryActivity', rangeCardLabel(selectedRange, 'activity'),
         formatMetricNumber(totals.assistantMessages),
         formatProviderTotalDetail(providerTotals, 'assistantMessages'),
-        true, source),
+        true, source,
+        formatProviderTotalDetailLines(providerTotals, 'assistantMessages')),
       buildRangeHistoryMetricCard('combinedHistoryTokens', rangeCardLabel(selectedRange, 'tokens'),
         formatMetricNumber(totals.totalTokens),
         formatProviderTotalDetail(providerTotals, 'totalTokens'),
-        true, source),
+        true, source,
+        formatProviderTotalDetailLines(providerTotals, 'totalTokens')),
       buildRangeHistoryMetricCard('combinedHistoryInputOutput', rangeCardLabel(selectedRange, 'inputOutput'),
         formatMetricNumber(totals.inputTokens) + ' / ' + formatMetricNumber(totals.outputTokens),
-        'Claude ' + formatMetricNumber(providerTotals.claude.inputTokens) + ' / ' + formatMetricNumber(providerTotals.claude.outputTokens) + ' · Codex ' + formatMetricNumber(providerTotals.codex.inputTokens) + ' / ' + formatMetricNumber(providerTotals.codex.outputTokens),
-        true, source),
+        formatProviderInputOutputDetail(providerTotals),
+        true, source,
+        formatProviderInputOutputDetailLines(providerTotals)),
       buildRangeHistoryMetricCard('combinedHistoryCache', rangeCardLabel(selectedRange, 'cache'),
         formatMetricNumber(totals.cacheTokens),
         formatProviderTotalDetail(providerTotals, 'cacheTokens'),
-        true, source),
+        true, source,
+        formatProviderTotalDetailLines(providerTotals, 'cacheTokens')),
       apiCard
     ];
   }
@@ -1623,6 +1642,35 @@
 
   function formatProviderTotalDetail(providerTotals, field) {
     return 'Claude ' + formatMetricNumber(providerTotals.claude[field]) + ' · Codex ' + formatMetricNumber(providerTotals.codex[field]);
+  }
+
+  function formatProviderInputOutputDetail(providerTotals) {
+    return 'Claude ' + formatMetricNumber(providerTotals.claude.inputTokens) + ' / ' + formatMetricNumber(providerTotals.claude.outputTokens) +
+      ' · Codex ' + formatMetricNumber(providerTotals.codex.inputTokens) + ' / ' + formatMetricNumber(providerTotals.codex.outputTokens);
+  }
+
+  function formatProviderTotalDetailLines(providerTotals, field) {
+    return providerBreakdownLines(
+      Number(providerTotals.claude[field] || 0),
+      Number(providerTotals.codex[field] || 0),
+      function(total) { return formatMetricNumber(total); }
+    );
+  }
+
+  function formatProviderInputOutputDetailLines(providerTotals) {
+    var claudeTotal = Number(providerTotals.claude.inputTokens || 0) + Number(providerTotals.claude.outputTokens || 0);
+    var codexTotal = Number(providerTotals.codex.inputTokens || 0) + Number(providerTotals.codex.outputTokens || 0);
+    return providerBreakdownLines(claudeTotal, codexTotal, function(_total, provider) {
+      var totals = providerTotals[provider];
+      return formatMetricNumber(totals.inputTokens) + ' / ' + formatMetricNumber(totals.outputTokens);
+    });
+  }
+
+  function providerBreakdownLines(claudeTotal, codexTotal, formatValue) {
+    var lines = [];
+    if (claudeTotal > 0) { lines.push('Claude: ' + formatValue(claudeTotal, 'claude')); }
+    if (codexTotal > 0) { lines.push('Codex: ' + formatValue(codexTotal, 'codex')); }
+    return lines.length >= 2 ? lines : undefined;
   }
 
   function countProviderActiveBins(points, provider) {
@@ -1783,19 +1831,17 @@
     var providerModelUsage = aggregateProviderModelUsageForEstimate(points);
     var claudeEst = estimateApiEquivalentFromModelUsage(providerModelUsage.claude, true);
     var codexEst = estimateApiEquivalentFromModelUsage(providerModelUsage.codex, false);
-    var claudeDetail = claudeEst.available ? formatMetricUsd(claudeEst.costUsd) : 'n/a';
-    var codexDetail = codexEst.available ? formatMetricUsd(codexEst.costUsd) : 'n/a';
-    var detail = 'Claude ' + claudeDetail + ' · Codex ' + codexDetail;
     var isFallback = claudeEst.isFallback || codexEst.isFallback;
 
     if (claudeEst.available && codexEst.available) {
-      return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(claudeEst.costUsd + codexEst.costUsd), detail: detail,
+      return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(claudeEst.costUsd + codexEst.costUsd), detail: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
+        detailLines: ['Claude: ' + formatMetricUsd(claudeEst.costUsd), 'Codex: ' + formatMetricUsd(codexEst.costUsd)],
         detailTooltip: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing', available: true, source: cardSource };
     }
     if (claudeEst.available || codexEst.available) {
-      return { key: 'combinedHistoryApiEquivalent', label: label,
-        value: claudeEst.available ? formatMetricUsd(claudeEst.costUsd) : formatMetricUsd(codexEst.costUsd),
-        detail: 'Partial · ' + detail, detailTooltip: isFallback ? 'Partial estimate · fallback pricing used' : 'Partial estimate; not actual billing.',
+      return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable',
+        detail: 'Estimate requires per-model token data from all providers',
+        detailTooltip: 'Combined API-equivalent is hidden unless every contributing provider can be estimated.',
         available: false, source: cardSource };
     }
     return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable', detail: 'Provider estimates unavailable',
@@ -1964,8 +2010,10 @@
     }, { totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, assistantMessages: 0 });
   }
 
-  function buildRangeHistoryMetricCard(key, label, value, detail, available, source) {
-    return { key: key, label: label, value: value, detail: detail, available: available, source: source };
+  function buildRangeHistoryMetricCard(key, label, value, detail, available, source, detailLines) {
+    var card = { key: key, label: label, value: value, detail: detail, available: available, source: source };
+    if (detailLines && detailLines.length) { card.detailLines = detailLines; }
+    return card;
   }
 
   function rangeCardLabel(rangeKey, kind) {
@@ -1988,8 +2036,18 @@
     return '<section class="usage-metric-card' + unavailableClass + '">' +
       '<div class="usage-metric-label"><span class="usage-metric-label-text">' + esc(card.label || 'Metric') + '</span>' + chip + '</div>' +
       '<div class="usage-metric-value">' + esc(card.value || 'Unavailable') + '</div>' +
-      '<div class="usage-metric-detail"' + detailTitle + '>' + esc(card.detail || '') + '</div>' +
+      '<div class="usage-metric-detail"' + detailTitle + '>' + renderMetricDetail(card) + '</div>' +
     '</section>';
+  }
+
+  function renderMetricDetail(card) {
+    var detailLines = renderMetricDetailLines(card);
+    return detailLines || esc(card && card.detail || '');
+  }
+
+  function renderMetricDetailLines(card) {
+    if (!card || !Array.isArray(card.detailLines) || !card.detailLines.length) { return ''; }
+    return card.detailLines.map(function(line) { return esc(line); }).join('<br>');
   }
 
   function renderUsageDetailsProvider(provider) {

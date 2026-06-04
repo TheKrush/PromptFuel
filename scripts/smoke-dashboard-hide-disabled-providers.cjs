@@ -191,6 +191,30 @@ function main() {
     );
     assert.equal(overviewCards.find(card => card.key === 'overviewTodayMessages').value, '44', 'overview Today messages include Claude and Codex');
     assert.equal(overviewCards.find(card => card.key === 'overviewTodayTokens').value, '60.0K', 'overview Today tokens include Claude and Codex displayed tokens');
+    assert.deepEqual(
+      overviewCards.find(card => card.key === 'overviewTodayMessages').detailLines,
+      ['Claude: 42', 'Codex: 2'],
+      'overview Today messages carry provider detailLines'
+    );
+    assert.deepEqual(
+      overviewCards.find(card => card.key === 'overviewTodayTokens').detailLines,
+      ['Claude: 51.5K', 'Codex: 8.5K'],
+      'overview Today tokens carry provider detailLines'
+    );
+    assert.deepEqual(
+      overviewCards.find(card => card.key === 'overviewTodayInputOutput').detailLines,
+      ['Claude: 30.0K / 20.0K', 'Codex: 3.0K / 5.0K'],
+      'overview Today input/output carries provider detailLines'
+    );
+    assert.deepEqual(
+      overviewCards.find(card => card.key === 'overviewTodayCache').detailLines,
+      ['Claude: 1.5K', 'Codex: 500'],
+      'overview Today cache carries provider detailLines'
+    );
+    const overviewApiEquivalent = overviewCards.find(card => card.key === 'overviewTodayApiEquivalent');
+    assert.equal(overviewApiEquivalent.available, false, 'overview Today API-equivalent stays unavailable when one provider estimate is incomplete');
+    assert.equal(overviewApiEquivalent.detailLines, undefined, 'overview Today API-equivalent does not emit partial provider dollar detailLines');
+    assert.match(overviewApiEquivalent.detail, /Estimate requires model\/token data from all contributing Today sources/, 'overview Today API-equivalent preserves explanatory unavailable detail');
     assert.equal(model.today.cards.find(card => card.key === 'todayTokens').value, '51.5K', 'Claude provider Today card remains scoped');
     assert.equal(model.today.cards.find(card => card.key === 'codexTodayTokens').value, '8.5K', 'Codex provider Today card remains scoped');
     console.log('PASS: Overview Today cards aggregate providers while provider cards stay scoped');
