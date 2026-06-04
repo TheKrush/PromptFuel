@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0
+
+PromptFuel simplifies its dashboard rendering model by removing the Merged/Separate layout toggle, unifying the aggregate card path, and adding consistent contributor breakdowns across all tabs.
+
+**Included in this release:**
+
+- Removed the Merged / Separate dashboard layout toggle.
+- Kept the existing Overview, Claude, and Codex tabs while simplifying the dashboard rendering model.
+- Combined Overview Today cards into one aggregate provider-level card set.
+- Unified the dashboard aggregate rendering path below At-a-glance.
+- Added consistent contributor breakdowns:
+  - Overview breaks down by provider: Claude / Codex.
+  - Claude and Codex tabs break down by source: Local / remote alias.
+- Aligned API-equivalent footer breakdowns with the metric cards.
+- Preserved honest API-equivalent unavailable behavior: no fake partial dollar breakdowns.
+- Improved At-a-glance quota rows with stable aligned columns.
+- Aligned dashboard quota bar colors with the same threshold scale used by status bar indicators.
+- Removed dead dashboard model-distribution render/test path.
+- Retargeted dashboard smoke coverage to the live render path.
+
 ## 0.8.0
 
 PromptFuel hardens its snapshot schema, surfaces remote Today activity counts, sharpens the quota display scale, and refactors the extension internals into focused modules.
