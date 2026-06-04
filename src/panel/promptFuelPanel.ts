@@ -4,11 +4,6 @@ import { buildPromptFuelPanelHtml } from './promptFuelPanelView';
 import { UsageDashboardModel } from './usageDashboardModel';
 
 let panel: vscode.WebviewPanel | undefined;
-let usageWorkspaceState: vscode.Memento | undefined;
-
-type UsageHistoryLayout = 'split' | 'combined';
-
-const USAGE_HISTORY_LAYOUT_STATE_KEY = 'promptFuel.usage.historyLayout.v2';
 
 interface OpenPromptFuelPanelOptions {
   focusTab?: 'usage';
@@ -21,14 +16,12 @@ interface PromptFuelPanelActions {
 
 interface PromptFuelPanelMessage {
   command?: string;
-  layout?: string;
 }
 
 export function registerPromptFuelPanelCommands(
   context: vscode.ExtensionContext,
   actions: PromptFuelPanelActions
 ): void {
-  usageWorkspaceState = context.workspaceState;
   logPromptFuel('Registering dashboard command.');
   context.subscriptions.push(
     vscode.commands.registerCommand('promptFuel.openDashboard', (options?: OpenPromptFuelPanelOptions) => {
@@ -73,8 +66,6 @@ function openPromptFuelPanel(
     (message: PromptFuelPanelMessage) => {
       if (message.command === 'refreshUsage') {
         void refreshPanelUsage(actions, panel?.webview);
-      } else if (message.command === 'setUsageHistoryLayout') {
-        void context.workspaceState.update(USAGE_HISTORY_LAYOUT_STATE_KEY, normalizeUsageHistoryLayout(message.layout));
       }
     }
   );
@@ -161,8 +152,7 @@ function postUsageDashboardModel(
     logPromptFuel('Posting dashboard model.');
     void webview.postMessage({
       command: 'usageDashboardModel',
-      model: actions.getUsageDashboardModel(),
-      historyLayout: getUsageHistoryLayout()
+      model: actions.getUsageDashboardModel()
     });
   } catch (error) {
     const message = formatPromptFuelError(error);
@@ -172,14 +162,6 @@ function postUsageDashboardModel(
       error: message
     });
   }
-}
-
-function getUsageHistoryLayout(): UsageHistoryLayout {
-  return normalizeUsageHistoryLayout(usageWorkspaceState?.get<string>(USAGE_HISTORY_LAYOUT_STATE_KEY));
-}
-
-function normalizeUsageHistoryLayout(layout: string | undefined): UsageHistoryLayout {
-  return layout === 'split' ? 'split' : 'combined';
 }
 
 export function postUsageDashboardRefreshIfOpen(model: UsageDashboardModel): void {
@@ -202,8 +184,7 @@ export function postUsageDashboardRefreshIfOpen(model: UsageDashboardModel): voi
   try {
     void webview.postMessage({
       command: 'usageDashboardModel',
-      model,
-      historyLayout: getUsageHistoryLayout()
+      model
     });
   } catch {
     // Panel disposed.

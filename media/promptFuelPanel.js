@@ -5,7 +5,6 @@
   var currentClaudeHistoryRange = '1M';
   var currentCodexHistoryRange = '1M';
   var currentCombinedHistoryRange = '1M';
-  var currentHistoryLayout = 'combined';
   var lastUsageDetails = null;
   var lastUsageDashboardModel = null;
   var currentUsageProviderTab = 'overview';
@@ -215,13 +214,7 @@
   }
 
   function renderUsageHistorySection(details, claudeCards, today) {
-    var combinedAvailable = isCombinedHistoryAvailable(details);
-    var sourcePanelsAvailable = !!(details.claudeSourceHistoryPanels && details.claudeSourceHistoryPanels.length) ||
-      !!(details.codexSourceHistoryPanels && details.codexSourceHistoryPanels.length);
-    var toggleAvailable = combinedAvailable || sourcePanelsAvailable;
-    var toggleActiveLayout = toggleAvailable ? currentHistoryLayout : 'split';
-    var effectiveLayout = combinedAvailable && currentHistoryLayout === 'combined' ? 'combined' : 'split';
-    if (effectiveLayout === 'combined') {
+    if (isCombinedHistoryAvailable(details)) {
       var selectedCombinedChart = selectCombinedHistoryChartRange(details.combinedHistoryChart, currentCombinedHistoryRange);
       var combinedHistoryUnavailable = selectedCombinedChart && !selectedCombinedChart.available;
       var combinedCards = selectCombinedHistoryMetricCardsRange(details.cards, selectedCombinedChart, currentCombinedHistoryRange);
@@ -246,7 +239,6 @@
             renderUsageSectionTitle('h3', 'usage-section-title', 'History', sectionSourceFromProviderCharts(details.historyChart, details.codexHistoryChart, details.source)) +
             '<p class="usage-section-copy">Range-controlled usage trends by provider.</p>' +
           '</div>' +
-          renderHistoryLayoutToggle(toggleAvailable, toggleActiveLayout) +
         '</div>' +
         '<div class="usage-section-provider-grid combined">' +
           '<section class="usage-section-provider-card combined-history' + (combinedHistoryUnavailable ? ' unavailable' : '') + '">' +
@@ -260,27 +252,7 @@
     }
 
     var providerCards = [];
-    if (currentHistoryLayout !== 'combined' && details.claudeSourceHistoryPanels && details.claudeSourceHistoryPanels.length) {
-      details.claudeSourceHistoryPanels.forEach(function(panel, panelIndex) {
-        var selectedPanelChart = selectClaudeHistoryChartRange(panel.chart, currentClaudeHistoryRange);
-        var panelUnavailable = selectedPanelChart && !selectedPanelChart.available;
-        var panelCards = selectClaudeHistoryMetricCardsRange([], panel.chart, currentClaudeHistoryRange);
-        var distPanel = details.claudeSourceModelDistributionPanels && details.claudeSourceModelDistributionPanels[panelIndex];
-        var selectedPanelDist = distPanel ? selectClaudeModelDistributionRange(distPanel.distribution, distPanel.historyChart || panel.chart, currentClaudeHistoryRange) : undefined;
-        var panelDistHtml = selectedPanelDist && selectedPanelDist.available
-          ? renderClaudeModelDistribution(selectedPanelDist, selectedPanelDist.source)
-          : renderModelDistributionUnavailable(selectedPanelDist, 'Claude');
-        var claudePanelTodayHtml = renderTodayInHistory(getTodayCardsForContext(today, panelIndex === 0 ? 'claude-local' : 'claude-remote'), today && today.source);
-        var panelHtml = claudePanelTodayHtml +
-          (panelUnavailable
-            ? renderProviderUnavailable('History unavailable', selectedPanelChart.unavailableReason || 'No Claude history data is available yet.')
-            : renderHistoryChart(selectedPanelChart, 'claude', currentClaudeHistoryRange, selectedPanelChart && selectedPanelChart.source) +
-              renderActiveDaysLabel(selectedPanelChart) +
-              panelDistHtml +
-              renderMetricGrid(panelCards, 'No Claude history cards available.', selectedPanelChart && selectedPanelChart.source));
-        providerCards.push(renderSectionProviderCard(panel.label || 'Claude', selectedPanelChart && selectedPanelChart.source, panelHtml, panelUnavailable));
-      });
-    } else if (details.historyChart) {
+    if (details.historyChart) {
       var selectedClaudeChart = selectClaudeHistoryChartRange(details.historyChart, currentClaudeHistoryRange);
       var claudeHistoryUnavailable = selectedClaudeChart && !selectedClaudeChart.available;
       var selectedClaudeDistribution = selectClaudeModelDistributionRange(details.modelDistribution, details.historyChart, currentClaudeHistoryRange);
@@ -299,27 +271,7 @@
       providerCards.push(renderSectionProviderCard(claudeHistLabel, selectedClaudeChart && selectedClaudeChart.source, claudeChartHtml, claudeHistoryUnavailable));
     }
 
-    if (currentHistoryLayout !== 'combined' && details.codexSourceHistoryPanels && details.codexSourceHistoryPanels.length) {
-      details.codexSourceHistoryPanels.forEach(function(panel, panelIndex) {
-        var selectedPanelChart = selectCodexHistoryChartRange(panel.chart, currentCodexHistoryRange);
-        var panelUnavailable = selectedPanelChart && !selectedPanelChart.available;
-        var panelCards = selectCodexHistoryMetricCardsRange([], panel.chart, currentCodexHistoryRange);
-        var codexDistPanel = details.codexSourceModelDistributionPanels && details.codexSourceModelDistributionPanels[panelIndex];
-        var selectedCodexPanelDist = codexDistPanel ? selectCodexModelDistributionRange(codexDistPanel.distribution, codexDistPanel.historyChart || panel.chart, currentCodexHistoryRange) : undefined;
-        var codexPanelDistHtml = selectedCodexPanelDist && selectedCodexPanelDist.available
-          ? renderClaudeModelDistribution(selectedCodexPanelDist, selectedCodexPanelDist.source)
-          : renderModelDistributionUnavailable(selectedCodexPanelDist, 'Codex');
-        var codexPanelTodayHtml = renderTodayInHistory(getTodayCardsForContext(today, panelIndex === 0 ? 'codex-local' : 'codex-remote'), today && today.source);
-        var panelHtml = codexPanelTodayHtml +
-          (panelUnavailable
-            ? renderProviderUnavailable('History unavailable', selectedPanelChart.unavailableReason || 'No Codex history data is available yet.')
-            : renderHistoryChart(selectedPanelChart, 'codex', currentCodexHistoryRange, selectedPanelChart && selectedPanelChart.source) +
-              renderActiveDaysLabel(selectedPanelChart) +
-              codexPanelDistHtml +
-              renderMetricGrid(panelCards, 'No Codex history cards available.', selectedPanelChart && selectedPanelChart.source));
-        providerCards.push(renderSectionProviderCard(panel.label || 'Codex', selectedPanelChart && selectedPanelChart.source, panelHtml, panelUnavailable));
-      });
-    } else if (details.codexHistoryChart) {
+    if (details.codexHistoryChart) {
       var selectedCodexChart = selectCodexHistoryChartRange(details.codexHistoryChart, currentCodexHistoryRange);
       var codexHistoryUnavailable = selectedCodexChart && !selectedCodexChart.available;
       var codexCards = selectCodexHistoryMetricCardsRange(
@@ -355,7 +307,6 @@
           renderUsageSectionTitle('h3', 'usage-section-title', 'History', sectionSourceFromProviderCharts(details.historyChart, details.codexHistoryChart, details.source)) +
           '<p class="usage-section-copy">Range-controlled usage trends by provider.</p>' +
         '</div>' +
-        renderHistoryLayoutToggle(toggleAvailable, toggleActiveLayout) +
       '</div>' +
       renderSectionProviderGrid(providerCards, 'No history data is available yet.') +
     '</section>';
@@ -363,16 +314,6 @@
 
   function isCombinedHistoryAvailable(details) {
     return Boolean(details && details.combinedHistoryChart && details.combinedHistoryChart.available);
-  }
-
-  function renderHistoryLayoutToggle(available, activeLayout) {
-    var mergedActive = activeLayout !== 'split';
-    var disabledClass = available ? '' : ' disabled';
-    var disabledAttr = available ? '' : ' disabled';
-    return '<div class="usage-history-layout-toggle' + disabledClass + '" role="group" aria-label="Usage history layout">' +
-      '<button type="button" class="usage-segment' + (mergedActive ? ' active' : '') + '" data-history-layout="combined" aria-pressed="' + (mergedActive ? 'true' : 'false') + '"' + disabledAttr + '>Merged</button>' +
-      '<button type="button" class="usage-segment' + (!mergedActive ? ' active' : '') + '" data-history-layout="split" aria-pressed="' + (!mergedActive ? 'true' : 'false') + '"' + disabledAttr + '>Separate</button>' +
-    '</div>';
   }
 
   function renderCombinedHistoryLegend(chart) {
@@ -399,9 +340,7 @@
   }
 
   function renderUsageModelDistributionSection(details) {
-    var combinedAvailable = isCombinedHistoryAvailable(details);
-    var effectiveLayout = combinedAvailable && currentHistoryLayout === 'combined' ? 'combined' : 'split';
-    if (effectiveLayout === 'combined') {
+    if (isCombinedHistoryAvailable(details)) {
       var selectedCombinedChart = selectCombinedHistoryChartRange(details.combinedHistoryChart, currentCombinedHistoryRange);
       var selectedCombinedDistribution = selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange);
       var combinedDistributionHtml = selectedCombinedDistribution && selectedCombinedDistribution.available
@@ -419,15 +358,7 @@
     }
 
     var providerCards = [];
-    if (currentHistoryLayout !== 'combined' && details.claudeSourceModelDistributionPanels && details.claudeSourceModelDistributionPanels.length) {
-      details.claudeSourceModelDistributionPanels.forEach(function(panel) {
-        var selectedPanelDistribution = selectClaudeModelDistributionRange(panel.distribution, panel.historyChart, currentClaudeHistoryRange);
-        var panelDistributionHtml = selectedPanelDistribution && selectedPanelDistribution.available
-          ? renderClaudeModelDistribution(selectedPanelDistribution, selectedPanelDistribution && selectedPanelDistribution.source)
-          : renderModelDistributionUnavailable(selectedPanelDistribution, 'Claude');
-        providerCards.push(renderSectionProviderCard(panel.label || 'Claude', selectedPanelDistribution && selectedPanelDistribution.source, panelDistributionHtml, selectedPanelDistribution && !selectedPanelDistribution.available));
-      });
-    } else if (details.modelDistribution) {
+    if (details.modelDistribution) {
       var selectedClaudeDistribution = selectClaudeModelDistributionRange(details.modelDistribution, details.historyChart, currentClaudeHistoryRange);
       var claudeDistributionHtml = selectedClaudeDistribution && selectedClaudeDistribution.available
         ? renderClaudeModelDistribution(selectedClaudeDistribution, selectedClaudeDistribution && selectedClaudeDistribution.source)
@@ -436,15 +367,7 @@
       providerCards.push(renderSectionProviderCard(claudeModelLabel, selectedClaudeDistribution && selectedClaudeDistribution.source, claudeDistributionHtml, selectedClaudeDistribution && !selectedClaudeDistribution.available));
     }
 
-    if (currentHistoryLayout !== 'combined' && details.codexSourceModelDistributionPanels && details.codexSourceModelDistributionPanels.length) {
-      details.codexSourceModelDistributionPanels.forEach(function(panel) {
-        var selectedPanelDistribution = selectCodexModelDistributionRange(panel.distribution, panel.historyChart, currentCodexHistoryRange);
-        var panelDistributionHtml = selectedPanelDistribution && selectedPanelDistribution.available
-          ? renderClaudeModelDistribution(selectedPanelDistribution, selectedPanelDistribution && selectedPanelDistribution.source)
-          : renderModelDistributionUnavailable(selectedPanelDistribution, 'Codex');
-        providerCards.push(renderSectionProviderCard(panel.label || 'Codex', selectedPanelDistribution && selectedPanelDistribution.source, panelDistributionHtml, selectedPanelDistribution && !selectedPanelDistribution.available));
-      });
-    } else if (details.codexModelDistribution) {
+    if (details.codexModelDistribution) {
       var selectedCodexDistribution = selectCodexModelDistributionRange(details.codexModelDistribution, details.codexHistoryChart, currentCodexHistoryRange);
       var codexDistributionHtml = selectedCodexDistribution && selectedCodexDistribution.available
         ? renderClaudeModelDistribution(selectedCodexDistribution, selectedCodexDistribution && selectedCodexDistribution.source)
@@ -1309,21 +1232,6 @@
         renderUsageDetails(details || lastUsageDetails, today);
       });
     });
-
-    var layoutButtons = document.querySelectorAll('[data-history-layout]');
-    Array.prototype.forEach.call(layoutButtons, function(button) {
-      button.addEventListener('click', function() {
-        var layout = normalizeHistoryLayout(button.getAttribute('data-history-layout'));
-        if (layout === currentHistoryLayout) { return; }
-        currentHistoryLayout = layout;
-        vscode.postMessage({ command: 'setUsageHistoryLayout', layout: layout });
-        if (lastUsageDashboardModel) {
-          renderUsageDashboardSections(lastUsageDashboardModel);
-        } else {
-          renderUsageDetails(details || lastUsageDetails);
-        }
-      });
-    });
   }
 
   function selectClaudeHistoryChartRange(chart, rangeKey) {
@@ -1574,10 +1482,6 @@
       return rangeKey;
     }
     return '1M';
-  }
-
-  function normalizeHistoryLayout(layout) {
-    return layout === 'split' ? 'split' : 'combined';
   }
 
   function formatPercentLabel(value) {
@@ -2232,7 +2136,7 @@
     '</div>';
   }
 
-  function renderUsageDashboard(model, historyLayout) {
+  function renderUsageDashboard(model) {
     var cards = byId('usageDashboardCards');
     if (!cards) { return; }
     setUsageLoading(false);
@@ -2356,7 +2260,7 @@
         setUsageRefreshStatus('Usage refresh failed. Existing status bar values were left unchanged.');
       }
     } else if (msg.command === 'usageDashboardModel') {
-      renderUsageDashboard(msg.model, msg.historyLayout);
+      renderUsageDashboard(msg.model);
     } else if (msg.command === 'usageDashboardModelError') {
       setUsageLoading(false);
       setUsageRefreshStatus('Usage dashboard model could not be rendered: ' + esc(msg.error || 'unknown error'));

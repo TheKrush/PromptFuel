@@ -730,41 +730,6 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   justify-content:flex-end;
   margin:-2px 0 10px
 }
-.usage-history-layout-toggle{
-  display:inline-flex;
-  align-items:center;
-  border:1px solid var(--ab-keyline);
-  border-radius:6px;
-  overflow:hidden;
-  flex:0 0 auto;
-  background:var(--vscode-editor-background)
-}
-.usage-history-layout-toggle.disabled{
-  opacity:0.4;
-  pointer-events:none
-}
-.usage-segment{
-  border:0;
-  border-right:1px solid var(--ab-keyline);
-  background:transparent;
-  color:var(--vscode-descriptionForeground);
-  font:inherit;
-  font-size:11px;
-  line-height:1.2;
-  padding:5px 9px;
-  cursor:pointer
-}
-.usage-segment:last-child{
-  border-right:0
-}
-.usage-segment.active{
-  color:var(--vscode-foreground);
-  background:var(--vscode-list-activeSelectionBackground,rgba(127,127,127,.18))
-}
-.usage-segment:focus-visible{
-  outline:1px solid var(--vscode-focusBorder);
-  outline-offset:-1px
-}
 .usage-history-chart-meta{
   margin-top:3px;
   color:var(--vscode-descriptionForeground);
