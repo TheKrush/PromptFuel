@@ -69,7 +69,8 @@ function main() {
     const fiveHourRow = provider.tooltip.split(/\r?\n/).find(line => line.startsWith('| 5h |'));
     assert.ok(sevenDayRow, 'provider 7d row present');
     assert.ok(fiveHourRow, 'provider 5h row present');
-    assert.match(fiveHourRow, /blocked/, '5h row marks provider blocked by an exhausted 7d window');
+    assert.match(fiveHourRow, /98%/, '5h row shows raw percent when 7d is exhausted');
+    assert.doesNotMatch(fiveHourRow, /blocked/, '5h row does not assert blocked for unconfirmed provider behavior');
 
     const cells = markdownCells(sevenDayRow);
     assert.equal(cells.length, 6, 'provider quota row has split countdown and reset time columns');
@@ -176,9 +177,9 @@ function main() {
       fiveHour: { usedPercentage: 2, resetsAtEpochSeconds: fiveHourReset }
     }], opts);
 
-    assert.ok(result.tooltip.includes('blocked'), 'blocked indicator present');
-    assert.ok(result.tooltip.includes('#F44336'), 'blocked 5h row uses critical color');
-    assert.ok(!result.tooltip.includes('#4CAF50'), 'blocked 5h row does not use normal color');
+    assert.ok(!result.tooltip.includes('blocked'), 'tooltip does not assert blocked for unconfirmed provider behavior');
+    assert.ok(result.tooltip.includes('98%'), 'tooltip shows raw 5h percent when 7d is exhausted');
+    assert.ok(result.tooltip.includes('#4CAF50'), '5h row uses normal color when raw quota is high');
   }
 
   console.log('status tooltip smoke passed');

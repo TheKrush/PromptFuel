@@ -239,11 +239,6 @@ function formatWindow(
   resolved: ResolvedDisplayParts,
   state?: ProviderUsageState
 ): string {
-  if (label === '5h' && state && isFiveHourBlockedBySevenDay(state)) {
-    const prefix = resolved.showWindowLabels && !resolved.countdownBeforeValue ? `${label} ` : '';
-    return `${prefix}${quotaIndicatorForRemaining(undefined, true)}blocked`.trim();
-  }
-
   const prefix = resolved.showWindowLabels && !resolved.countdownBeforeValue ? `${label} ` : '';
   if (!window || window.usedPercentage === undefined) {
     const indicator = resolved.showWindowEmoji ? quotaIndicatorForRemaining(undefined, true) : '';
@@ -419,11 +414,7 @@ function formatCombinedQuotaSummaryLines(
 
   for (const state of states) {
     rows.push(formatCombinedQuotaWindowRow(state, '7d', state.sevenDay, options));
-    if (isFiveHourBlockedBySevenDay(state)) {
-      rows.push(formatCombinedBlockedFiveHourRow(state, options));
-    } else {
-      rows.push(formatCombinedQuotaWindowRow(state, '5h', state.fiveHour, options));
-    }
+    rows.push(formatCombinedQuotaWindowRow(state, '5h', state.fiveHour, options));
     if (state.sevenDayOpus?.usedPercentage !== undefined) {
       rows.push(formatCombinedQuotaWindowRow(state, 'opus 7d', state.sevenDayOpus, options));
     }
@@ -492,16 +483,6 @@ function severityForQuotaLevel(level: QuotaIndicatorLevel): StatusSeverity {
     default:
       return 'normal';
   }
-}
-
-function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
-  const provider = providerDisplayName(state, options);
-  const w = state.fiveHour;
-  const pct = w && w.usedPercentage !== undefined ? 100 - clamp(w.usedPercentage, 0, 100) : 0;
-  const bar = renderProgressBarColored(pct, 'critical');
-  const countdown = w ? formatTableCountdown(w.resetsAtEpochSeconds) : 'unknown';
-  const resetTime = w ? formatTableResetTime(w.resetsAtEpochSeconds) : '';
-  return `| ${provider} | 5h | ${quotaIndicatorForRemaining(undefined, true)} | blocked | ${bar} | ${countdown} | ${resetTime} | |`;
 }
 
 function formatCombinedQuotaWindowRow(
@@ -634,14 +615,6 @@ function formatCostShort(costUsd: number): string {
   return '&lt;¢1';
 }
 
-function isFiveHourBlockedBySevenDay(state: ProviderUsageState): boolean {
-  if (!state.sevenDay || state.sevenDay.usedPercentage === undefined) {
-    return false;
-  }
-  const remaining = 100 - clamp(state.sevenDay.usedPercentage, 0, 100);
-  return remaining <= STATUS_EMPTY_THRESHOLD;
-}
-
 function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptions): string[] {
   // Convention: quota tables use blank/invisible headers; model/API-estimate tables use visible headers.
   const rows = [
@@ -650,27 +623,13 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
     formatQuotaWindowRow('7d', state.sevenDay, options, state)
   ];
 
-  if (isFiveHourBlockedBySevenDay(state)) {
-    rows.push(formatBlockedFiveHourRow(state, options));
-  } else {
-    rows.push(formatQuotaWindowRow('5h', state.fiveHour, options, state));
-  }
+  rows.push(formatQuotaWindowRow('5h', state.fiveHour, options, state));
 
   if (state.sevenDayOpus?.usedPercentage !== undefined) {
     rows.push(formatQuotaWindowRow('opus 7d', state.sevenDayOpus, options, state));
   }
 
   return rows;
-}
-
-function formatBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
-  const w = state.fiveHour;
-  const pct = w && w.usedPercentage !== undefined ? 100 - clamp(w.usedPercentage, 0, 100) : 0;
-  const sev = w ? windowSeverity(w) : 'critical';
-  const bar = renderProgressBarColored(pct, sev);
-  const countdown = w ? formatTableCountdown(w.resetsAtEpochSeconds) : 'unknown';
-  const resetTime = w ? formatTableResetTime(w.resetsAtEpochSeconds) : '';
-  return `| 5h | ${quotaIndicatorForRemaining(undefined, true)} | blocked | ${bar} | ${countdown} | ${resetTime} |`;
 }
 
 function formatQuotaWindowRow(
@@ -787,16 +746,12 @@ function formatNotesLine(states: ProviderUsageState[], options: FormatOptions): 
   return `- Note: ${parts.join('; ')}`;
 }
 
-function formatFiveHourBlockedNote(states: ProviderUsageState[], options: FormatOptions): string | undefined {
+function formatFiveHourBlockedNote(states: ProviderUsageState[], _options: FormatOptions): string | undefined {
   for (const state of states) {
-    if (isFiveHourBlockedBySevenDay(state)) {
-      const rawRemaining = state.fiveHour?.usedPercentage !== undefined
-        ? `${Math.round(100 - clamp(state.fiveHour.usedPercentage, 0, 100))}%`
-        : 'unknown';
-      const resetStr = state.fiveHour?.resetsAtEpochSeconds
-        ? `, resets in ${formatCountdown(state.fiveHour.resetsAtEpochSeconds, 'now')}`
-        : '';
-      return `5h blocked by 7d cap; raw 5h ${rawRemaining} left${resetStr}`;
+    if (!state.sevenDay || state.sevenDay.usedPercentage === undefined) continue;
+    const sevenDayRemaining = 100 - clamp(state.sevenDay.usedPercentage, 0, 100);
+    if (sevenDayRemaining <= STATUS_EMPTY_THRESHOLD) {
+      return '7d quota nearly exhausted; actual 5h availability may be limited';
     }
   }
   return undefined;

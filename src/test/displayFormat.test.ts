@@ -87,6 +87,14 @@ describe('display formatting', () => {
     assert.equal(text, `C ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`);
   });
 
+  it('shows raw 5h percent in status bar when 7d is near exhausted', () => {
+    const opts = baseOptions();
+    // 7d at 99% used (1% remaining, previously the blocked threshold), 5h at 17% used (83% remaining)
+    const text = formatStatus(makeState(99, 17), opts).text;
+    assert.match(text, /83%/);
+    assert.doesNotMatch(text, /blocked/i);
+  });
+
   it('separates compact status bar providers with pipe', () => {
     const opts = baseOptions();
     const remoteText = `XW ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`;
