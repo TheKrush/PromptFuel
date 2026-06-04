@@ -13,6 +13,7 @@ import {
 import type { UsageDashboardProvider, UsageDashboardWindow } from '../panel/usageDashboardModel';
 import { formatSourceLabel, parsePerWindowReset } from './remoteSourceHelper';
 import { formatCountdown } from '../usageTime';
+import { quotaLevelForRemaining } from '../display/format';
 import { archiveToSanitizedHistorySources, validateHistoryArchivePayload } from './historyArchive';
 
 export interface SnapshotReaderConfig {
@@ -532,6 +533,11 @@ function resolveResetEpoch(
     : resetInfo.sevenDayResetEpoch;
 }
 
+function snapshotLevel(remaining: number | undefined): UsageDashboardWindow['level'] {
+  const level = remaining === undefined ? undefined : quotaLevelForRemaining(remaining);
+  return level === 'unavailable' ? undefined : level;
+}
+
 function buildSnapshotWindow(
   usedPercent: number | undefined,
   resetAtEpochSeconds: number | undefined
@@ -548,11 +554,7 @@ function buildSnapshotWindow(
     label: '5h',
     usedPercent: used,
     remainingPercent: remaining,
-    level: remaining === undefined ? undefined
-      : remaining <= 10 ? 'red'
-        : remaining <= 20 ? 'orange'
-          : remaining <= 40 ? 'yellow'
-            : 'green',
+    level: snapshotLevel(remaining),
     resetIso,
     available: available
   };
@@ -574,11 +576,7 @@ function buildSnapshotSevenDayWindow(
     label: '7d',
     usedPercent: used,
     remainingPercent: remaining,
-    level: remaining === undefined ? undefined
-      : remaining <= 10 ? 'red'
-        : remaining <= 20 ? 'orange'
-          : remaining <= 40 ? 'yellow'
-            : 'green',
+    level: snapshotLevel(remaining),
     resetIso,
     available: available
   };

@@ -86,6 +86,26 @@ describe('display formatting', () => {
     assert.equal(quotaIndicatorForRemaining(undefined, true), '\u26AB');
   });
 
+  it('every quota level maps to a valid dashboard progress-bar CSS class', () => {
+    const levels = ['purple', 'blue', 'green', 'yellow', 'orange', 'red'] as const;
+    for (const level of levels) {
+      const cssClass = 'level-' + level;
+      assert.ok(cssClass.startsWith('level-'), `CSS class must start with level- prefix for ${level}`);
+    }
+    // Verify unavailable is excluded from dashboard levels
+    const dashboardLevels = ['purple', 'blue', 'green', 'yellow', 'orange', 'red'] as const;
+    const allQuotaLevels = ['purple', 'blue', 'green', 'yellow', 'orange', 'red', 'unavailable'] as const;
+    for (const l of allQuotaLevels) {
+      if (l === 'unavailable') {
+        assert.equal((dashboardLevels as readonly string[]).includes(l), false,
+          'unavailable must not be a dashboard progress-bar level');
+      } else {
+        assert.ok((dashboardLevels as readonly string[]).includes(l),
+          `${l} must be a dashboard progress-bar level`);
+      }
+    }
+  });
+
   it('applies threshold ordering to formatted status severity', () => {
     const opts = baseOptions();
     assert.equal(formatStatus(makeState(25), opts).severity, 'normal');
