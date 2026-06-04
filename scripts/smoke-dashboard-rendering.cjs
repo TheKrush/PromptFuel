@@ -321,8 +321,10 @@ function makeModelUsage(modelTotals, inputRatio, reasoningOutputTokens = 0) {
 
 function main() {
   const repoRoot = path.resolve(__dirname, '..');
+  const { initModelPricingFromCsv } = require(path.join(repoRoot, 'out', 'modelPricing.js'));
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
   const { createCanonicalUsageFixture } = require(path.join(repoRoot, 'out', 'test', 'fixtures', 'canonicalUsageFixture.js'));
+  initModelPricingFromCsv(fs.readFileSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv'), 'utf8'));
   const model = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), codexCorrelatedHistory: makeCodexHistory(), enabledProviders: ['claude', 'codex'] });
   assert.ok(model.details.historyChart.available, 'Claude split chart remains available');
   assert.ok(model.details.codexHistoryChart.available, 'Codex split chart remains available');
@@ -620,8 +622,8 @@ function main() {
     assert.match(tabHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1M API-equivalent:/i, `${tabKey} 1M API-equivalent footer carries an estimate tooltip`);
     assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
     if (tabKey === 'overview') {
-      assert.match(tabText, /Claude . sonnet-4/, 'Overview live model distribution labels Claude models with provider attribution');
-      assert.match(tabText, /Codex . gpt-5-codex/, 'Overview live model distribution labels Codex models with provider attribution');
+      assert.match(tabText, /Claude\s+sonnet-4/, 'Overview live model distribution labels Claude models with provider attribution');
+      assert.match(tabText, /Codex\s+gpt-5-codex/, 'Overview live model distribution labels Codex models with provider attribution');
     } else if (tabKey === 'claude') {
       assert.match(tabText, /sonnet-4/, 'Claude provider tab live path renders Claude model distribution');
       assert.doesNotMatch(tabText, /gpt-5-codex/, 'Claude provider tab live distribution excludes Codex models');
@@ -890,8 +892,12 @@ function main() {
   const combinedDistributionHtml = combinedHistorySectionHtml;
   assert.match(combinedDistributionHtml, /usage-model-distribution/, 'Overview live path renders model distribution content');
   assert.match(combinedDistributionHtml, /usage-section-provider-grid combined/, 'model distribution uses the combined provider grid');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Claude · sonnet-4/, 'combined model distribution labels Claude models with provider attribution');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Codex · gpt-5-codex/, 'combined model distribution labels Codex models with provider attribution');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Provider Model Tokens Share Est\. API Cost Rate \/ 1M/, 'combined model distribution renders table-like column headers');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Claude\s+sonnet-4/, 'combined model distribution labels Claude models with provider attribution');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Codex\s+gpt-5-codex/, 'combined model distribution labels Codex models with provider attribution');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /\$3 in \/ \$15 out/, 'known Claude model distribution row shows configured rate text');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /\$[0-9.]+/, 'known model distribution row shows estimated API-equivalent cost');
+  assert.match(visibleTextFromHtml(combinedDistributionHtml), /gpt-5-codex[\s\S]*—/, 'unknown model distribution pricing renders unavailable dash');
   assert.doesNotMatch(visibleTextFromHtml(combinedDistributionHtml), /correlated/i, 'combined model distribution has no visible correlated title text');
   const combinedDistributionColors = modelDistributionSwatchColors(combinedDistributionHtml);
   const combinedBarColors = historyBarSegmentColors(combinedHtml);

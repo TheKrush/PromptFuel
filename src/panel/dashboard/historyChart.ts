@@ -35,7 +35,8 @@ export function buildClaudeHistoryChart(
   claudeUsageHistory: ClaudeUsageHistory | undefined,
   remoteHistoryPoints?: UsageHistoryPoint[],
   aliasMap?: Record<string, string>,
-  remoteMachineLabels?: string[]
+  remoteMachineLabels?: string[],
+  providerLabel = 'Claude'
 ): UsageDashboardHistoryChart {
   const hasRemote = Boolean(remoteHistoryPoints?.length);
   const localAvailable = Boolean(claudeUsageHistory?.available);
@@ -74,14 +75,14 @@ export function buildClaudeHistoryChart(
       cacheCreationTokens: day.cacheCreationInputTokens,
       cacheReadTokens: day.cacheReadInputTokens,
       assistantMessages: day.assistantMessages,
-      models: mapModelUsageToHistory(day.modelUsage, shortenClaudeModel),
+      models: mapModelUsageToHistory(day.modelUsage, shortenClaudeModel, 'claude', providerLabel),
       source: 'local' as const,
       sourceLabel: 'Local'
     }))
     : [];
 
   const remotePoints = hasRemote
-    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenClaudeModel).map(p => ({
+    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenClaudeModel, 'claude', providerLabel).map(p => ({
       ...p,
       source: 'remote' as const,
       sourceLabel: remoteSourceDisplayLabel(remoteMachineLabels, aliasMap)
@@ -95,6 +96,7 @@ export function buildClaudeHistoryChart(
     available: points.length > 0,
     title: 'Token trend',
     rangeLabel: '1M / 30d',
+    providerLabel,
     unavailableReason: points.length > 0 ? undefined : 'No Claude history buckets are available for the selected range.',
     ranges,
     points,
@@ -108,7 +110,8 @@ export function buildCodexHistoryChart(
   codexCorrelatedHistory: CodexCorrelatedHistory | undefined,
   remoteHistoryPoints?: UsageHistoryPoint[],
   aliasMap?: Record<string, string>,
-  remoteMachineLabels?: string[]
+  remoteMachineLabels?: string[],
+  providerLabel = 'Codex'
 ): UsageDashboardHistoryChart {
   const hasRemote = Boolean(remoteHistoryPoints?.length);
   const localAvailable = Boolean(codexCorrelatedHistory?.available);
@@ -147,14 +150,14 @@ export function buildCodexHistoryChart(
       cacheCreationTokens: day.cacheCreationInputTokens,
       cacheReadTokens: day.cacheReadInputTokens,
       assistantMessages: day.correlatedTurns,
-      models: mapModelUsageToHistory(day.modelUsage, shortenCodexModel),
+      models: mapModelUsageToHistory(day.modelUsage, shortenCodexModel, 'codex', providerLabel),
       source: 'local' as const,
       sourceLabel: 'Local'
     }))
     : [];
 
   const remotePoints = hasRemote
-    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenCodexModel).map(p => ({
+    ? normalizeRemoteHistoryPointModels(remoteHistoryPoints!, shortenCodexModel, 'codex', providerLabel).map(p => ({
       ...p,
       source: 'remote' as const,
       sourceLabel: remoteSourceDisplayLabel(remoteMachineLabels, aliasMap)
@@ -168,6 +171,7 @@ export function buildCodexHistoryChart(
     available: points.length > 0,
     title: 'Token trend',
     rangeLabel: '1M / 30d',
+    providerLabel,
     unavailableReason: points.length > 0 ? undefined : 'No Codex correlated usage records for the selected range.',
     ranges,
     points,
@@ -184,16 +188,18 @@ function hasAvailableHistoryChart(chart: UsageDashboardHistoryChart | undefined)
 function historyProviderPoints(
   chart: UsageDashboardHistoryChart,
   provider: 'claude' | 'codex',
-  label: 'Claude' | 'Codex',
+  label: string,
   sourceConfidence: string
 ): UsageDashboardHistoryChartPoint[] {
   return (chart.points || []).map(point => ({
     ...point,
     models: (point.models || []).map(model => ({
       ...model,
-      label: `${label} · ${model.label || model.model || 'model'}`,
-      model: `${label} · ${model.model || model.label || 'model'}`,
-      pricingModel: model.pricingModel || model.model || model.label || 'model'
+      label: model.label || model.model || 'model',
+      model: model.model || model.label || 'model',
+      pricingModel: model.pricingModel || model.model || model.label || 'model',
+      provider,
+      providerLabel: label
     })),
     providerSegments: [{
       provider,
@@ -223,9 +229,11 @@ export function buildCombinedHistoryChart(
     'Mixed Claude trusted and Codex correlated history',
     'Claude uses trusted completed-turn buckets; Codex remains correlated day-bucket data and is not upgraded.'
   );
+  const claudeLabel = claudeChart?.providerLabel || 'Claude';
+  const codexLabel = codexChart?.providerLabel || 'Codex';
   const points = [
-    ...historyProviderPoints(claudeChart!, 'claude', 'Claude', 'trustedCompletedTurnUsage'),
-    ...historyProviderPoints(codexChart!, 'codex', 'Codex', 'correlatedDayBucket')
+    ...historyProviderPoints(claudeChart!, 'claude', claudeLabel, 'trustedCompletedTurnUsage'),
+    ...historyProviderPoints(codexChart!, 'codex', codexLabel, 'correlatedDayBucket')
   ];
 
   return {

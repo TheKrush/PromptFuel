@@ -16,6 +16,21 @@ export interface CostEstimate {
   isFallback: boolean;
 }
 
+export interface ConfiguredModelPricingRate {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheWritePerMillion?: number;
+  cacheReadPerMillion?: number;
+  currency: string;
+  matchedModel: string;
+}
+
+export type PricingProvider = 'claude' | 'codex';
+
+export type ConfiguredModelCostEstimate =
+  | { available: true; costUsd: number; pricing: ConfiguredModelPricingRate }
+  | { available: false; unavailableReason: string; pricing?: ConfiguredModelPricingRate };
+
 export const CLAUDE_SOURCES = {
   url: 'https://platform.claude.com/docs/en/about-claude/pricing',
   label: 'Anthropic Claude API Pricing (official)',
@@ -76,6 +91,25 @@ function matchModelPricing(
   return { pricing: defaultPricing, matchedKey: undefined };
 }
 
+export function findConfiguredModelPricing(
+  provider: PricingProvider,
+  modelName: string
+): ConfiguredModelPricingRate | undefined {
+  const match = findModelPricing(provider, modelName);
+  if (!match || match.row.inputPer1m === undefined || match.row.outputPer1m === undefined) {
+    return undefined;
+  }
+
+  return {
+    inputPerMillion: match.row.inputPer1m,
+    outputPerMillion: match.row.outputPer1m,
+    cacheWritePerMillion: match.row.cacheWrite5mPer1m,
+    cacheReadPerMillion: match.row.cacheReadPer1m,
+    currency: match.row.currency || 'USD',
+    matchedModel: match.matchedKey
+  };
+}
+
 function computeCost(
   pricing: ModelPricingEntry,
   inputTokens: number,
@@ -114,6 +148,59 @@ function computeOpenAiCost(
   const cachedInputCost = ((cachedInputTokens + cachedOnlyTokens) / 1_000_000) * cachedInputRate;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   return inputCost + cachedInputCost + outputCost;
+}
+
+function configuredPricingEntry(provider: PricingProvider, rate: ConfiguredModelPricingRate): ModelPricingEntry {
+  const sources = provider === 'claude' ? CLAUDE_SOURCES : CODEX_SOURCES;
+  return {
+    inputPerMillion: rate.inputPerMillion,
+    outputPerMillion: rate.outputPerMillion,
+    cacheWritePerMillion: rate.cacheWritePerMillion,
+    cacheReadPerMillion: rate.cacheReadPerMillion,
+    sourceUrl: sources.url,
+    sourceLabel: sources.label,
+    lastVerifiedDate: sources.verified
+  };
+}
+
+function hasUsableTokenComponent(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+export function estimateConfiguredModelCostUsd(
+  provider: PricingProvider,
+  modelName: string,
+  inputTokens: number | undefined,
+  outputTokens: number | undefined,
+  cacheReadTokens: number | undefined = 0,
+  cacheWriteTokens: number | undefined = 0
+): ConfiguredModelCostEstimate {
+  const pricing = findConfiguredModelPricing(provider, modelName);
+  if (!pricing) {
+    return { available: false, unavailableReason: 'Pricing unavailable' };
+  }
+
+  const input = inputTokens;
+  const output = outputTokens;
+  const cacheRead = cacheReadTokens;
+  const cacheWrite = cacheWriteTokens;
+
+  if (
+    !hasUsableTokenComponent(input) ||
+    !hasUsableTokenComponent(output) ||
+    !hasUsableTokenComponent(cacheRead) ||
+    !hasUsableTokenComponent(cacheWrite)
+  ) {
+    return { available: false, unavailableReason: 'Token components unavailable', pricing };
+  }
+
+  const entry = configuredPricingEntry(provider, pricing);
+  const costUsd = provider === 'claude'
+    ? computeCost(entry, input, output, cacheRead, cacheWrite,
+      CLAUDE_CACHE_READ_MULTIPLIER, CLAUDE_CACHE_WRITE_MULTIPLIER)
+    : computeOpenAiCost(entry, input, output, cacheRead, cacheWrite);
+
+  return { available: true, costUsd, pricing };
 }
 
 export function estimateClaudeCostUsd(

@@ -3,9 +3,90 @@ import type { CodexCorrelatedHistory } from '../../providers/codexCorrelatedDayB
 import type { RemoteModelEntry } from '../../snapshot/remoteUsageProjection';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
 import type { UsageDashboardModelDistributionChart } from '../usageDashboardModel';
-import { sourceInfo, formatPercent, shortenClaudeModel, shortenCodexModel, accumulateLocalHistoryModelRows } from './format';
+import { sourceInfo, formatPercent, shortenClaudeModel, shortenCodexModel } from './format';
+import { modelPricingFields } from './pricingFields';
 
-export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHistory | undefined, remoteModelEntries?: RemoteModelEntry[]): UsageDashboardModelDistributionChart {
+interface LocalHistoryModelUsageRow {
+  model: string;
+  assistantMessages: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+interface ModelDistributionTotal {
+  model: string;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  assistantMessages: number;
+}
+
+function mergeModelDistributionTotal(
+  modelTotals: Map<string, ModelDistributionTotal>,
+  entry: ModelDistributionTotal
+): void {
+  const existing = modelTotals.get(entry.model);
+  if (existing) {
+    existing.totalTokens += entry.totalTokens;
+    existing.inputTokens += entry.inputTokens;
+    existing.outputTokens += entry.outputTokens;
+    existing.cacheCreationInputTokens += entry.cacheCreationInputTokens;
+    existing.cacheReadInputTokens += entry.cacheReadInputTokens;
+    existing.assistantMessages += entry.assistantMessages;
+  } else {
+    modelTotals.set(entry.model, { ...entry });
+  }
+}
+
+function accumulateLocalModelRows(
+  modelTotals: Map<string, ModelDistributionTotal>,
+  days: ReadonlyArray<{ modelUsage: ReadonlyArray<LocalHistoryModelUsageRow> }>
+): void {
+  for (const day of days) {
+    for (const model of day.modelUsage) {
+      const totalTokens = displayTotalTokens(model);
+      if (!model.model || totalTokens <= 0) {
+        continue;
+      }
+      mergeModelDistributionTotal(modelTotals, {
+        model: model.model,
+        totalTokens,
+        inputTokens: model.inputTokens,
+        outputTokens: model.outputTokens,
+        cacheCreationInputTokens: model.cacheCreationInputTokens,
+        cacheReadInputTokens: model.cacheReadInputTokens,
+        assistantMessages: model.assistantMessages
+      });
+    }
+  }
+}
+
+function accumulateRemoteModelRows(
+  modelTotals: Map<string, ModelDistributionTotal>,
+  entries: RemoteModelEntry[]
+): void {
+  for (const entry of entries) {
+    mergeModelDistributionTotal(modelTotals, {
+      model: entry.model,
+      totalTokens: entry.tokens,
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      cacheCreationInputTokens: entry.cacheCreationTokens,
+      cacheReadInputTokens: entry.cacheReadTokens,
+      assistantMessages: entry.assistantMessages ?? 0
+    });
+  }
+}
+
+export function buildClaudeModelDistribution(
+  claudeUsageHistory: ClaudeUsageHistory | undefined,
+  remoteModelEntries?: RemoteModelEntry[],
+  providerLabel = 'Claude'
+): UsageDashboardModelDistributionChart {
   const hasRemote = Boolean(remoteModelEntries?.length);
   const localAvailable = Boolean(claudeUsageHistory?.available && claudeUsageHistory.days.some(day => day.modelUsage.some(m => displayTotalTokens(m) > 0)));
 
@@ -22,6 +103,7 @@ export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHist
       available: false,
       title: 'Model distribution',
       rangeLabel: '1M / 30d',
+      providerLabel,
       totalTokens: 0,
       segments: [],
       unavailableReason: source.unavailableReason ?? 'No Claude model distribution is available for this range.',
@@ -29,27 +111,19 @@ export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHist
     };
   }
 
-  const modelTotals = new Map<string, { totalTokens: number; assistantMessages: number }>();
+  const modelTotals = new Map<string, ModelDistributionTotal>();
 
   if (localAvailable) {
-    accumulateLocalHistoryModelRows(modelTotals, claudeUsageHistory!.days);
+    accumulateLocalModelRows(modelTotals, claudeUsageHistory!.days);
   }
 
   if (hasRemote) {
-    for (const entry of remoteModelEntries!) {
-      const existing = modelTotals.get(entry.model);
-      if (existing) {
-        existing.totalTokens += entry.tokens;
-        existing.assistantMessages += entry.assistantMessages ?? 0;
-      } else {
-        modelTotals.set(entry.model, { totalTokens: entry.tokens, assistantMessages: entry.assistantMessages ?? 0 });
-      }
-    }
+    accumulateRemoteModelRows(modelTotals, remoteModelEntries!);
   }
 
   const allEntries = Array.from(modelTotals.entries())
     .filter(([, v]) => v.totalTokens > 0)
-    .map(([model, v]) => ({ model, totalTokens: v.totalTokens, assistantMessages: v.assistantMessages }))
+    .map(([, v]) => v)
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   if (allEntries.length === 0) {
@@ -57,6 +131,7 @@ export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHist
       available: false,
       title: 'Model distribution',
       rangeLabel: '1M / 30d',
+      providerLabel,
       totalTokens: 0,
       segments: [],
       unavailableReason: 'No Claude model distribution is available for this range.',
@@ -65,7 +140,15 @@ export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHist
   }
 
   const top = allEntries.slice(0, 5);
-  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({ model: 'Other', totalTokens: sum.totalTokens + e.totalTokens, assistantMessages: sum.assistantMessages + e.assistantMessages }), { model: 'Other', totalTokens: 0, assistantMessages: 0 });
+  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({
+    model: 'Other',
+    totalTokens: sum.totalTokens + e.totalTokens,
+    inputTokens: sum.inputTokens + e.inputTokens,
+    outputTokens: sum.outputTokens + e.outputTokens,
+    cacheCreationInputTokens: sum.cacheCreationInputTokens + e.cacheCreationInputTokens,
+    cacheReadInputTokens: sum.cacheReadInputTokens + e.cacheReadInputTokens,
+    assistantMessages: sum.assistantMessages + e.assistantMessages
+  }), { model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0 });
   const entries = otherTotal.totalTokens > 0 ? [...top, otherTotal] : top;
   const grandTotal = allEntries.reduce((sum, e) => sum + e.totalTokens, 0);
 
@@ -73,23 +156,35 @@ export function buildClaudeModelDistribution(claudeUsageHistory: ClaudeUsageHist
     available: entries.length > 0,
     title: 'Model distribution',
     rangeLabel: '1M / 30d',
+    providerLabel,
     totalTokens: grandTotal,
     segments: entries.map(model => {
       const percent = model.totalTokens / grandTotal;
       return {
         label: model.model === 'Other' ? 'Other' : shortenClaudeModel(model.model),
         model: model.model,
+        provider: 'claude' as const,
+        providerLabel,
         totalTokens: model.totalTokens,
+        inputTokens: model.inputTokens,
+        outputTokens: model.outputTokens,
+        cacheCreationInputTokens: model.cacheCreationInputTokens,
+        cacheReadInputTokens: model.cacheReadInputTokens,
         assistantMessages: model.assistantMessages,
         percent,
-        percentLabel: formatPercent(percent)
+        percentLabel: formatPercent(percent),
+        ...modelPricingFields('claude', model.model, model)
       };
     }),
     source
   };
 }
 
-export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrelatedHistory | undefined, remoteModelEntries?: RemoteModelEntry[]): UsageDashboardModelDistributionChart {
+export function buildCodexModelDistribution(
+  codexCorrelatedHistory: CodexCorrelatedHistory | undefined,
+  remoteModelEntries?: RemoteModelEntry[],
+  providerLabel = 'Codex'
+): UsageDashboardModelDistributionChart {
   const hasRemote = Boolean(remoteModelEntries?.length);
   const localAvailable = Boolean(codexCorrelatedHistory?.available && codexCorrelatedHistory.days.some(day => day.modelUsage.some(m => displayTotalTokens(m) > 0)));
 
@@ -106,6 +201,7 @@ export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrela
       available: false,
       title: 'Model distribution',
       rangeLabel: '1M / 30d',
+      providerLabel,
       totalTokens: 0,
       segments: [],
       unavailableReason: source.unavailableReason ?? 'No Codex model distribution is available for this range.',
@@ -113,27 +209,19 @@ export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrela
     };
   }
 
-  const modelTotals = new Map<string, { totalTokens: number; assistantMessages: number }>();
+  const modelTotals = new Map<string, ModelDistributionTotal>();
 
   if (localAvailable) {
-    accumulateLocalHistoryModelRows(modelTotals, codexCorrelatedHistory!.days);
+    accumulateLocalModelRows(modelTotals, codexCorrelatedHistory!.days);
   }
 
   if (hasRemote) {
-    for (const entry of remoteModelEntries!) {
-      const existing = modelTotals.get(entry.model);
-      if (existing) {
-        existing.totalTokens += entry.tokens;
-        existing.assistantMessages += entry.assistantMessages ?? 0;
-      } else {
-        modelTotals.set(entry.model, { totalTokens: entry.tokens, assistantMessages: entry.assistantMessages ?? 0 });
-      }
-    }
+    accumulateRemoteModelRows(modelTotals, remoteModelEntries!);
   }
 
   const allEntries = Array.from(modelTotals.entries())
     .filter(([, v]) => v.totalTokens > 0)
-    .map(([model, v]) => ({ model, totalTokens: v.totalTokens, assistantMessages: v.assistantMessages }))
+    .map(([, v]) => v)
     .sort((a, b) => b.totalTokens - a.totalTokens);
 
   if (allEntries.length === 0) {
@@ -141,6 +229,7 @@ export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrela
       available: false,
       title: 'Model distribution',
       rangeLabel: '1M / 30d',
+      providerLabel,
       totalTokens: 0,
       segments: [],
       unavailableReason: 'No Codex model distribution is available for this range.',
@@ -149,7 +238,15 @@ export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrela
   }
 
   const top = allEntries.slice(0, 5);
-  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({ model: 'Other', totalTokens: sum.totalTokens + e.totalTokens, assistantMessages: sum.assistantMessages + e.assistantMessages }), { model: 'Other', totalTokens: 0, assistantMessages: 0 });
+  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({
+    model: 'Other',
+    totalTokens: sum.totalTokens + e.totalTokens,
+    inputTokens: sum.inputTokens + e.inputTokens,
+    outputTokens: sum.outputTokens + e.outputTokens,
+    cacheCreationInputTokens: sum.cacheCreationInputTokens + e.cacheCreationInputTokens,
+    cacheReadInputTokens: sum.cacheReadInputTokens + e.cacheReadInputTokens,
+    assistantMessages: sum.assistantMessages + e.assistantMessages
+  }), { model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0 });
   const entries = otherTotal.totalTokens > 0 ? [...top, otherTotal] : top;
   const grandTotal = allEntries.reduce((sum, e) => sum + e.totalTokens, 0);
 
@@ -157,16 +254,24 @@ export function buildCodexModelDistribution(codexCorrelatedHistory: CodexCorrela
     available: entries.length > 0,
     title: 'Model distribution',
     rangeLabel: '1M / 30d',
+    providerLabel,
     totalTokens: grandTotal,
     segments: entries.map(model => {
       const percent = model.totalTokens / grandTotal;
       return {
         label: shortenCodexModel(model.model),
         model: model.model,
+        provider: 'codex' as const,
+        providerLabel,
         totalTokens: model.totalTokens,
+        inputTokens: model.inputTokens,
+        outputTokens: model.outputTokens,
+        cacheCreationInputTokens: model.cacheCreationInputTokens,
+        cacheReadInputTokens: model.cacheReadInputTokens,
         assistantMessages: model.assistantMessages,
         percent,
-        percentLabel: formatPercent(percent)
+        percentLabel: formatPercent(percent),
+        ...modelPricingFields('codex', model.model, model)
       };
     }),
     source

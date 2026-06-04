@@ -7,12 +7,22 @@ export interface UsageHistoryModelUsage {
   label: string;
   model: string;
   pricingModel?: string;
+  provider?: 'claude' | 'codex';
+  providerLabel?: string;
   totalTokens: number;
   inputTokens?: number;
   outputTokens?: number;
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
   reasoningOutputTokens?: number;
+  apiEquivalentCostUsd?: number;
+  apiEquivalentCostUnavailableReason?: string;
+  pricingMatchedModel?: string;
+  pricingCurrency?: string;
+  inputRatePerMillionUsd?: number;
+  outputRatePerMillionUsd?: number;
+  cacheReadRatePerMillionUsd?: number;
+  cacheWriteRatePerMillionUsd?: number;
   assistantMessages: number;
 }
 
@@ -270,17 +280,28 @@ function aggregateBin(
       totals.sourcePointCount += 1;
 
       for (const model of point.models || []) {
-        const key = model.model || model.label || 'unknown';
+        const rawModel = model.model || model.label || 'unknown';
+        const key = model.provider ? `${model.provider}\0${rawModel}` : rawModel;
         const existing = modelTotals.get(key) ?? {
-          label: model.label || key,
-          model: key,
-          pricingModel: model.pricingModel || model.model || model.label || key,
+          label: model.label || rawModel,
+          model: rawModel,
+          pricingModel: model.pricingModel || model.model || model.label || rawModel,
+          provider: model.provider,
+          providerLabel: model.providerLabel,
           totalTokens: 0,
           inputTokens: 0,
           outputTokens: 0,
           cacheCreationInputTokens: 0,
           cacheReadInputTokens: 0,
           reasoningOutputTokens: 0,
+          apiEquivalentCostUsd: 0,
+          apiEquivalentCostUnavailableReason: undefined,
+          pricingMatchedModel: model.pricingMatchedModel,
+          pricingCurrency: model.pricingCurrency,
+          inputRatePerMillionUsd: model.inputRatePerMillionUsd,
+          outputRatePerMillionUsd: model.outputRatePerMillionUsd,
+          cacheReadRatePerMillionUsd: model.cacheReadRatePerMillionUsd,
+          cacheWriteRatePerMillionUsd: model.cacheWriteRatePerMillionUsd,
           assistantMessages: 0
         };
         existing.totalTokens += displayTotalTokens(model);
@@ -289,6 +310,12 @@ function aggregateBin(
         existing.cacheCreationInputTokens = Number(existing.cacheCreationInputTokens || 0) + Number(model.cacheCreationInputTokens || 0);
         existing.cacheReadInputTokens = Number(existing.cacheReadInputTokens || 0) + Number(model.cacheReadInputTokens || 0);
         existing.reasoningOutputTokens = Number(existing.reasoningOutputTokens || 0) + Number(model.reasoningOutputTokens || 0);
+        if (typeof model.apiEquivalentCostUsd === 'number' && Number.isFinite(model.apiEquivalentCostUsd) && !existing.apiEquivalentCostUnavailableReason) {
+          existing.apiEquivalentCostUsd = Number(existing.apiEquivalentCostUsd || 0) + model.apiEquivalentCostUsd;
+        } else {
+          existing.apiEquivalentCostUsd = undefined;
+          existing.apiEquivalentCostUnavailableReason = model.apiEquivalentCostUnavailableReason || 'Pricing unavailable';
+        }
         existing.assistantMessages += Number(model.assistantMessages || 0);
         modelTotals.set(key, existing);
       }

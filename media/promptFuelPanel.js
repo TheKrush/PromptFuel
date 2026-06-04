@@ -612,8 +612,10 @@
 
   function buildModelDistributionTooltipPayload(distribution, segment, index) {
     var providerLabel = modelDistributionProviderLabel(distribution, segment);
-    var activityLabel = providerLabel === 'Codex' ? 'Correlated turns' : 'Assistant messages';
+    var activityLabel = ((segment && segment.provider === 'codex') || providerLabel === 'Codex') ? 'Correlated turns' : 'Assistant messages';
     var label = segment.label || segment.model || 'Model';
+    var costLabel = formatModelDistributionCost(segment);
+    var rateLabel = formatModelDistributionRate(segment);
     var payload = {
       label: label,
       model: segment.model || label,
@@ -621,6 +623,8 @@
       rangeLabel: distribution.rangeLabel || 'Selected range',
       totalTokens: Number(segment.totalTokens || 0),
       percentLabel: segment.percentLabel || formatPercentLabel(segment.percent || 0),
+      costLabel: costLabel,
+      rateLabel: rateLabel,
       activityLabel: activityLabel,
       activity: Number(segment.assistantMessages || 0),
       color: modelSeriesColor(index)
@@ -643,12 +647,34 @@
     return '';
   }
 
+  function formatUsdRate(value) {
+    var n = Number(value);
+    if (!isFinite(n) || n < 0) { return ''; }
+    var decimals = Math.round(n) === n ? 0 : n >= 0.1 ? 2 : 3;
+    var text = n.toFixed(decimals);
+    return '$' + addThousandsSeparators(text);
+  }
+
+  function formatModelDistributionRate(segment) {
+    var input = formatUsdRate(segment && segment.inputRatePerMillionUsd);
+    var output = formatUsdRate(segment && segment.outputRatePerMillionUsd);
+    if (!input || !output) { return '—'; }
+    return input + ' in / ' + output + ' out';
+  }
+
+  function formatModelDistributionCost(segment) {
+    var n = Number(segment && segment.apiEquivalentCostUsd);
+    return isFinite(n) && n > 0 ? formatMetricUsd(n) : '—';
+  }
+
   function buildModelDistributionAriaLabel(payload) {
     var parts = [
       payload.providerLabel ? payload.providerLabel + ' model' : 'Model',
       payload.label,
       formatMetricNumber(payload.totalTokens) + ' tokens',
       payload.percentLabel,
+      payload.costLabel && payload.costLabel !== '—' ? 'estimated API cost ' + payload.costLabel : '',
+      payload.rateLabel && payload.rateLabel !== '—' ? 'rate ' + payload.rateLabel : '',
       formatMetricNumber(payload.activity) + ' ' + payload.activityLabel
     ];
     return parts.filter(Boolean).join(', ');
@@ -779,7 +805,8 @@
   }
 
   function historyModelKey(model) {
-    return String(model && (model.model || model.label) || 'unknown');
+    var provider = model && model.provider ? model.provider + ':' : '';
+    return provider + String(model && (model.model || model.label) || 'unknown');
   }
 
   function renderCombinedHistoryBarFill(point, height) {
@@ -904,18 +931,29 @@
   }
 
   function renderModelDistributionLegend(distribution) {
+    var header = '<div class="usage-model-row usage-model-row-head" aria-hidden="true">' +
+      '<span>Provider</span> ' +
+      '<span>Model</span> ' +
+      '<span>Tokens</span> ' +
+      '<span>Share</span> ' +
+      '<span>Est. API Cost</span> ' +
+      '<span>Rate / 1M</span>' +
+    '</div>';
     var rows = (distribution.segments || []).map(function(segment, index) {
       var color = modelSeriesColor(index);
       var payload = buildModelDistributionTooltipPayload(distribution, segment, index);
       var tooltipId = registerModelTooltipPayload(payload);
+      var providerLabel = modelDistributionProviderLabel(distribution, segment) || '—';
       return '<div class="usage-model-row" tabindex="0" data-model-tip-id="' + escAttr(tooltipId) + '" aria-label="' + escAttr(payload.ariaLabel) + '">' +
-        '<span class="usage-model-swatch" style="background:' + color + '"></span>' +
-        '<span class="usage-model-name">' + esc(segment.label || 'Model') + '</span>' +
+        '<span class="usage-model-provider">' + esc(providerLabel) + '</span> ' +
+        '<span class="usage-model-name"><span class="usage-model-swatch" style="background:' + color + '"></span><span class="usage-model-name-text">' + esc(segment.label || 'Model') + '</span></span>' +
         '<span class="usage-model-value">' + esc(formatMetricNumber(segment.totalTokens)) + '</span>' +
         '<span class="usage-model-percent">' + esc(segment.percentLabel || '') + '</span>' +
+        '<span class="usage-model-cost">' + esc(payload.costLabel || '—') + '</span>' +
+        '<span class="usage-model-rate">' + esc(payload.rateLabel || '—') + '</span>' +
       '</div>';
     }).join('');
-    return '<div class="usage-model-legend">' + rows + '</div>';
+    return '<div class="usage-model-legend" role="table" aria-label="Model distribution details">' + header + rows + '</div>';
   }
 
   function modelSeriesColor(index) {
@@ -1102,6 +1140,8 @@
     stats.className = 'ab-tip-stats';
     appendHistoryTooltipStat(stats, 'Total tokens', formatMetricNumber(payload.totalTokens));
     appendHistoryTooltipStat(stats, 'Share', payload.percentLabel || '0%');
+    appendHistoryTooltipStat(stats, 'Est. API cost', payload.costLabel || '—');
+    appendHistoryTooltipStat(stats, 'Rate / 1M', payload.rateLabel || '—');
     appendHistoryTooltipStat(stats, payload.activityLabel || 'Activity', formatMetricNumber(payload.activity));
     tip.appendChild(stats);
 
@@ -1240,6 +1280,7 @@
       key: selectedRange,
       title: chart.title || 'Token trend',
       rangeLabel: view && view.rangeLabel ? view.rangeLabel : claudeHistoryRangeLabel(selectedRange),
+      providerLabel: chart.providerLabel,
       unavailableReason: unavailableReason,
       ranges: ranges,
       points: points,
@@ -1262,11 +1303,11 @@
   }
 
   function selectClaudeModelDistributionRange(distribution, chart, rangeKey) {
-    return selectModelDistributionRange(distribution, chart, rangeKey, 'Claude');
+    return selectModelDistributionRange(distribution, chart, rangeKey, (chart && chart.providerLabel) || (distribution && distribution.providerLabel) || 'Claude');
   }
 
   function selectCodexModelDistributionRange(distribution, chart, rangeKey) {
-    return selectModelDistributionRange(distribution, chart, rangeKey, 'Codex');
+    return selectModelDistributionRange(distribution, chart, rangeKey, (chart && chart.providerLabel) || (distribution && distribution.providerLabel) || 'Codex');
   }
 
   function selectModelDistributionRange(distribution, chart, rangeKey, label) {
@@ -1299,7 +1340,7 @@
         return {
           available: true,
           title: distribution.title || label + ' model distribution',
-          providerLabel: label,
+          providerLabel: distribution.providerLabel || label,
           rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : (distribution.rangeLabel || claudeHistoryRangeLabel(selectedRange)),
           totalTokens: distribution.totalTokens,
           segments: distribution.segments,
@@ -1321,7 +1362,7 @@
       return {
         available: true,
         title: distribution.title || label + ' model distribution',
-        providerLabel: label,
+        providerLabel: distribution.providerLabel || label,
         rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : (distribution.rangeLabel || claudeHistoryRangeLabel(selectedRange)),
         totalTokens: distribution.totalTokens,
         segments: distribution.segments,
@@ -1332,7 +1373,7 @@
     return {
       available: true,
       title: distribution.title || label + ' model distribution',
-      providerLabel: label,
+      providerLabel: distribution.providerLabel || label,
       rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : claudeHistoryRangeLabel(selectedRange),
       totalTokens: totalTokens,
       segments: aggregate.map(function(entry) {
@@ -1340,7 +1381,22 @@
         return {
           label: entry.label,
           model: entry.model,
+          pricingModel: entry.pricingModel,
+          provider: entry.provider,
+          providerLabel: entry.providerLabel || distribution.providerLabel || label,
           totalTokens: entry.totalTokens,
+          inputTokens: entry.inputTokens,
+          outputTokens: entry.outputTokens,
+          cacheCreationInputTokens: entry.cacheCreationInputTokens,
+          cacheReadInputTokens: entry.cacheReadInputTokens,
+          apiEquivalentCostUsd: entry.apiEquivalentCostUsd,
+          apiEquivalentCostUnavailableReason: entry.apiEquivalentCostUnavailableReason,
+          pricingMatchedModel: entry.pricingMatchedModel,
+          pricingCurrency: entry.pricingCurrency,
+          inputRatePerMillionUsd: entry.inputRatePerMillionUsd,
+          outputRatePerMillionUsd: entry.outputRatePerMillionUsd,
+          cacheReadRatePerMillionUsd: entry.cacheReadRatePerMillionUsd,
+          cacheWriteRatePerMillionUsd: entry.cacheWriteRatePerMillionUsd,
           assistantMessages: entry.assistantMessages,
           percent: percent,
           percentLabel: formatPercentLabel(percent)
@@ -1350,18 +1406,49 @@
     };
   }
 
+  function modelDistributionAggregationKey(model) {
+    var provider = model && model.provider ? model.provider : '';
+    var name = model && (model.model || model.pricingModel || model.label) || 'unknown';
+    return provider + '\0' + name;
+  }
+
+  function copyModelPricingMetadata(target, source) {
+    if (!target || !source) { return; }
+    target.pricingMatchedModel = target.pricingMatchedModel || source.pricingMatchedModel;
+    target.pricingCurrency = target.pricingCurrency || source.pricingCurrency;
+    target.inputRatePerMillionUsd = target.inputRatePerMillionUsd !== undefined ? target.inputRatePerMillionUsd : source.inputRatePerMillionUsd;
+    target.outputRatePerMillionUsd = target.outputRatePerMillionUsd !== undefined ? target.outputRatePerMillionUsd : source.outputRatePerMillionUsd;
+    target.cacheReadRatePerMillionUsd = target.cacheReadRatePerMillionUsd !== undefined ? target.cacheReadRatePerMillionUsd : source.cacheReadRatePerMillionUsd;
+    target.cacheWriteRatePerMillionUsd = target.cacheWriteRatePerMillionUsd !== undefined ? target.cacheWriteRatePerMillionUsd : source.cacheWriteRatePerMillionUsd;
+  }
+
+  function mergeModelDistributionCost(target, source) {
+    copyModelPricingMetadata(target, source);
+    var cost = Number(source && source.apiEquivalentCostUsd);
+    if (isFinite(cost) && cost >= 0 && !target.apiEquivalentCostUnavailableReason) {
+      target.apiEquivalentCostUsd = Number(target.apiEquivalentCostUsd || 0) + cost;
+    } else {
+      target.apiEquivalentCostUsd = undefined;
+      target.apiEquivalentCostUnavailableReason = source && source.apiEquivalentCostUnavailableReason || 'Pricing unavailable';
+    }
+  }
+
   function aggregateModelDistribution(points) {
     var byModel = {};
     points.forEach(function(point) {
       (point.models || []).forEach(function(model) {
-        var key = model.model || model.label || 'unknown';
+        var key = modelDistributionAggregationKey(model);
+        var modelName = model.model || model.label || 'unknown';
         if (!byModel[key]) {
           byModel[key] = {
-            label: model.label || key,
-            model: key,
+            label: model.label || modelName,
+            model: modelName,
             pricingModel: model.pricingModel || model.model || model.label || key,
+            provider: model.provider,
+            providerLabel: model.providerLabel,
             totalTokens: 0, inputTokens: 0, outputTokens: 0,
-            cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0
+            cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0,
+            apiEquivalentCostUsd: 0
           };
         }
         byModel[key].totalTokens += Number(model.totalTokens || 0);
@@ -1370,6 +1457,7 @@
         byModel[key].cacheCreationInputTokens += Number(model.cacheCreationInputTokens || 0);
         byModel[key].cacheReadInputTokens += Number(model.cacheReadInputTokens || 0);
         byModel[key].assistantMessages += Number(model.assistantMessages || 0);
+        mergeModelDistributionCost(byModel[key], model);
       });
     });
 
@@ -1389,8 +1477,13 @@
       sum.cacheCreationInputTokens += entry.cacheCreationInputTokens;
       sum.cacheReadInputTokens += entry.cacheReadInputTokens;
       sum.assistantMessages += entry.assistantMessages;
+      mergeModelDistributionCost(sum, entry);
       return sum;
-    }, { label: 'Other', model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0 });
+    }, { label: 'Other', model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0, apiEquivalentCostUsd: 0 });
+    other.inputRatePerMillionUsd = undefined;
+    other.outputRatePerMillionUsd = undefined;
+    other.cacheReadRatePerMillionUsd = undefined;
+    other.cacheWriteRatePerMillionUsd = undefined;
 
     return other.totalTokens > 0 ? top.concat([other]) : top;
   }
@@ -1669,113 +1762,53 @@
     }).length;
   }
 
-  var CLAUDE_PRICING = {
-    'claude-opus-4-7':   { inputPerMillion: 5,  outputPerMillion: 25 },
-    'claude-opus-4-6':   { inputPerMillion: 5,  outputPerMillion: 25 },
-    'claude-opus-4-5':   { inputPerMillion: 5,  outputPerMillion: 25 },
-    'claude-opus-4-1':   { inputPerMillion: 15, outputPerMillion: 75 },
-    'claude-opus-4':     { inputPerMillion: 15, outputPerMillion: 75 },
-    'claude-3-opus':     { inputPerMillion: 15, outputPerMillion: 75 },
-    'claude-sonnet-4-6': { inputPerMillion: 3,  outputPerMillion: 15 },
-    'claude-sonnet-4-5': { inputPerMillion: 3,  outputPerMillion: 15 },
-    'claude-sonnet-4':   { inputPerMillion: 3,  outputPerMillion: 15 },
-    'claude-3.5-sonnet': { inputPerMillion: 3,  outputPerMillion: 15 },
-    'claude-haiku-4-5':  { inputPerMillion: 1,  outputPerMillion: 5 },
-    'claude-haiku-3-5':  { inputPerMillion: 0.80, outputPerMillion: 4 }
-  };
-  var CODEX_PRICING = {
-    'gpt-5.5':       { inputPerMillion: 5,    outputPerMillion: 30 },
-    'gpt-5.4':       { inputPerMillion: 2.50, outputPerMillion: 15 },
-    'gpt-5.4-mini':  { inputPerMillion: 0.75, outputPerMillion: 4.50 },
-    'gpt-5.4-nano':  { inputPerMillion: 0.20, outputPerMillion: 1.25 },
-    'gpt-5.3-codex': { inputPerMillion: 1.75, outputPerMillion: 14 },
-    'codex-auto-review': { inputPerMillion: 1.75, outputPerMillion: 14 }
-  };
-  var CLAUDE_DEFAULT = { inputPerMillion: 3, outputPerMillion: 15 };
-  var CODEX_DEFAULT = { inputPerMillion: 2.50, outputPerMillion: 15 };
-  var CLAUDE_CACHE_READ_MULTIPLIER = 0.1;
-  var CLAUDE_CACHE_WRITE_MULTIPLIER = 1.25;
-  var CODEX_CACHE_READ_MULTIPLIER = 0.1;
-
-  function matchPricing(modelName, table, defaultPricing) {
-    var normalized = String(modelName || '').toLowerCase();
-    var keys = Object.keys(table).sort(function(a, b) { return b.length - a.length; });
-    for (var i = 0; i < keys.length; i++) {
-      if (normalized.indexOf(keys[i]) === 0) { return { pricing: table[keys[i]], matched: keys[i] }; }
-    }
-    return { pricing: defaultPricing, matched: undefined };
-  }
-
-  function computeCost(pricing, input, output, cacheRead, cacheWrite, readMult, writeMult) {
-    var inputCost = (input / 1000000) * pricing.inputPerMillion;
-    var outputCost = (output / 1000000) * pricing.outputPerMillion;
-    var cacheReadCost = (cacheRead / 1000000) * pricing.inputPerMillion * readMult;
-    var cacheWriteCost = (cacheWrite / 1000000) * pricing.inputPerMillion * writeMult;
-    return inputCost + outputCost + cacheReadCost + cacheWriteCost;
-  }
-
-  function computeOpenAiCost(pricing, input, output, cacheRead, cacheWrite) {
-    var cachedInput = Math.min(input, cacheRead);
-    var uncachedInput = Math.max(0, input - cachedInput);
-    var cachedOnly = Math.max(0, cacheRead - input);
-    var cacheWriteOnly = input > 0 ? 0 : cacheWrite;
-    var inputCost = ((uncachedInput + cacheWriteOnly) / 1000000) * pricing.inputPerMillion;
-    var cachedInputCost = ((cachedInput + cachedOnly) / 1000000) * pricing.inputPerMillion * CODEX_CACHE_READ_MULTIPLIER;
-    var outputCost = (output / 1000000) * pricing.outputPerMillion;
-    return inputCost + cachedInputCost + outputCost;
-  }
-
-  function estimateClaudeCost(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, models) {
-    var result = (models && models.length > 0) ? matchPricing(models[0], CLAUDE_PRICING, CLAUDE_DEFAULT) : { pricing: CLAUDE_DEFAULT, matched: undefined };
-    var costUsd = computeCost(result.pricing, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, CLAUDE_CACHE_READ_MULTIPLIER, CLAUDE_CACHE_WRITE_MULTIPLIER);
-    return { costUsd: costUsd, isFallback: !result.matched };
-  }
-
-  function estimateCodexCost(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, models) {
-    var result = (models && models.length > 0) ? matchPricing(models[0], CODEX_PRICING, CODEX_DEFAULT) : { pricing: CODEX_DEFAULT, matched: undefined };
-    var costUsd = computeOpenAiCost(result.pricing, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
-    return { costUsd: costUsd, isFallback: !result.matched };
-  }
-
   function estimateApiEquivalentFromModelUsage(modelUsage, isClaude) {
     var entries = (modelUsage || []).filter(function(model) { return model && Number(model.totalTokens || 0) > 0; });
     if (!entries.length) { return { available: false, costUsd: 0, isFallback: false, fallbackCount: 0, totalCount: 0 }; }
 
-    var fn = isClaude ? estimateClaudeCost : estimateCodexCost;
     var total = 0;
-    var fallbackCount = 0;
+    var isFallback = false;
 
     for (var i = 0; i < entries.length; i++) {
       var model = entries[i];
-      var inputTokens = Number(model.inputTokens);
-      var outputTokens = Number(model.outputTokens);
-      var cacheReadTokens = Number(model.cacheReadInputTokens);
-      var cacheWriteTokens = Number(model.cacheCreationInputTokens);
-      if (![inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens].every(function(v) { return isFinite(v) && v >= 0; })) {
+      var cost = Number(model.apiEquivalentCostUsd);
+      if (!isFinite(cost) || cost < 0) {
         return { available: false, costUsd: 0, isFallback: false, fallbackCount: 0, totalCount: entries.length };
       }
-      var result = fn(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, [model.pricingModel || model.model || model.label || '']);
-      total += result.costUsd;
-      if (result.isFallback) { fallbackCount += 1; }
+      if (!model.pricingMatchedModel) { isFallback = true; }
+      total += cost;
     }
 
-    return { available: total > 0, costUsd: total, isFallback: fallbackCount > 0, fallbackCount: fallbackCount, totalCount: entries.length };
+    return { available: total > 0, costUsd: total, isFallback: isFallback, fallbackCount: 0, totalCount: entries.length };
   }
 
   function aggregateModelUsageForEstimate(points) {
     var byModel = {};
     (points || []).forEach(function(point) {
       (point.models || []).forEach(function(model) {
-        var key = model.model || model.label || 'unknown';
+        var key = modelDistributionAggregationKey(model);
+        var modelName = model.model || model.label || 'unknown';
         if (!byModel[key]) {
-          byModel[key] = { label: model.label || key, model: key, pricingModel: model.pricingModel || model.model || model.label || key,
-            totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
+          byModel[key] = {
+            label: model.label || modelName,
+            model: modelName,
+            pricingModel: model.pricingModel || model.model || model.label || modelName,
+            provider: model.provider,
+            providerLabel: model.providerLabel,
+            totalTokens: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            apiEquivalentCostUsd: 0
+          };
         }
         byModel[key].totalTokens += Number(model.totalTokens || 0);
         byModel[key].inputTokens += Number(model.inputTokens || 0);
         byModel[key].outputTokens += Number(model.outputTokens || 0);
         byModel[key].cacheCreationInputTokens += Number(model.cacheCreationInputTokens || 0);
         byModel[key].cacheReadInputTokens += Number(model.cacheReadInputTokens || 0);
+        mergeModelDistributionCost(byModel[key], model);
       });
     });
     return Object.keys(byModel).map(function(key) { return byModel[key]; });
@@ -1786,9 +1819,9 @@
     (points || []).forEach(function(point) {
       (point.models || []).forEach(function(model) {
         var name = model.model || model.label || '';
-        if (name.indexOf('Claude · ') === 0) {
+        if (model.provider === 'claude' || name.indexOf('Claude · ') === 0 || name.indexOf('Claude Â· ') === 0) {
           byProvider.claude.push(model);
-        } else if (name.indexOf('Codex · ') === 0) {
+        } else if (model.provider === 'codex' || name.indexOf('Codex · ') === 0 || name.indexOf('Codex Â· ') === 0) {
           byProvider.codex.push(model);
         }
       });
@@ -1871,7 +1904,29 @@
       totalTokens: totalTokens,
       segments: aggregate.map(function(entry) {
         var percent = entry.totalTokens / totalTokens;
-        return { label: entry.label, model: entry.model, totalTokens: entry.totalTokens, assistantMessages: entry.assistantMessages, percent: percent, percentLabel: formatPercentLabel(percent) };
+        return {
+          label: entry.label,
+          model: entry.model,
+          pricingModel: entry.pricingModel,
+          provider: entry.provider,
+          providerLabel: entry.providerLabel,
+          totalTokens: entry.totalTokens,
+          inputTokens: entry.inputTokens,
+          outputTokens: entry.outputTokens,
+          cacheCreationInputTokens: entry.cacheCreationInputTokens,
+          cacheReadInputTokens: entry.cacheReadInputTokens,
+          apiEquivalentCostUsd: entry.apiEquivalentCostUsd,
+          apiEquivalentCostUnavailableReason: entry.apiEquivalentCostUnavailableReason,
+          pricingMatchedModel: entry.pricingMatchedModel,
+          pricingCurrency: entry.pricingCurrency,
+          inputRatePerMillionUsd: entry.inputRatePerMillionUsd,
+          outputRatePerMillionUsd: entry.outputRatePerMillionUsd,
+          cacheReadRatePerMillionUsd: entry.cacheReadRatePerMillionUsd,
+          cacheWriteRatePerMillionUsd: entry.cacheWriteRatePerMillionUsd,
+          assistantMessages: entry.assistantMessages,
+          percent: percent,
+          percentLabel: formatPercentLabel(percent)
+        };
       }),
       source: source
     };
@@ -1881,10 +1936,31 @@
     var byModel = {};
     (points || []).forEach(function(point) {
       (point.models || []).forEach(function(model) {
-        var key = model.model || model.label || 'unknown';
-        if (!byModel[key]) { byModel[key] = { label: model.label || key, model: key, totalTokens: 0, assistantMessages: 0 }; }
+        var key = modelDistributionAggregationKey(model);
+        var modelName = model.model || model.label || 'unknown';
+        if (!byModel[key]) {
+          byModel[key] = {
+            label: model.label || modelName,
+            model: modelName,
+            pricingModel: model.pricingModel || model.model || model.label || modelName,
+            provider: model.provider,
+            providerLabel: model.providerLabel,
+            totalTokens: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            assistantMessages: 0,
+            apiEquivalentCostUsd: 0
+          };
+        }
         byModel[key].totalTokens += Number(model.totalTokens || 0);
+        byModel[key].inputTokens += Number(model.inputTokens || 0);
+        byModel[key].outputTokens += Number(model.outputTokens || 0);
+        byModel[key].cacheCreationInputTokens += Number(model.cacheCreationInputTokens || 0);
+        byModel[key].cacheReadInputTokens += Number(model.cacheReadInputTokens || 0);
         byModel[key].assistantMessages += Number(model.assistantMessages || 0);
+        mergeModelDistributionCost(byModel[key], model);
       });
     });
     return Object.keys(byModel)

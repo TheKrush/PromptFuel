@@ -141,6 +141,7 @@ export interface UsageDashboardHistoryChart {
   available: boolean;
   title: string;
   rangeLabel: string;
+  providerLabel?: string;
   unavailableReason?: string;
   ranges: UsageDashboardHistoryChartRange[];
   points: UsageDashboardHistoryChartPoint[];
@@ -187,11 +188,21 @@ export interface UsageDashboardHistoryChartModelUsage {
   label: string;
   model: string;
   pricingModel?: string;
+  provider?: 'claude' | 'codex';
+  providerLabel?: string;
   totalTokens: number;
   inputTokens?: number;
   outputTokens?: number;
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
+  apiEquivalentCostUsd?: number;
+  apiEquivalentCostUnavailableReason?: string;
+  pricingMatchedModel?: string;
+  pricingCurrency?: string;
+  inputRatePerMillionUsd?: number;
+  outputRatePerMillionUsd?: number;
+  cacheReadRatePerMillionUsd?: number;
+  cacheWriteRatePerMillionUsd?: number;
   assistantMessages: number;
 }
 
@@ -212,6 +223,7 @@ export interface UsageDashboardModelDistributionChart {
   available: boolean;
   title: string;
   rangeLabel: string;
+  providerLabel?: string;
   totalTokens: number;
   segments: UsageDashboardModelDistributionSegment[];
   unavailableReason?: string;
@@ -221,7 +233,22 @@ export interface UsageDashboardModelDistributionChart {
 export interface UsageDashboardModelDistributionSegment {
   label: string;
   model: string;
+  pricingModel?: string;
+  provider?: 'claude' | 'codex';
+  providerLabel?: string;
   totalTokens: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+  apiEquivalentCostUsd?: number;
+  apiEquivalentCostUnavailableReason?: string;
+  pricingMatchedModel?: string;
+  pricingCurrency?: string;
+  inputRatePerMillionUsd?: number;
+  outputRatePerMillionUsd?: number;
+  cacheReadRatePerMillionUsd?: number;
+  cacheWriteRatePerMillionUsd?: number;
   assistantMessages: number;
   percent: number;
   percentLabel: string;
@@ -468,8 +495,10 @@ function buildDetails(
   const codexHistRemote = cml?.codexHistory.length ? cml.codexHistory : undefined;
   const claudeModelRemote = cml?.claudeModels.length ? cml.claudeModels : undefined;
   const codexModelRemote = cml?.codexModels.length ? cml.codexModels : undefined;
-  const historyChart = claudeEnabled ? buildClaudeHistoryChart(claudeUsageHistory, remoteClaudeHistPoints, aliasMap, claudeHistRemote) : undefined;
-  const codexHistoryChart = codexEnabled ? buildCodexHistoryChart(codexCorrelatedHistory, remoteCodexHistPoints, aliasMap, codexHistRemote) : undefined;
+  const claudeLabel = sourceLabel('claude', normalizedSources);
+  const codexLabel = sourceLabel('codex', normalizedSources);
+  const historyChart = claudeEnabled ? buildClaudeHistoryChart(claudeUsageHistory, remoteClaudeHistPoints, aliasMap, claudeHistRemote, claudeLabel) : undefined;
+  const codexHistoryChart = codexEnabled ? buildCodexHistoryChart(codexCorrelatedHistory, remoteCodexHistPoints, aliasMap, codexHistRemote, codexLabel) : undefined;
   const providerApiEquivalentCostUsd = sumCostIfComplete(availableProviders.map(provider => ({
     costUsd: provider.apiEquivalentCostUsd
   })));
@@ -522,8 +551,8 @@ function buildDetails(
     ...buildBreakdownCards(availableProviders, totals, snapshotSource)
   ];
 
-  const modelDistribution = claudeEnabled ? buildClaudeModelDistribution(claudeUsageHistory, remoteClaudeModels) : undefined;
-  const codexModelDistribution = codexEnabled ? buildCodexModelDistribution(codexCorrelatedHistory, remoteCodexModels) : undefined;
+  const modelDistribution = claudeEnabled ? buildClaudeModelDistribution(claudeUsageHistory, remoteClaudeModels, claudeLabel) : undefined;
+  const codexModelDistribution = codexEnabled ? buildCodexModelDistribution(codexCorrelatedHistory, remoteCodexModels, codexLabel) : undefined;
 
   const claudeHistorySectionLabel = claudeEnabled && (historyChart?.available || claudeHistRemote)
     ? buildSectionLabel(['Claude'], claudeHistRemote ?? [], 'claude', aliasMap)
@@ -538,16 +567,16 @@ function buildDetails(
     ? buildSectionLabel(['Codex'], codexModelRemote ?? [], 'codex', aliasMap)
     : undefined;
   const claudeSourceHistoryPanels = claudeEnabled
-    ? buildSourceHistoryPanels('Claude', 'claude', claudeUsageHistory?.available ? buildClaudeHistoryChart(claudeUsageHistory) : undefined, remoteClaudeHistPoints?.length ? buildClaudeHistoryChart(undefined, remoteClaudeHistPoints, aliasMap, claudeHistRemote) : undefined, claudeHistRemote, aliasMap)
+    ? buildSourceHistoryPanels(claudeLabel, 'claude', claudeUsageHistory?.available ? buildClaudeHistoryChart(claudeUsageHistory, undefined, undefined, undefined, claudeLabel) : undefined, remoteClaudeHistPoints?.length ? buildClaudeHistoryChart(undefined, remoteClaudeHistPoints, aliasMap, claudeHistRemote, claudeLabel) : undefined, claudeHistRemote, aliasMap)
     : undefined;
   const codexSourceHistoryPanels = codexEnabled
-    ? buildSourceHistoryPanels('Codex', 'codex', codexCorrelatedHistory?.available ? buildCodexHistoryChart(codexCorrelatedHistory) : undefined, remoteCodexHistPoints?.length ? buildCodexHistoryChart(undefined, remoteCodexHistPoints, aliasMap, codexHistRemote) : undefined, codexHistRemote, aliasMap)
+    ? buildSourceHistoryPanels(codexLabel, 'codex', codexCorrelatedHistory?.available ? buildCodexHistoryChart(codexCorrelatedHistory, undefined, undefined, undefined, codexLabel) : undefined, remoteCodexHistPoints?.length ? buildCodexHistoryChart(undefined, remoteCodexHistPoints, aliasMap, codexHistRemote, codexLabel) : undefined, codexHistRemote, aliasMap)
     : undefined;
   const claudeSourceModelDistributionPanels = claudeEnabled
-    ? buildSourceModelDistributionPanels('Claude', 'claude', claudeUsageHistory?.available ? buildClaudeModelDistribution(claudeUsageHistory) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label === 'Claude')?.chart, remoteClaudeModels?.length ? buildClaudeModelDistribution(undefined, remoteClaudeModels) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label !== 'Claude')?.chart, claudeModelRemote, aliasMap)
+    ? buildSourceModelDistributionPanels(claudeLabel, 'claude', claudeUsageHistory?.available ? buildClaudeModelDistribution(claudeUsageHistory, undefined, claudeLabel) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label === claudeLabel)?.chart, remoteClaudeModels?.length ? buildClaudeModelDistribution(undefined, remoteClaudeModels, claudeLabel) : undefined, claudeSourceHistoryPanels?.find(panel => panel.label !== claudeLabel)?.chart, claudeModelRemote, aliasMap)
     : undefined;
   const codexSourceModelDistributionPanels = codexEnabled
-    ? buildSourceModelDistributionPanels('Codex', 'codex', codexCorrelatedHistory?.available ? buildCodexModelDistribution(codexCorrelatedHistory) : undefined, codexSourceHistoryPanels?.find(panel => panel.label === 'Codex')?.chart, remoteCodexModels?.length ? buildCodexModelDistribution(undefined, remoteCodexModels) : undefined, codexSourceHistoryPanels?.find(panel => panel.label !== 'Codex')?.chart, codexModelRemote, aliasMap)
+    ? buildSourceModelDistributionPanels(codexLabel, 'codex', codexCorrelatedHistory?.available ? buildCodexModelDistribution(codexCorrelatedHistory, undefined, codexLabel) : undefined, codexSourceHistoryPanels?.find(panel => panel.label === codexLabel)?.chart, remoteCodexModels?.length ? buildCodexModelDistribution(undefined, remoteCodexModels, codexLabel) : undefined, codexSourceHistoryPanels?.find(panel => panel.label !== codexLabel)?.chart, codexModelRemote, aliasMap)
     : undefined;
 
   function buildCombinedSectionLabel(
@@ -613,7 +642,7 @@ function buildDetails(
 }
 
 function buildSourceHistoryPanels(
-  localLabel: 'Claude' | 'Codex',
+  localLabel: string,
   provider: 'claude' | 'codex',
   localChart: UsageDashboardHistoryChart | undefined,
   remoteChart: UsageDashboardHistoryChart | undefined,
@@ -634,7 +663,7 @@ function buildSourceHistoryPanels(
 }
 
 function buildSourceModelDistributionPanels(
-  localLabel: 'Claude' | 'Codex',
+  localLabel: string,
   provider: 'claude' | 'codex',
   localDistribution: UsageDashboardModelDistributionChart | undefined,
   localHistoryChart: UsageDashboardHistoryChart | undefined,
@@ -658,7 +687,7 @@ function buildSourceModelDistributionPanels(
 }
 
 function buildRemoteOnlySectionLabel(
-  localLabel: 'Claude' | 'Codex',
+  localLabel: string,
   provider: 'claude' | 'codex',
   remoteMachineLabels: string[] | undefined,
   aliasMap?: Record<string, string>

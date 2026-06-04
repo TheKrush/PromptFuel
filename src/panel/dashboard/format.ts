@@ -1,9 +1,17 @@
 import { AuthenticatedQuotaStatus } from '../../types';
-import type { UsageDashboardSourceInfo, UsageDashboardSourceConfidence, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard } from '../usageDashboardModel';
+import type {
+  UsageDashboardSourceInfo,
+  UsageDashboardSourceConfidence,
+  UsageDashboardHistoryChartPoint,
+  UsageDashboardHistoryChartModelUsage,
+  UsageDashboardMetricCard
+} from '../usageDashboardModel';
 import type { RemoteModelEntry } from '../../snapshot/remoteUsageProjection';
 import type { UsageHistoryPoint } from '../usageHistoryBinning';
 import { addThousandsSeparators, formatTokenCount } from '../../display/format';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
+import { modelPricingFields } from './pricingFields';
+import { estimateClaudeCostUsd, estimateCodexCostUsd } from '../../providers/pricing';
 
 interface LocalHistoryModelUsageRow {
   model: string;
@@ -146,6 +154,20 @@ export function formatProviderStatus(status: AuthenticatedQuotaStatus | undefine
   }
 }
 
+function historyFallbackCostOverride(
+  provider: 'claude' | 'codex',
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  cacheWriteTokens: number
+): { apiEquivalentCostUsd: number; apiEquivalentCostUnavailableReason: undefined } {
+  const est = provider === 'claude'
+    ? estimateClaudeCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, [model])
+    : estimateCodexCostUsd(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, [model]);
+  return { apiEquivalentCostUsd: est.costUsd, apiEquivalentCostUnavailableReason: undefined };
+}
+
 export function mapModelUsageToHistory(
   modelUsage: ReadonlyArray<{
     model: string;
@@ -157,24 +179,31 @@ export function mapModelUsageToHistory(
     reasoningOutputTokens?: number;
     assistantMessages: number;
   }>,
-  shortenModel: (model: string) => string
-): {
-  label: string; model: string; pricingModel: string; totalTokens: number;
-  inputTokens: number; outputTokens: number; cacheCreationInputTokens: number;
-  cacheReadInputTokens: number; reasoningOutputTokens?: number; assistantMessages: number
-}[] {
-  return modelUsage.map(m => ({
-    label: shortenModel(m.model),
-    model: m.model,
-    pricingModel: m.model,
-    totalTokens: displayTotalTokens(m),
-    inputTokens: m.inputTokens,
-    outputTokens: m.outputTokens,
-    cacheCreationInputTokens: m.cacheCreationInputTokens,
-    cacheReadInputTokens: m.cacheReadInputTokens,
-    reasoningOutputTokens: m.reasoningOutputTokens,
-    assistantMessages: m.assistantMessages
-  }));
+  shortenModel: (model: string) => string,
+  provider: 'claude' | 'codex',
+  providerLabel: string
+): UsageDashboardHistoryChartModelUsage[] {
+  return modelUsage.map(m => {
+    const pricingFields = modelPricingFields(provider, m.model, m);
+    const costOverride = pricingFields.apiEquivalentCostUsd === undefined
+      ? historyFallbackCostOverride(provider, m.model, m.inputTokens, m.outputTokens, m.cacheReadInputTokens, m.cacheCreationInputTokens)
+      : undefined;
+    return {
+      label: shortenModel(m.model),
+      model: m.model,
+      provider,
+      providerLabel,
+      totalTokens: displayTotalTokens(m),
+      inputTokens: m.inputTokens,
+      outputTokens: m.outputTokens,
+      cacheCreationInputTokens: m.cacheCreationInputTokens,
+      cacheReadInputTokens: m.cacheReadInputTokens,
+      reasoningOutputTokens: m.reasoningOutputTokens,
+      assistantMessages: m.assistantMessages,
+      ...pricingFields,
+      ...(costOverride ?? {})
+    };
+  });
 }
 
 export function buildHistoryUnavailableCard(
@@ -239,14 +268,33 @@ export function buildUnavailableMetricCard(key: string, label: string, detail: s
 
 export function normalizeRemoteHistoryPointModels(
   points: UsageHistoryPoint[],
-  shortenModel: (model: string) => string
+  shortenModel: (model: string) => string,
+  provider: 'claude' | 'codex',
+  providerLabel: string
 ): UsageDashboardHistoryChartPoint[] {
   return points.map(point => ({
     ...(point as UsageDashboardHistoryChartPoint),
-    models: (point.models ?? []).map(model => ({
-      ...model,
-      label: shortenModel(model.model || model.label)
-    }))
+    models: (point.models ?? []).map(model => {
+      const modelKey = model.pricingModel || model.model || model.label;
+      const tokens = {
+        inputTokens: model.inputTokens,
+        outputTokens: model.outputTokens,
+        cacheCreationInputTokens: model.cacheCreationInputTokens,
+        cacheReadInputTokens: model.cacheReadInputTokens
+      };
+      const pricingFields = modelPricingFields(provider, modelKey, tokens);
+      const costOverride = pricingFields.apiEquivalentCostUsd === undefined
+        ? historyFallbackCostOverride(provider, modelKey, tokens.inputTokens ?? 0, tokens.outputTokens ?? 0, tokens.cacheReadInputTokens ?? 0, tokens.cacheCreationInputTokens ?? 0)
+        : undefined;
+      return {
+        ...model,
+        label: shortenModel(model.model || model.label),
+        provider,
+        providerLabel,
+        ...pricingFields,
+        ...(costOverride ?? {})
+      };
+    })
   }));
 }
 
