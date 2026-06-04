@@ -28,9 +28,11 @@ export function buildRemoteStatusBarItems(
       }
 
       const sourceEntry = normalizedSources?.[sourceId];
+      const fallbackLabel = formatSourceLabel(sp.provider, machineLabel, aliasMap);
       const statusBarLabel = sourceEntry
         ? (displayMode === 'compact' ? sourceEntry.shortLabel : sourceEntry.label)
-        : formatSourceLabel(sp.provider, machineLabel, aliasMap);
+        : fallbackLabel;
+      const tooltipLabel = sourceEntry?.label ?? fallbackLabel;
       const windows: string[] = [];
 
       const sevenDay = sp.sevenDayUsedPercent;
@@ -75,7 +77,7 @@ export function buildRemoteStatusBarItems(
       const ageStr = formatAgeLabel(snapshotAgeMs, true);
 
       const tooltip = formatRemoteProviderTooltip({
-        label: statusBarLabel,
+        label: tooltipLabel,
         provider: sp.provider as ProviderName,
         sevenDayRemainingPercent: hasSevenDay ? Math.max(0, 100 - (sevenDay as number)) : undefined,
         fiveHourRemainingPercent: hasFiveHour ? Math.max(0, 100 - (fiveHour as number)) : undefined,
@@ -93,7 +95,7 @@ export function buildRemoteStatusBarItems(
         tooltip,
         severity: snapshotStale ? 'warning' : 'normal',
         remoteQuotaData: {
-          label: statusBarLabel,
+          label: tooltipLabel,
           sevenDayRemainingPercent: hasSevenDay ? Math.max(0, 100 - (sevenDay as number)) : undefined,
           fiveHourRemainingPercent: hasFiveHour ? Math.max(0, 100 - (fiveHour as number)) : undefined,
           sevenDayResetEpochSeconds: sevenDayResetEpoch,
