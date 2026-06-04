@@ -16,7 +16,22 @@ interface OverviewTodayPart {
   cacheTokens: number;
   totalTokens: number;
   apiCostUsd?: number;
+  apiFallbackPricingUsed?: boolean;
   hasApiEstimateInput: boolean;
+}
+
+interface ApiEstimateTooltipOptions {
+  label: string;
+  fallbackPricingUsed?: boolean;
+  unavailableReason?: string;
+}
+
+function formatApiEstimateTooltip(options: ApiEstimateTooltipOptions): string {
+  const prefix = `${options.label} estimate`;
+  if (options.unavailableReason) {
+    return `${prefix} unavailable: ${options.unavailableReason}. Not actual billing.`;
+  }
+  return `${prefix}; ${options.fallbackPricingUsed ? 'fallback pricing used; ' : ''}not actual billing.`;
 }
 
 function buildRemoteSourceNote(remote: RemoteSourceTodaySummary): string {
@@ -35,7 +50,7 @@ function estimateTodayApiEquivalent(
   usage: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket,
   isClaude: boolean,
   providerLabel: 'Claude' | 'Codex'
-): { available: true; costUsd: number; detail: string; detailTooltip?: string } | { available: false; detail: string; detailTooltip?: string } {
+): { available: true; costUsd: number; fallbackPricingUsed: boolean; detail: string; detailTooltip?: string } | { available: false; detail: string; detailTooltip?: string } {
   const modelUsage = usage.modelUsage ?? [];
   if (modelUsage.length > 0) {
     const estimate = estimateAggregateCostUsd(modelUsage.map(model => ({
@@ -49,10 +64,9 @@ function estimateTodayApiEquivalent(
     return {
       available: true,
       costUsd: estimate.costUsd,
+      fallbackPricingUsed: estimate.fallbackCount > 0,
       detail: estimate.fallbackCount > 0 ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-      detailTooltip: estimate.fallbackCount > 0
-        ? `Estimated ${providerLabel} API-equivalent cost from per-model today usage (${estimate.fallbackCount}/${estimate.totalCount} models used fallback pricing). Not actual billing.`
-        : `Estimated ${providerLabel} API-equivalent cost from per-model today usage; not actual billing`
+      detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, fallbackPricingUsed: estimate.fallbackCount > 0 })
     };
   }
 
@@ -68,10 +82,9 @@ function estimateTodayApiEquivalent(
     return {
       available: true,
       costUsd: estimate.costUsd,
+      fallbackPricingUsed: estimate.fallbackCount > 0,
       detail: estimate.fallbackCount > 0 ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-      detailTooltip: estimate.fallbackCount > 0
-        ? `Estimated ${providerLabel} API-equivalent cost using single-model today aggregate (fallback pricing for unrecognized model "${usage.models[0]}"). Not actual billing.`
-        : `Estimated ${providerLabel} API-equivalent cost using single-model today aggregate; not actual billing`
+      detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, fallbackPricingUsed: estimate.fallbackCount > 0 })
     };
   }
 
@@ -79,14 +92,14 @@ function estimateTodayApiEquivalent(
     return {
       available: false,
       detail: 'Estimate unavailable · mixed models',
-      detailTooltip: `Mixed-model ${providerLabel} today usage has no per-model token breakdown; API-equivalent estimate unavailable.`
+      detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, unavailableReason: 'mixed-model today usage has no per-model token breakdown' })
     };
   }
 
   return {
     available: false,
     detail: 'No model data',
-    detailTooltip: `No ${providerLabel} model data available; cannot estimate API-equivalent cost.`
+    detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, unavailableReason: 'no model data is available' })
   };
 }
 
@@ -132,6 +145,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
     .filter(part => part.hasApiEstimateInput)
     .map(part => ({ costUsd: part.apiCostUsd }));
   const totalApi = sumCostIfComplete(apiRows);
+  const fallbackPricingUsed = activeParts.some(part => part.apiFallbackPricingUsed);
 
   const overviewSource = sourceInfo(
     'mixedDayBucket',
@@ -203,6 +217,11 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
           part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
         )
         : undefined,
+      detailTooltip: formatApiEstimateTooltip({
+        label: '1D API-equivalent',
+        fallbackPricingUsed,
+        unavailableReason: totalApi === undefined ? 'every contributing Today source must include model and token component data' : undefined
+      }),
       available: totalApi !== undefined,
       source: overviewSource
     }
@@ -214,7 +233,7 @@ function estimateRemoteTodayApiEquivalent(
   modelEntries: RemoteModelEntry[] | undefined,
   isClaude: boolean,
   providerLabel: 'Claude' | 'Codex'
-): { available: true; costUsd: number; detail: string; detailTooltip?: string } | { available: false; detail: string; detailTooltip?: string } {
+): { available: true; costUsd: number; fallbackPricingUsed: boolean; detail: string; detailTooltip?: string } | { available: false; detail: string; detailTooltip?: string } {
   const entries = (modelEntries ?? []).filter(entry => entry.model && entry.tokens > 0);
   const remoteTotal = displayTotalTokens(remote);
   const entryTotal = entries.reduce((sum, entry) => sum + displayTotalTokens({
@@ -227,7 +246,7 @@ function estimateRemoteTodayApiEquivalent(
     return {
       available: false,
       detail: 'Snapshot cost unavailable',
-      detailTooltip: `Selected imported ${providerLabel} snapshot rows do not include model and token component data for every contributing row.`
+      detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, unavailableReason: 'selected imported snapshot rows do not include model and token component data for every contributing row' })
     };
   }
 
@@ -242,10 +261,9 @@ function estimateRemoteTodayApiEquivalent(
   return {
     available: true,
     costUsd: estimate.costUsd,
+    fallbackPricingUsed: estimate.fallbackCount > 0,
     detail: estimate.fallbackCount > 0 ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-    detailTooltip: estimate.fallbackCount > 0
-      ? `Estimated ${providerLabel} API-equivalent cost from selected remote bucket model rows (${estimate.fallbackCount}/${estimate.totalCount} models used fallback pricing). Not actual billing.`
-      : `Estimated ${providerLabel} API-equivalent cost from selected remote bucket model rows; not actual billing.`
+    detailTooltip: formatApiEstimateTooltip({ label: `${providerLabel} 1D API-equivalent`, fallbackPricingUsed: estimate.fallbackCount > 0 })
   };
 }
 
@@ -360,6 +378,7 @@ export function buildTodayOverviewFromCharts(
         cacheTokens: claudeBin.cacheTokens,
         totalTokens: claudeBin.totalTokens,
         apiCostUsd: claudeApi?.costUsd,
+        apiFallbackPricingUsed: claudeApi ? claudeApi.fallbackCount > 0 : false,
         hasApiEstimateInput: claudeBin.models.length > 0
       });
     }
@@ -373,6 +392,7 @@ export function buildTodayOverviewFromCharts(
         cacheTokens: codexBin.cacheTokens,
         totalTokens: codexBin.totalTokens,
         apiCostUsd: codexApi?.costUsd,
+        apiFallbackPricingUsed: codexApi ? codexApi.fallbackCount > 0 : false,
         hasApiEstimateInput: codexBin.models.length > 0
       });
     }
@@ -396,6 +416,7 @@ export function buildTodayOverviewFromCharts(
       cacheTokens: claudeBin.cacheTokens,
       totalTokens: claudeBin.totalTokens,
       apiCostUsd: claudeApi?.costUsd,
+      apiFallbackPricingUsed: claudeApi ? claudeApi.fallbackCount > 0 : false,
       hasApiEstimateInput: claudeBin.models.length > 0
     },
     {
@@ -406,6 +427,7 @@ export function buildTodayOverviewFromCharts(
       cacheTokens: codexBin.cacheTokens,
       totalTokens: codexBin.totalTokens,
       apiCostUsd: codexApi?.costUsd,
+      apiFallbackPricingUsed: codexApi ? codexApi.fallbackCount > 0 : false,
       hasApiEstimateInput: codexBin.models.length > 0
     }
   ];
@@ -466,6 +488,11 @@ export function buildTodayOverviewFromCharts(
           part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
         )
         : undefined,
+      detailTooltip: formatApiEstimateTooltip({
+        label: '1D API-equivalent',
+        fallbackPricingUsed: parts.some(part => part.apiFallbackPricingUsed),
+        unavailableReason: totalApi === undefined ? 'every contributing Today source must include model and token component data' : undefined
+      }),
       available: totalApi !== undefined,
       source: overviewSource
     }
@@ -555,6 +582,8 @@ export function buildToday(
         cacheTokens: mergedCache,
         totalTokens: hasRemote ? mergedTotal : localTotal,
         apiCostUsd: claudeMergedApiCost,
+        apiFallbackPricingUsed: (claudeTodayApiEstimate.available && claudeTodayApiEstimate.fallbackPricingUsed) ||
+          Boolean(claudeRemoteApiEstimate?.available && claudeRemoteApiEstimate.fallbackPricingUsed),
         hasApiEstimateInput: true
       });
 
@@ -639,7 +668,12 @@ export function buildToday(
           ? (hasRemote ? 'Estimate · not actual billing' : claudeTodayApiEstimate.detail)
           : 'Estimate unavailable · some snapshot rows lack model/token components',
         detailTooltip: hasRemote
-          ? 'API-equivalent is hidden unless all snapshot rows carry model and token component data.'
+          ? formatApiEstimateTooltip({
+            label: 'Claude 1D API-equivalent',
+            fallbackPricingUsed: (claudeTodayApiEstimate.available && claudeTodayApiEstimate.fallbackPricingUsed) ||
+              Boolean(claudeRemoteApiEstimate?.available && claudeRemoteApiEstimate.fallbackPricingUsed),
+            unavailableReason: claudeMergedApiAvailable ? undefined : 'all snapshot rows must carry model and token component data'
+          })
           : claudeTodayApiEstimate.detailTooltip,
         available: claudeMergedApiAvailable
       });
@@ -660,6 +694,7 @@ export function buildToday(
         cacheTokens: remoteCache,
         totalTokens: remoteTotal,
         apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
+        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed,
         hasApiEstimateInput: true
       });
       cards.push({
@@ -757,6 +792,8 @@ export function buildToday(
         cacheTokens: mergedCache,
         totalTokens: hasRemote ? mergedTotal : localTotal,
         apiCostUsd: codexMergedApiCost,
+        apiFallbackPricingUsed: (codexTodayApiEstimate.available && codexTodayApiEstimate.fallbackPricingUsed) ||
+          Boolean(codexRemoteApiEstimate?.available && codexRemoteApiEstimate.fallbackPricingUsed),
         hasApiEstimateInput: true
       });
 
@@ -841,7 +878,12 @@ export function buildToday(
           ? (hasRemote ? 'Estimate · not actual billing' : codexTodayApiEstimate.detail)
           : 'Estimate unavailable · some snapshot rows lack model/token components',
         detailTooltip: hasRemote
-          ? 'API-equivalent is hidden unless all snapshot rows carry model and token component data.'
+          ? formatApiEstimateTooltip({
+            label: 'Codex 1D API-equivalent',
+            fallbackPricingUsed: (codexTodayApiEstimate.available && codexTodayApiEstimate.fallbackPricingUsed) ||
+              Boolean(codexRemoteApiEstimate?.available && codexRemoteApiEstimate.fallbackPricingUsed),
+            unavailableReason: codexMergedApiAvailable ? undefined : 'all snapshot rows must carry model and token component data'
+          })
           : codexTodayApiEstimate.detailTooltip,
         available: codexMergedApiAvailable
       });
@@ -862,6 +904,7 @@ export function buildToday(
         cacheTokens: remoteCache,
         totalTokens: remoteTotal,
         apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
+        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed,
         hasApiEstimateInput: true
       });
       cards.push({

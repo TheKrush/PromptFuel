@@ -136,7 +136,7 @@ function main() {
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'mixed codexTodayApiEquivalent card present');
     assert.equal(codexTodayApiEq.available, true, 'mixed codexTodayApiEquivalent available with per-model tokens');
-    assert.ok(codexTodayApiEq.detailTooltip?.includes('per-model today usage'), 'mixed estimate detailTooltip names per-model today usage');
+    assert.equal(codexTodayApiEq.detailTooltip, 'Codex 1D API-equivalent estimate; fallback pricing used; not actual billing.', 'mixed estimate detailTooltip uses standardized fallback wording');
     assert.ok(codexTodayApiEq.detail.includes('fallback'), 'mixed estimate detail reports fallback count');
   }
 
@@ -158,7 +158,7 @@ function main() {
     assert.equal(codexTodayApiEq.available, false, 'mixed codexTodayApiEquivalent unavailable without per-model tokens');
     assert.equal(codexTodayApiEq.value, 'Unavailable', 'mixed unsafe estimate shows unavailable value');
     assert.ok(
-      codexTodayApiEq.detailTooltip?.includes('Mixed-model Codex today usage has no per-model token breakdown'),
+      codexTodayApiEq.detailTooltip?.includes('Codex 1D API-equivalent estimate unavailable: mixed-model today usage has no per-model token breakdown. Not actual billing.'),
       'mixed unsafe estimate detailTooltip explains why'
     );
   }
