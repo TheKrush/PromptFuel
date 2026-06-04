@@ -217,7 +217,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__layoutToggleTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderHistoryLayoutToggle: renderHistoryLayoutToggle, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, usageCardsByKey: usageCardsByKey, setHistoryLayout: function(layout) { currentHistoryLayout = layout; }, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; } }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageModelDistributionSection: renderUsageModelDistributionSection, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; } }; })();'
   );
   const fakeElement = {
     value: '',
@@ -245,46 +245,50 @@ function main() {
   };
   vm.runInNewContext(instrumentedScript, sandbox);
 
-  const selectedCombinedChart = sandbox.__layoutToggleTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1M');
-  const combinedHtml = sandbox.__layoutToggleTest.renderHistoryChart(selectedCombinedChart, 'combined', '1M', selectedCombinedChart.source);
+  const selectedCombinedChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1M');
+  const combinedHtml = sandbox.__combinedDashboardTest.renderHistoryChart(selectedCombinedChart, 'combined', '1M', selectedCombinedChart.source);
   assert.match(combinedHtml, /usage-history-bar-fill stacked/, 'combined chart renders model-stacked history bars when model attribution exists');
   assert.doesNotMatch(combinedHtml, /usage-history-bar-segment claude model/, 'combined model-stacked bars do not use aggregate Claude provider classes');
   assert.doesNotMatch(combinedHtml, /usage-history-bar-segment codex model/, 'combined model-stacked bars do not use aggregate Codex provider classes');
   assert.doesNotMatch(combinedHtml, /usage-history-bar-segment[^"]*\b(?:claude|codex)\b[^"]*\bmodel\b/, 'combined model-stacked bars have no provider styling class on model segments');
   assert.match(combinedHtml, /background-color:var\(--vscode-charts-blue,#4f8fd6\)/, 'combined stacked bars use shared model-series colors');
   assert.match(combinedHtml, /data-history-provider="combined"/, 'combined range controls share one range state');
-  assert.match(sandbox.__layoutToggleTest.renderHistoryLayoutToggle(false, 'combined'), /disabled/, 'toggle renders disabled when combined is unavailable');
-  assert.match(sandbox.__layoutToggleTest.renderHistoryLayoutToggle(true, 'combined'), /aria-pressed="true">Merged/, 'merged toggle state can render active');
-  assert.equal(sandbox.__layoutToggleTest.renderCombinedHistoryLegend(selectedCombinedChart), '', 'combined model-stacked bars omit redundant provider-level legend');
+  assert.equal(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(selectedCombinedChart), '', 'combined model-stacked bars omit redundant provider-level legend');
 
   const fallbackCombinedChart = {
     ...selectedCombinedChart,
     points: selectedCombinedChart.points.map(point => ({ ...point, models: [] }))
   };
-  const fallbackCombinedHtml = sandbox.__layoutToggleTest.renderHistoryChart(fallbackCombinedChart, 'combined', '1M', fallbackCombinedChart.source);
+  const fallbackCombinedHtml = sandbox.__combinedDashboardTest.renderHistoryChart(fallbackCombinedChart, 'combined', '1M', fallbackCombinedChart.source);
   assert.match(fallbackCombinedHtml, /usage-history-bar-fill combined/, 'combined chart falls back to provider bars without model attribution');
   assert.match(fallbackCombinedHtml, /usage-history-bar-segment claude/, 'combined fallback keeps Claude provider segment color');
   assert.match(fallbackCombinedHtml, /usage-history-bar-segment codex/, 'combined fallback keeps Codex provider segment color');
-  assert.match(visibleTextFromHtml(sandbox.__layoutToggleTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /Claude/, 'combined fallback keeps provider legend when model stacks are unavailable');
-  assert.doesNotMatch(visibleTextFromHtml(sandbox.__layoutToggleTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /correlated/i, 'combined fallback legend does not show visible correlated wording');
+  assert.match(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /Claude/, 'combined fallback keeps provider legend when model stacks are unavailable');
+  assert.doesNotMatch(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /correlated/i, 'combined fallback legend does not show visible correlated wording');
 
-  sandbox.__layoutToggleTest.setHistoryLayout('combined');
-  const combinedHistorySectionHtml = sandbox.__layoutToggleTest.renderUsageHistorySection(model.details, []);
+  const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, []);
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
+  assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
+  assert.doesNotMatch(combinedHistorySectionHtml, /data-history-layout/, 'combined history section has no layout toggle controls');
+  assert.doesNotMatch(combinedHistorySectionHtml, />Merged</, 'combined history section has no Merged button');
+  assert.doesNotMatch(combinedHistorySectionHtml, />Separate</, 'combined history section has no Separate button');
+  assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Claude</, 'combined history does not require a separate Claude comparison card');
+  assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Codex</, 'combined history does not require a separate Codex comparison card');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /4\.0K/, 'combined history cards show combined displayed token totals including cache');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude 3\.0K · Codex 1\.0K/, 'combined history cards show provider displayed-token attribution');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /\$0\.05/, 'combined history API-equivalent uses per-model selected-range pricing');
   assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude \$0\.05 .* Codex \$0\.01/, 'combined history API-equivalent shows provider cost attribution');
   assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /correlated/i, 'combined history has no visible correlated chart label text');
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
-    sandbox.__layoutToggleTest.setCombinedHistoryRange(range);
-    const rangeHtml = sandbox.__layoutToggleTest.renderUsageHistorySection(model.details, []);
+    sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
+    const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, []);
     const rangeText = visibleTextFromHtml(rangeHtml);
     assert.match(rangeText, /\$0\.05/, `combined ${range} API-equivalent is available`);
   });
 
-  const combinedDistributionHtml = sandbox.__layoutToggleTest.renderUsageModelDistributionSection(model.details);
+  const combinedDistributionHtml = sandbox.__combinedDashboardTest.renderUsageModelDistributionSection(model.details);
   assert.match(combinedDistributionHtml, /usage-model-distribution/, 'combined view renders model distribution content');
+  assert.match(combinedDistributionHtml, /usage-section-provider-grid combined/, 'model distribution uses the combined provider grid');
   assert.match(visibleTextFromHtml(combinedDistributionHtml), /Claude · sonnet-4/, 'combined model distribution labels Claude models with provider attribution');
   assert.match(visibleTextFromHtml(combinedDistributionHtml), /Codex · gpt-5-codex/, 'combined model distribution labels Codex models with provider attribution');
   assert.doesNotMatch(visibleTextFromHtml(combinedDistributionHtml), /correlated/i, 'combined model distribution has no visible correlated title text');
@@ -302,42 +306,40 @@ function main() {
     'combined stacked bar colors align with combined Model Distribution palette order'
   );
 
-  sandbox.__layoutToggleTest.setHistoryLayout('split');
-  const selectedSplitClaudeChart = sandbox.__layoutToggleTest.selectCombinedHistoryChartRange(model.details.historyChart, '1M');
-  const splitClaudeChartHtml = sandbox.__layoutToggleTest.renderHistoryChart(selectedSplitClaudeChart, 'claude', '1M', selectedSplitClaudeChart.source);
-  assert.match(splitClaudeChartHtml, /usage-history-bar-fill stacked/, 'split Claude chart renders model-stacked bars when model attribution exists');
-  assert.doesNotMatch(splitClaudeChartHtml, /usage-history-bar-segment codex/, 'split Claude stacked bars do not add Codex provider hatch');
-  const splitClaudeCards = sandbox.__layoutToggleTest.selectClaudeHistoryMetricCardsRange(
-    sandbox.__layoutToggleTest.usageCardsByKey(model.details.cards, ['historyRange', 'historyTokens', 'historyActivity', 'historyCache']),
-    model.details.historyChart,
-    '1M'
-  );
-  const splitHistorySectionHtml = sandbox.__layoutToggleTest.renderUsageHistorySection(model.details, splitClaudeCards);
-  assert.match(splitHistorySectionHtml, /usage-section-provider-title">Claude</, 'split view renders Claude provider card');
-  assert.match(splitHistorySectionHtml, /usage-section-provider-title">Codex</, 'split view renders Codex provider card');
-  assert.match(splitHistorySectionHtml, /usage-metric-card/, 'split view still renders provider-specific metric cards');
-  const splitDistributionHtml = sandbox.__layoutToggleTest.renderUsageModelDistributionSection(model.details);
-  assert.deepEqual(
-    historyBarSegmentColors(splitClaudeChartHtml).slice(-3),
-    modelDistributionSwatchColors(splitDistributionHtml).slice(0, 3),
-    'split stacked bar colors align with split Model Distribution palette order'
-  );
-
   const panelSource = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanel.ts'), 'utf8');
-  assert.match(panelSource, /promptFuel\.usage\.historyLayout/, 'workspaceState key is present');
-  assert.match(panelSource, /workspaceState\.update\(USAGE_HISTORY_LAYOUT_STATE_KEY/, 'layout changes persist to workspaceState');
-  assert.match(panelSource, /usageWorkspaceState\?\.get<string>\(USAGE_HISTORY_LAYOUT_STATE_KEY\)/, 'layout reads from workspaceState');
+  assert.doesNotMatch(panelSource, /promptFuel\.usage\.historyLayout/, 'workspaceState history layout key is removed');
+  assert.doesNotMatch(panelSource, /workspaceState\.update\(USAGE_HISTORY_LAYOUT_STATE_KEY/, 'layout changes no longer persist to workspaceState');
 
   const scriptSource = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
-  assert.match(scriptSource, /command: 'setUsageHistoryLayout'/, 'webview posts layout changes');
-  assert.match(scriptSource, /currentHistoryLayout = 'combined'/, 'Combined is the webview default');
+  assert.doesNotMatch(scriptSource, /command: 'setUsageHistoryLayout'/, 'webview no longer posts layout changes');
+  assert.doesNotMatch(scriptSource, /data-history-layout/, 'webview has no history layout controls');
+  assert.doesNotMatch(scriptSource, />Merged</, 'webview has no visible Merged button label');
+  assert.doesNotMatch(scriptSource, />Separate</, 'webview has no visible Separate button label');
+  assert.doesNotMatch(scriptSource, /currentHistoryLayout/, 'webview has no mutable history layout state');
+  assert.doesNotMatch(scriptSource, /renderHistoryLayoutToggle/, 'webview has no history layout toggle renderer');
+
+  const viewSource = fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'promptFuelPanelView.ts'), 'utf8');
+  assert.match(viewSource, /data-provider-tab="overview"[\s\S]*>Overview<\/button>/, 'existing Overview tab still renders');
+  assert.match(viewSource, /data-provider-tab="claude"[\s\S]*>Claude<\/button>/, 'existing Claude tab still renders');
+  assert.match(viewSource, /data-provider-tab="codex"[\s\S]*>Codex<\/button>/, 'existing Codex tab still renders');
+
+  const repoSources = [
+    scriptSource,
+    panelSource,
+    viewSource,
+    fs.readFileSync(path.join(repoRoot, 'src', 'panel', 'usageDashboardModel.ts'), 'utf8')
+  ].join('\n');
+  assert.doesNotMatch(repoSources, /SourceUsageViewModel/, 'no SourceUsageViewModel source-tab machinery was added');
+  assert.doesNotMatch(repoSources, /UsageDashboardTabViewModel/, 'no UsageDashboardTabViewModel source-tab machinery was added');
 
   const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
+  assert.doesNotMatch(styles, /usage-history-layout-toggle/, 'layout toggle styles are removed');
+  assert.doesNotMatch(styles, /usage-segment/, 'layout segment styles are removed');
   assert.match(styles, /usage-history-bar-segment\.codex:not\(\.model\)[\s\S]*repeating-linear-gradient/, 'Codex fallback provider bars use hatch treatment');
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
 
-  console.log('PASS: usage dashboard layout toggle smoke tests passed.');
+  console.log('PASS: usage dashboard combined layout smoke tests passed.');
 }
 
 function visibleTextFromHtml(html) {
