@@ -8,10 +8,13 @@ import {
   DEFAULT_WARN_REMAINING_PERCENT,
   normalizeThresholds
 } from './configThresholds';
-import { DisplayMode, ProviderName } from './types';
+import { DisplayMode, ProviderName, SourceConfigEntry } from './types';
+import { resolveSourcesFromRaw, getEnabledProvidersFromSources, getSnapshotSourcesFromSources } from './configSources';
 
 export interface PromptFuelConfig {
   enabledProviders: ProviderName[];
+  normalizedSources: Record<string, SourceConfigEntry>;
+  refreshIntervalMinutes: number;
   stateDirectory: string;
   claudeProjectsPath: string;
   refreshIntervalSeconds: number;
@@ -53,22 +56,30 @@ export function getConfig(): PromptFuelConfig {
   const configuredClaudeProjectsDir = cfg.get<string>('claudeProjectsPath') ?? '';
   const configuredCodexDir = cfg.get<string>('codexSessionsPath') ?? '';
   const configuredSnapshotPath = cfg.get<string>('snapshot.path') ?? '';
-  const authenticatedProviders = cfg.get<ProviderName[]>('authenticatedQuota.providers') ?? ['claude', 'codex'];
   const rawLow = cfg.get<number>('lowRemainingPercent') ?? DEFAULT_LOW_REMAINING_PERCENT;
   const rawWarn = cfg.get<number>('warnRemainingPercent') ?? DEFAULT_WARN_REMAINING_PERCENT;
   const rawCritical = cfg.get<number>('criticalRemainingPercent') ?? DEFAULT_CRITICAL_REMAINING_PERCENT;
   const rawEmpty = DEFAULT_EMPTY_REMAINING_PERCENT;
   const { lowRemainingPercent, warnRemainingPercent, criticalRemainingPercent, emptyRemainingPercent } = normalizeThresholds(rawLow, rawWarn, rawCritical, rawEmpty);
 
+  const rawSources = cfg.get<Record<string, Partial<SourceConfigEntry>>>('sources');
+  const normalizedSources = resolveSourcesFromRaw(rawSources);
+  const enabledProviders = getEnabledProvidersFromSources(normalizedSources);
+  const snapshotSources = getSnapshotSourcesFromSources(normalizedSources);
+  const refreshIntervalMinutes = Math.max(1, cfg.get<number>('refreshIntervalMinutes') ?? 5);
+  const authenticatedProviders = enabledProviders;
+
   return {
-    enabledProviders: cfg.get<ProviderName[]>('enabledProviders') ?? ['claude', 'codex'],
+    enabledProviders,
+    normalizedSources,
+    refreshIntervalMinutes,
     stateDirectory: expandHome(configuredStateDir || defaultStateDirectory()),
     claudeProjectsPath: expandHome(configuredClaudeProjectsDir || path.join(os.homedir(), '.claude', 'projects')),
     refreshIntervalSeconds: cfg.get<number>('refreshIntervalSeconds') ?? 300,
     authenticatedQuota: {
       enabled: cfg.get<boolean>('authenticatedQuota.enabled') ?? false,
-      providers: authenticatedProviders.filter((provider): provider is ProviderName => provider === 'claude' || provider === 'codex'),
-      refreshIntervalMinutes: Math.max(1, cfg.get<number>('authenticatedQuota.refreshIntervalMinutes') ?? 5)
+      providers: authenticatedProviders,
+      refreshIntervalMinutes
     },
     codexSessionsPath: expandHome(configuredCodexDir || path.join(os.homedir(), '.codex', 'sessions')),
     displayMode: resolveDisplayMode(cfg.get<string>('statusBarDensity') ?? 'standard'),
@@ -82,9 +93,9 @@ export function getConfig(): PromptFuelConfig {
       enabled: cfg.get<boolean>('snapshot.enabled') ?? false,
       machineLabel: cfg.get<string>('snapshot.machineLabel') ?? '',
       path: expandHome(configuredSnapshotPath),
-      remoteSources: cfg.get<string[]>('snapshot.remoteSources') ?? [],
-      statusBarSources: cfg.get<string[]>('snapshot.statusBarSources') ?? [],
-      remoteMachineLabels: cfg.get<Record<string, string>>('snapshot.remoteMachineLabels') ?? {}
+      remoteSources: snapshotSources.remoteSources,
+      statusBarSources: snapshotSources.statusBarSources,
+      remoteMachineLabels: snapshotSources.remoteMachineLabels
     }
   };
 }

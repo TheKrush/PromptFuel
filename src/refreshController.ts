@@ -397,7 +397,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
 
       const outcome = await fetchAuthenticatedQuota(provider);
       if (outcome.success) {
-        const nextRefresh = Date.now() + cfg.authenticatedQuota.refreshIntervalMinutes * 60 * 1000;
+        const nextRefresh = Date.now() + cfg.refreshIntervalMinutes * 60 * 1000;
         authState.nextPollEpochMs[provider] = nextRefresh;
         authState.backoffEpochMs[provider] = 0;
         authState.consecutiveFailures[provider] = 0;
@@ -409,7 +409,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
         authState.consecutiveFailures[provider] = failures;
         const backoffSeconds = calculateAuthenticatedBackoffSeconds(failures, outcome.retryAfterSeconds);
         const backoffUntilNext = Date.now() + backoffSeconds * 1000;
-        const nextRefresh = Date.now() + cfg.authenticatedQuota.refreshIntervalMinutes * 60 * 1000;
+        const nextRefresh = Date.now() + cfg.refreshIntervalMinutes * 60 * 1000;
         authState.backoffEpochMs[provider] = backoffUntilNext;
         authState.nextPollEpochMs[provider] = nextRefresh;
         outcome.state.nextAuthenticatedRefreshEpochMs = nextRefresh;
@@ -525,7 +525,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
       remoteProviderGroups: latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined,
       selectedRemoteProviders: selectedDashboardRemoteProviders.length > 0 ? selectedDashboardRemoteProviders : undefined,
       remoteUsage: remoteUsage,
-      aliasMap: aliasMap
+      aliasMap: aliasMap,
+      normalizedSources: cfg.normalizedSources
     });
     postUsageDashboardRefreshIfOpen(usageDashboardModel);
   }
@@ -638,7 +639,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     criticalRemainingPercent: cfg.criticalRemainingPercent,
     emptyRemainingPercent: cfg.emptyRemainingPercent,
     nextResetRefreshEpochMs: scheduledResetRefreshEpochMs,
-    modelBreakdown: modelBreakdownData
+    modelBreakdown: modelBreakdownData,
+    normalizedSources: cfg.normalizedSources
   }, remoteStatusBarItems);
 
   _onStatusUpdate?.(formatted.text, `${formatted.tooltip}\n\nClick to open PromptFuel dashboard`);

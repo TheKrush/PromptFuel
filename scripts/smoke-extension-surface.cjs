@@ -53,11 +53,11 @@ for (const key of settingKeys) {
   assert.doesNotMatch(key, forbiddenSettingPattern, `forbidden setting absent: ${key}`);
 }
 
+assert.ok(settingKeys.includes('promptFuel.sources'), 'unified source setting exists');
+assert.ok(settingKeys.includes('promptFuel.refreshIntervalMinutes'), 'refresh interval minutes setting exists');
 assert.ok(settingKeys.includes('promptFuel.authenticatedQuota.enabled'), 'authenticated quota setting exists');
 assert.ok(settingKeys.includes('promptFuel.snapshot.enabled'), 'snapshot writer setting exists');
 assert.ok(settingKeys.includes('promptFuel.snapshot.path'), 'snapshot path setting exists');
-assert.ok(settingKeys.includes('promptFuel.snapshot.remoteSources'), 'snapshot remote sources setting exists');
-assert.ok(settingKeys.includes('promptFuel.snapshot.statusBarSources'), 'snapshot status bar sources setting exists');
 assert.equal(settingKeys.includes(['promptFuel.snapshot.remote', 'La', 'nes'].join('')), false, 'old remote source setting key is absent');
 assert.equal(settingKeys.includes(['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')), false, 'old status bar source setting key is absent');
 

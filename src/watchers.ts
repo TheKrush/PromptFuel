@@ -180,7 +180,7 @@ export function configureWatchers(_context: vscode.ExtensionContext, deps: Watch
   if (cfg.authenticatedQuota.enabled) {
     authenticatedRefreshTimer = setInterval(
       () => deps.onAuthRefresh(),
-      cfg.authenticatedQuota.refreshIntervalMinutes * 60 * 1000
+      cfg.refreshIntervalMinutes * 60 * 1000
     );
   }
 

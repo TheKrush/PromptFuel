@@ -4,6 +4,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 
 ## Features
 
+- **Unified source configuration** — `promptFuel.sources` controls which providers and snapshot sources are enabled, their display labels, and status bar visibility.
 - **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when authenticated quota refresh is enabled and provider APIs are available.
 - **Codex and Claude live quota support** - PromptFuel can attempt live quota reads for configured providers from existing provider auth state.
 - **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
@@ -18,6 +19,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 ## Privacy & Data
 
 - **Local history stays local.** Authenticated live quota reads are opt-in and may contact provider services using existing provider auth state when `promptFuel.authenticatedQuota.enabled` is enabled.
+- **Sources are opt-in by individual source.** Each entry in `promptFuel.sources` can be independently enabled or disabled.
 - **No raw prompts, responses, or transcripts are collected or displayed.**
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
 - **No telemetry** is sent by PromptFuel.
@@ -76,16 +78,21 @@ When `promptFuel.snapshot.path` points to a shared folder, PromptFuel discovers 
 
 **Settings:**
 
-- `promptFuel.snapshot.remoteSources` — list of `machineLabel/provider` entries to show as provider cards in the dashboard. Example: `["desktop/claude", "laptop/codex"]`.
-- `promptFuel.snapshot.statusBarSources` — same format, but controls what appears in the status bar.
-- `promptFuel.snapshot.remoteMachineLabels` — optional display aliases for machine labels. Example: `{ "desktop": "Home Desktop", "laptop": "Work Laptop" }`.
+- `promptFuel.sources` — unified source configuration. Each key is a source ID (e.g. `claude`, `codex`, or `WATCHER/codex`). Controls enablement, display labels, and status bar visibility via `enabled`, `label`, `shortLabel`, and `statusBar` fields.
 
 **Worked example:**
 
 1. Machine **desktop** has `promptFuel.snapshot.enabled: true` and `promptFuel.snapshot.machineLabel: "desktop"`. It writes sanitized snapshots to the shared folder.
 2. Machine **laptop** has `promptFuel.snapshot.path` set to the same shared folder. It discovers `desktop-latest.json` automatically.
-3. On the laptop, set `promptFuel.snapshot.remoteSources: ["desktop/claude", "desktop/codex"]` to see the desktop's Claude and Codex usage in the dashboard.
-4. Optionally set `promptFuel.snapshot.remoteMachineLabels: { "desktop": "Home Desktop" }` for friendlier display names.
+3. On the laptop, add source entries to `promptFuel.sources` for the desktop's sources:
+   ```json
+   "promptFuel.sources": {
+     "desktop/claude": { "enabled": true, "label": "Claude Home Desktop", "shortLabel": "CH", "statusBar": true },
+     "desktop/codex": { "enabled": true, "label": "Codex Home Desktop", "shortLabel": "XH", "statusBar": false }
+   }
+   ```
+   This shows the desktop's Claude in both the dashboard and status bar, and its Codex in the dashboard only.
+4. The `label` field provides friendlier display names instead of raw machine labels.
 
 Remote sources appear alongside local providers in the dashboard with a "snapshot-backed" indicator showing their age.
 
@@ -101,7 +108,8 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 
 | Setting | Description | Default |
 | --- | --- | --- |
-| `promptFuel.enabledProviders` | Providers to track | `["claude", "codex"]` |
+| `promptFuel.sources` | Unified source configuration. Keyed by source ID (`claude`, `codex`, or `machineLabel/provider`). Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
+| `promptFuel.refreshIntervalMinutes` | Minimum interval in minutes for periodic refresh (local scanning and authenticated quota). | `5` |
 | `promptFuel.stateDirectory` | Directory for shared usage state; empty uses the platform default | `""` |
 | `promptFuel.claudeProjectsPath` | Claude projects root for safe Today aggregation; empty uses `~/.claude/projects` | `""` |
 | `promptFuel.codexSessionsPath` | Codex sessions root; empty uses `~/.codex/sessions` | `""` |
@@ -112,14 +120,9 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | `promptFuel.warnRemainingPercent` | Warning remaining threshold | `30` |
 | `promptFuel.criticalRemainingPercent` | Critical remaining threshold | `10` |
 | `promptFuel.authenticatedQuota.enabled` | Enable opt-in authenticated live quota refresh | `false` |
-| `promptFuel.authenticatedQuota.providers` | Providers allowed to use authenticated live quota refresh | `["claude", "codex"]` |
-| `promptFuel.authenticatedQuota.refreshIntervalMinutes` | Minimum interval in minutes for periodic authenticated quota refresh | `5` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |
-| `promptFuel.snapshot.remoteSources` | Remote machine sources to show as provider cards in the dashboard (`machineLabel/provider`, e.g. `desktop/claude`) | `[]` |
-| `promptFuel.snapshot.statusBarSources` | Remote machine sources to show in the status bar (`machineLabel/provider`, e.g. `laptop/codex`) | `[]` |
-| `promptFuel.snapshot.remoteMachineLabels` | Map from machine labels to display aliases (e.g. `{ "desktop": "Home Desktop" }`) | `{}` |
 
 ## Development
 

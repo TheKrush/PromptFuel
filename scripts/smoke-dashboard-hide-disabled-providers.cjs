@@ -357,7 +357,7 @@ function main() {
     assert.match(extensionSource, /refreshNow: \(\) => refreshNow\(\{[^}]*suppressPanelBroadcast: true[^}]*\}\)/, 'panel-triggered refresh suppresses shared dashboard broadcast');
     assert.match(refreshControllerSource, /if \(!options\.suppressPanelBroadcast\) \{[\s\S]*postUsageDashboardRefreshIfOpen\(usageDashboardModel\);/, 'shared refresh broadcasts dashboard model only when not panel-owned');
     assert.match(refreshControllerSource, /suppressPanelBroadcast: current\.suppressPanelBroadcast \|\| incoming\.suppressPanelBroadcast/, 'queued panel refresh keeps broadcast suppression when refresh options merge');
-    assert.match(extensionSource, /getUsageDashboardModel: \(\) => \{[\s\S]*buildUsageDashboardModel\([\s\S]*getConfig\(\)\.enabledProviders/, 'panel-open dashboard model uses configured provider filtering');
+    assert.match(extensionSource, /getUsageDashboardModel: \(\) => \{[\s\S]*buildUsageDashboardModel\([\s\S]*enabledProviders:/, 'panel-open dashboard model uses configured provider filtering');
     assert.match(refreshControllerSource, /const effectiveProviders = cfg\.enabledProviders;/, 'refresh path derives effective providers from config');
     assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('claude'\)\) \{[\s\S]*readClaudeTodayUsageBucket/, 'excluded Claude provider does not refresh dashboard history inputs');
     assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('codex'\)\) \{[\s\S]*readCodexCorrelatedHistory/, 'excluded Codex provider does not refresh dashboard history inputs');

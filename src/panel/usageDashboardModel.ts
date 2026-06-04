@@ -1,4 +1,4 @@
-import { LimitWindow, ProviderName, ProviderUsageState, UsageTracing } from '../types';
+import { LimitWindow, ProviderName, ProviderUsageState, SourceConfigEntry, UsageTracing } from '../types';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { ClaudeUsageHistory } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
@@ -277,6 +277,7 @@ export interface BuildUsageDashboardModelOptions {
   selectedRemoteProviders?: UsageDashboardProvider[];
   remoteUsage?: RemoteUsageProjection;
   aliasMap?: Record<string, string>;
+  normalizedSources?: Record<string, SourceConfigEntry>;
   scopedToProvider?: ProviderName;
 }
 
@@ -292,6 +293,7 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     selectedRemoteProviders,
     remoteUsage,
     aliasMap,
+    normalizedSources,
     scopedToProvider
   } = options;
   const ep = enabledProviders ? new Set(enabledProviders) : new Set(states.map(s => s.provider));
@@ -308,7 +310,7 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
   const claudeEnabled = ep.has('claude') || hasRemoteClaude;
   const codexEnabled = ep.has('codex') || hasRemoteCodex;
 
-  const localProviders = states.map(buildProvider);
+  const localProviders = states.map(s => buildProvider(s, normalizedSources));
   const allProviders = selectedRemoteProviders && selectedRemoteProviders.length > 0
     ? [...localProviders, ...selectedRemoteProviders]
     : localProviders;
@@ -340,13 +342,13 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     ? allProviders.filter(p => p.provider === scopedToProvider)
     : allProviders;
 
-  const tabs = buildProviderTabs(claudeEnabled, codexEnabled, allProviders);
+  const tabs = buildProviderTabs(claudeEnabled, codexEnabled, allProviders, normalizedSources);
 
   const model: UsageDashboardModel = {
     generatedAtIso: new Date().toISOString(),
     providers: scopedProviders,
     ...(() => {
-      const details = buildDetails(states, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
+      const details = buildDetails(states, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap, normalizedSources);
       const today = buildToday(claudeTodayUsage, codexTodayUsage, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
       return {
         today: today.overviewCards ? today : details.todayOverviewCards ? { ...today, overviewCards: details.todayOverviewCards } : today,
@@ -361,10 +363,15 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
   return annotateSourceConfidence(model, claudeTodayUsage, codexTodayUsage, remoteUsage);
 }
 
+function sourceLabel(provider: string, normalizedSources?: Record<string, SourceConfigEntry>): string {
+  return normalizedSources?.[provider]?.label ?? (provider === 'claude' ? 'Claude' : 'Codex');
+}
+
 function buildProviderTabs(
   claudeEnabled: boolean,
   codexEnabled: boolean,
-  allProviders: UsageDashboardProvider[]
+  allProviders: UsageDashboardProvider[],
+  normalizedSources?: Record<string, SourceConfigEntry>
 ): UsageDashboardTab[] {
   const tabs: UsageDashboardTab[] = [
     { key: 'overview', label: 'Overview', isDefault: true }
@@ -374,12 +381,12 @@ function buildProviderTabs(
 
   if (claudeEnabled) {
     seen.add('claude');
-    tabs.push({ key: 'claude', label: 'Claude', provider: 'claude' });
+    tabs.push({ key: 'claude', label: sourceLabel('claude', normalizedSources), provider: 'claude' });
   }
 
   if (codexEnabled) {
     seen.add('codex');
-    tabs.push({ key: 'codex', label: 'Codex', provider: 'codex' });
+    tabs.push({ key: 'codex', label: sourceLabel('codex', normalizedSources), provider: 'codex' });
   }
 
   for (const provider of allProviders) {
@@ -396,10 +403,10 @@ function buildProviderTabs(
   return tabs;
 }
 
-function buildProvider(state: ProviderUsageState): UsageDashboardProvider {
+function buildProvider(state: ProviderUsageState, normalizedSources?: Record<string, SourceConfigEntry>): UsageDashboardProvider {
   return {
     provider: state.provider,
-    label: state.provider === 'claude' ? 'Claude' : 'Codex',
+    label: normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex'),
     stale: Boolean(state.stale),
     source: state.source,
     status: formatProviderStatus(state.authenticatedStatus),
@@ -445,9 +452,10 @@ function buildDetails(
   claudeEnabled = true,
   codexEnabled = true,
   remoteUsage?: RemoteUsageProjection,
-  aliasMap?: Record<string, string>
+  aliasMap?: Record<string, string>,
+  normalizedSources?: Record<string, SourceConfigEntry>
 ): UsageDashboardDetails {
-  const providers = states.map(buildProviderDetails);
+  const providers = states.map(s => buildProviderDetails(s, normalizedSources));
   const availableProviders = providers.filter(provider => provider.available);
   const totals = aggregateProviders(availableProviders);
   const remoteClaudeHistPoints = remoteUsage?.claudeHistoryPoints?.length ? remoteUsage.claudeHistoryPoints : undefined;
@@ -763,13 +771,13 @@ function buildCachePerformanceCard(
   };
 }
 
-function buildProviderDetails(state: ProviderUsageState): UsageDashboardProviderDetails {
+function buildProviderDetails(state: ProviderUsageState, normalizedSources?: Record<string, SourceConfigEntry>): UsageDashboardProviderDetails {
   const tracing = state.tracing;
   const available = hasAnyTracingValue(tracing);
 
   return {
     provider: state.provider,
-    label: state.provider === 'claude' ? 'Claude' : 'Codex',
+    label: normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex'),
     model: state.model,
     workspace: state.workspace,
     totalTokens: firstNumber(tracing?.totalTokens, addNumbers(tracing?.totalInputTokens, tracing?.totalOutputTokens)),

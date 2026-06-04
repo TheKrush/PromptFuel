@@ -50,14 +50,13 @@ for (const key of Object.keys(properties)) {
   if (/issueInbox|notifications\.reset|developerMode/i.test(key)) fail(`forbidden setting ${key}`);
 }
 for (const key of [
-  'promptFuel.enabledProviders',
+  'promptFuel.sources',
+  'promptFuel.refreshIntervalMinutes',
   'promptFuel.stateDirectory',
   'promptFuel.claudeProjectsPath',
   'promptFuel.codexSessionsPath',
   'promptFuel.refreshIntervalSeconds',
   'promptFuel.authenticatedQuota.enabled',
-  'promptFuel.authenticatedQuota.providers',
-  'promptFuel.authenticatedQuota.refreshIntervalMinutes',
   'promptFuel.statusBarDensity',
   'promptFuel.statusMode',
   'promptFuel.lowRemainingPercent',
@@ -65,10 +64,7 @@ for (const key of [
   'promptFuel.criticalRemainingPercent',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
-  'promptFuel.snapshot.path',
-  'promptFuel.snapshot.remoteSources',
-  'promptFuel.snapshot.statusBarSources',
-  'promptFuel.snapshot.remoteMachineLabels'
+  'promptFuel.snapshot.path'
 ]) {
   if (!Object.prototype.hasOwnProperty.call(properties, key)) fail(`missing setting ${key}`);
 }

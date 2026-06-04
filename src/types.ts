@@ -2,6 +2,20 @@ export type ProviderName = 'claude' | 'codex';
 
 export type DisplayMode = 'compact' | 'standard';
 
+export interface SourceConfigEntry {
+  enabled: boolean;
+  label: string;
+  shortLabel: string;
+  statusBar: boolean;
+}
+
+export const KNOWN_PROVIDERS: Record<string, SourceConfigEntry> = {
+  claude: { enabled: true, label: 'Claude', shortLabel: 'C', statusBar: true },
+  codex: { enabled: true, label: 'Codex', shortLabel: 'X', statusBar: true }
+};
+
+export const LOCAL_PROVIDER_IDS = new Set<string>(['claude', 'codex']);
+
 export interface LimitWindow {
   usedPercentage?: number;
   resetsAtEpochSeconds?: number;

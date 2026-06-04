@@ -73,19 +73,54 @@
     "configuration": {
       "title": "PromptFuel",
       "properties": {
-        "promptFuel.enabledProviders": {
-          "type": "array",
-          "default": [
-            "claude",
-            "codex"
-          ],
-          "items": {
-            "enum": [
-              "claude",
-              "codex"
-            ]
+        "promptFuel.sources": {
+          "type": "object",
+          "default": {
+            "claude": {
+              "enabled": true,
+              "label": "Claude",
+              "shortLabel": "C",
+              "statusBar": true
+            },
+            "codex": {
+              "enabled": true,
+              "label": "Codex",
+              "shortLabel": "X",
+              "statusBar": true
+            }
           },
-          "description": "Providers to track in the status bar and dashboard."
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this source is enabled."
+              },
+              "label": {
+                "type": "string",
+                "default": "",
+                "description": "Display label used in expanded UI surfaces (dashboard, tooltips)."
+              },
+              "shortLabel": {
+                "type": "string",
+                "default": "",
+                "description": "Short label used in compact/status-bar surfaces."
+              },
+              "statusBar": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this source appears in the status bar summary."
+              }
+            }
+          },
+          "description": "Unified source configuration. Each key is a source ID (e.g. \"claude\", \"codex\", or a snapshot source like \"WATCHER/codex\"). Controls enablement, display labels, and status bar visibility."
+        },
+        "promptFuel.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Minimum interval in minutes for periodic refresh. Applies to both local scanning and authenticated quota refresh."
         },
         "promptFuel.stateDirectory": {
           "type": "string",
@@ -107,26 +142,6 @@
           "type": "boolean",
           "default": false,
           "description": "Enable opt-in live authenticated quota refresh using existing Claude/Codex product session credentials. No live calls are made when disabled."
-        },
-        "promptFuel.authenticatedQuota.providers": {
-          "type": "array",
-          "default": [
-            "claude",
-            "codex"
-          ],
-          "items": {
-            "enum": [
-              "claude",
-              "codex"
-            ]
-          },
-          "description": "Providers allowed to use authenticated live quota refresh when authenticated quota refresh is enabled."
-        },
-        "promptFuel.authenticatedQuota.refreshIntervalMinutes": {
-          "type": "number",
-          "default": 5,
-          "minimum": 1,
-          "description": "Minimum interval in minutes for periodic authenticated quota refresh calls. Manual refresh can bypass the timer but still respects short failure backoff."
         },
         "promptFuel.codexSessionsPath": {
           "type": "string",
@@ -190,33 +205,6 @@
           "type": "string",
           "default": "",
           "description": "Folder for compatible machine snapshots. When set, PromptFuel reads *-latest.json snapshots from this folder and, when snapshot writing is enabled, copies this machine's sanitized snapshot there."
-        },
-        "promptFuel.snapshot.remoteSources": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Opt-in list of remote machine sources to show as provider cards in the Usage dashboard. Each entry is machineLabel/provider (e.g. 'desktop/claude')."
-        },
-        "promptFuel.snapshot.statusBarSources": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Opt-in list of remote machine sources to show in the status bar. Each entry is machineLabel/provider (e.g. 'laptop/codex')."
-        },
-        "promptFuel.snapshot.remoteMachineLabels": {
-          "type": "object",
-          "patternProperties": {
-            "^[a-zA-Z0-9_-]+$": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "default": {},
-          "description": "Mapping from machine labels to display aliases used in dashboard and status bar labels (e.g. { \"desktop\": \"Home Desktop\" })."
         }
       }
     }
@@ -235,7 +223,7 @@
     "smoke:dashboard": "node scripts/smoke-dashboard-hide-disabled-providers.cjs && node scripts/smoke-chart-binning.cjs && node scripts/smoke-chart-tooltip.cjs && node scripts/smoke-dashboard-rendering.cjs && node scripts/smoke-dashboard-pricing-cards.cjs",
     "smoke:snapshots": "node scripts/smoke-remote-sources.cjs && node scripts/smoke-remote-history-merge.cjs",
     "smoke:codex": "node scripts/smoke-codex-correlated-day-bucket-scanner.cjs",
-    "test:unit": "node --test out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/configThresholds.test.js out/test/displayFormat.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js",
+    "test:unit": "node --test out/test/config.test.js out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/configThresholds.test.js out/test/displayFormat.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
     "maintenance:normalize-snapshot-schema": "node scripts/normalize-snapshot-schema-v1.cjs"
   },

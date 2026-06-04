@@ -1,4 +1,4 @@
-import { DisplayMode, LimitWindow, ProviderName, ProviderUsageState, QuotaSourceKind } from '../types';
+import { DisplayMode, LimitWindow, ProviderName, ProviderUsageState, QuotaSourceKind, SourceConfigEntry } from '../types';
 import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime } from '../usageTime';
 import { STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './modelBreakdown';
 import { estimateClaudeCostUsd, estimateCodexCostUsd } from '../providers/pricing';
@@ -23,6 +23,7 @@ export interface FormatOptions {
   emptyRemainingPercent: number;
   nextResetRefreshEpochMs?: number;
   modelBreakdown?: ModelBreakdownData;
+  normalizedSources?: Record<string, SourceConfigEntry>;
 }
 
 export type StatusSeverity = 'normal' | 'low' | 'warning' | 'critical';
@@ -125,7 +126,7 @@ export function formatStatus(
 
 function formatProviderStatus(state: ProviderUsageState, options: FormatOptions): FormattedProviderStatus {
   const resolved = resolveDisplayParts(options);
-  const label = formatProviderLabel(state, resolved);
+  const label = formatProviderLabel(state, resolved, options);
   const windows = formatProviderWindows(state, options, resolved);
   const severity = providerAlertSeverity(state, options, resolved);
   const sourceTag = resolved.showSourceInline ? formatSourceInline(state) : '';
@@ -186,11 +187,12 @@ function resolveDisplayParts(options: FormatOptions): ResolvedDisplayParts {
   }
 }
 
-function formatProviderLabel(state: ProviderUsageState, options: ResolvedDisplayParts): string {
+function formatProviderLabel(state: ProviderUsageState, options: ResolvedDisplayParts, _formatOptions?: FormatOptions): string {
+  const sources = _formatOptions?.normalizedSources;
   if (options.providerNameStyle === 'full') {
-    return state.provider === 'claude' ? 'Claude' : 'Codex';
+    return sources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex');
   }
-  return state.provider === 'claude' ? 'C' : 'X';
+  return sources?.[state.provider]?.shortLabel ?? (state.provider === 'claude' ? 'C' : 'X');
 }
 
 function formatProviderWindows(
@@ -496,8 +498,8 @@ function remainingSeverity(remaining: number, options: FormatOptions): StatusSev
   return 'normal';
 }
 
-function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, _options: FormatOptions): string {
-  const provider = providerDisplayName(state);
+function formatCombinedBlockedFiveHourRow(state: ProviderUsageState, options: FormatOptions): string {
+  const provider = providerDisplayName(state, options);
   const w = state.fiveHour;
   const pct = w && w.usedPercentage !== undefined ? 100 - clamp(w.usedPercentage, 0, 100) : 0;
   const bar = renderProgressBarColored(pct, 'critical');
@@ -512,7 +514,7 @@ function formatCombinedQuotaWindowRow(
   window: LimitWindow | undefined,
   options: FormatOptions
 ): string {
-  const provider = providerDisplayName(state);
+  const provider = providerDisplayName(state, options);
   if (!window || window.usedPercentage === undefined) {
     return `| ${provider} | ${label} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | | |`;
   }
@@ -530,7 +532,7 @@ function formatCombinedQuotaWindowRow(
 }
 
 function formatProviderTooltip(state: ProviderUsageState, options: FormatOptions): string {
-  const label = state.provider === 'claude' ? 'Claude' : 'Codex';
+  const label = options.normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex');
   const lines = [`## ${label} Quota`, '', ...formatQuotaSummaryLines(state, options)];
   const breakdown = options.modelBreakdown ? formatModelBreakdown(options.modelBreakdown, state.provider) : [];
   if (breakdown.length > 0) {
@@ -816,8 +818,8 @@ function formatCombinedModelBreakdown(
   return lines;
 }
 
-function providerDisplayName(state: Pick<ProviderUsageState, 'provider'>): string {
-  return state.provider === 'claude' ? 'Claude' : 'Codex';
+function providerDisplayName(state: Pick<ProviderUsageState, 'provider'>, formatOptions?: FormatOptions): string {
+  return formatOptions?.normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex');
 }
 
 function formatCostShort(costUsd: number): string {

@@ -41,6 +41,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerPromptFuelPanelCommands(context, {
     refreshNow: () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true, suppressPanelBroadcast: true }),
     getUsageDashboardModel: () => {
+      const cfg = getConfig();
       const state = getLatestUsageState();
       return buildUsageDashboardModel({
         states: state.providerStates,
@@ -48,11 +49,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         claudeUsageHistory: state.claudeUsageHistory,
         codexCorrelatedHistory: state.codexCorrelatedHistory,
         codexTodayUsage: state.codexCorrelatedTodayUsage,
-        enabledProviders: getConfig().enabledProviders,
+        enabledProviders: cfg.enabledProviders,
         remoteProviderGroups: state.remoteProviderGroups.length > 0 ? state.remoteProviderGroups : undefined,
         selectedRemoteProviders: state.selectedRemoteProviders.length > 0 ? state.selectedRemoteProviders : undefined,
         remoteUsage: state.remoteUsage,
-        aliasMap: getConfig().snapshot.remoteMachineLabels
+        aliasMap: cfg.snapshot.remoteMachineLabels,
+        normalizedSources: cfg.normalizedSources
       });
     }
   });
