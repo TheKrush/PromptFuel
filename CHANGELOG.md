@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+Fixes a false-critical quota display when the server's reset time has already passed and a live refresh fails.
+
+**Included in this release:**
+
+- Fixed expired cached quota windows showing as critical / 0% remaining after a live refresh failure. When the provider's reset boundary is in the past, the stale usage value is no longer meaningful — the window is now treated as fully reset (0% used, 100% remaining) until a fresh value arrives from the server. The cached source label and incident indicator (e.g. network error) are preserved so the fallback state is still visible.
+- Local heuristic sources (local session, status line, hook) with expired windows continue to be marked unavailable rather than reset, since they carry no authoritative reset boundary from the provider.
+
 ## 1.0.0
 
 PromptFuel is ready for its public 1.0.0 release with a unified source configuration model, cleaner snapshot import behavior, CSV-backed model pricing estimates, and a more polished dashboard/status-bar surface.

@@ -248,9 +248,12 @@ function annotateExpiredFallbackWindow(window: LimitWindow): LimitWindow {
     return window;
   }
 
+  // cache/stale: the provider's reset boundary is authoritative — treat the expired window as fully reset (0% used).
+  // localSession/statusLine/hook: local heuristics with no authoritative reset boundary — mark unknown instead.
   if (window.sourceKind === 'cache' || window.sourceKind === 'stale') {
     return {
       ...window,
+      usedPercentage: 0,
       sourceLabel: expiredSourceLabel(window),
       sourceAuthorityRank: Math.min(window.sourceAuthorityRank ?? AUTHORITY_RANK.cache, AUTHORITY_RANK.cache)
     };

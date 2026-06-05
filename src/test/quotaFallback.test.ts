@@ -15,6 +15,7 @@ const now = Date.now();
 const fiveHourReset = Math.floor((now + 90 * 60 * 1000) / 1000);
 const sevenDayReset = Math.floor((now + 3 * 24 * 60 * 60 * 1000) / 1000);
 const expiredReset = Math.floor((now - 5 * 60 * 1000) / 1000);
+const stalePastReset = Math.floor((now - 12 * 60 * 60 * 1000) / 1000);
 const postReset = Math.floor((now + 4 * 60 * 60 * 1000) / 1000);
 const backoffUntil = now + 60_000;
 
@@ -292,7 +293,7 @@ describe('quota fallback regression coverage', () => {
     assert.equal(codexMerged.sevenDayOpus, undefined);
   });
 
-  it('reset-time refresh uses the same safe fallback path after live failure', () => {
+  it('reset-time refresh treats expired cached quota as reset after live failure', () => {
     const resetPlan = getNextResetRefreshPlan(
       [{ provider: 'claude', fiveHour: { usedPercentage: 100, resetsAtEpochSeconds: expiredReset } }],
       { nowEpochMs: now, immediateDelayMs: 5_000, recentPastWindowMs: 10 * 60_000 }
@@ -321,13 +322,35 @@ describe('quota fallback regression coverage', () => {
     );
     const fiveHour = derivePresentableQuotaWindowState(expiredCached, expiredCached.fiveHour, formatOptions());
 
-    assert.equal(expiredCached.fiveHour?.usedPercentage, 100);
+    assert.equal(expiredCached.fiveHour?.usedPercentage, 0);
     assert.equal(expiredCached.fiveHour?.sourceKind, 'cache');
     assert.equal(expiredCached.authenticatedStatus, 'network_error');
-    assert.equal(fiveHour.severity, 'critical');
+    assert.equal(fiveHour.severity, 'normal');
     assert.equal(fiveHour.freshness, 'cached');
     assert.equal(fiveHour.incident, 'network_error');
-    assert.equal(dashboardWindow(expiredCached, 'fiveHour').remainingPercent, 0);
+    assert.equal(dashboardWindow(expiredCached, 'fiveHour').remainingPercent, 100);
+  });
+
+  it('manually resets long-expired cached quota windows to full remaining', () => {
+    const staleCached = mergeAuthenticatedFailure(
+      liveState('codex', {
+        fiveHour: { usedPercentage: 74, resetsAtEpochSeconds: stalePastReset },
+        sevenDay: { usedPercentage: 41, resetsAtEpochSeconds: sevenDayReset },
+        lastUpdatedEpochMs: stalePastReset * 1000 - 60_000,
+        lastAuthenticatedRefreshEpochMs: stalePastReset * 1000 - 60_000
+      }),
+      failure('codex', 'network_error'),
+      backoffUntil
+    );
+    const fiveHour = derivePresentableQuotaWindowState(staleCached, staleCached.fiveHour, formatOptions());
+
+    assert.equal(staleCached.fiveHour?.usedPercentage, 0);
+    assert.equal(staleCached.fiveHour?.sourceKind, 'cache');
+    assert.equal(staleCached.fiveHour?.sourceLabel, 'expired cached quota snapshot');
+    assert.equal(fiveHour.severity, 'normal');
+    assert.equal(fiveHour.freshness, 'cached');
+    assert.equal(dashboardWindow(staleCached, 'fiveHour').remainingPercent, 100);
+    assert.equal(dashboardWindow(staleCached, 'sevenDay').remainingPercent, 59);
   });
 
   it('recovers from expired cached quota with newer local or live post-reset data', () => {
