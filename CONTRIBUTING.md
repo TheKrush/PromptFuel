@@ -48,7 +48,7 @@ code --extensionDevelopmentPath=.
 
 - **Settings** must be under `promptFuel.*` (e.g., `promptFuel.sources`).
 - **Commands** must be under `promptFuel.*` (e.g., `promptFuel.openDashboard`).
-- Authenticated live quota refresh is opt-in through `promptFuel.authenticatedQuota.enabled`.
+- Authenticated live quota refresh is internal for enabled sources; source visibility is controlled through `promptFuel.sources`.
 - Live quota requires existing provider OAuth/auth state. Do not add PromptFuel-specific auth UI unless explicitly scoped.
 - Machine snapshots are aggregate-only sanitized JSON. Do not commit snapshot or cached provider state unless explicitly scoped.
 - Do **not** commit raw prompts, responses, or conversation transcripts.

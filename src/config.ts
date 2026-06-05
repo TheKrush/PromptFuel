@@ -15,7 +15,6 @@ export interface PromptFuelConfig {
   refreshIntervalMinutes: number;
   stateDirectory: string;
   claudeProjectsPath: string;
-  refreshIntervalSeconds: number;
   authenticatedQuota: AuthenticatedQuotaConfig;
   codexSessionsPath: string;
   displayMode: DisplayMode;
@@ -25,7 +24,6 @@ export interface PromptFuelConfig {
 }
 
 export interface AuthenticatedQuotaConfig {
-  enabled: boolean;
   providers: ProviderName[];
   refreshIntervalMinutes: number;
 }
@@ -39,16 +37,18 @@ export interface SnapshotConfig {
   remoteMachineLabels: Record<string, string>;
 }
 
-function resolveDisplayMode(density: string): DisplayMode {
-  return density === 'compact' ? 'compact' : 'standard';
-}
 const DEFAULT_FRESH_RESET_TOLERANCE_SECONDS = 120;
+const DEFAULT_DISPLAY_MODE: DisplayMode = 'standard';
+const DEFAULT_STATUS_MODE: 'remaining' = 'remaining';
+
+let internalStateDirectoryOverride: string | undefined;
+
+export function setInternalStateDirectory(dirPath: string): void {
+  internalStateDirectoryOverride = dirPath;
+}
 
 export function getConfig(): PromptFuelConfig {
   const cfg = vscode.workspace.getConfiguration('promptFuel');
-  const configuredStateDir = cfg.get<string>('stateDirectory') ?? '';
-  const configuredClaudeProjectsDir = cfg.get<string>('claudeProjectsPath') ?? '';
-  const configuredCodexDir = cfg.get<string>('codexSessionsPath') ?? '';
   const configuredSnapshotPath = cfg.get<string>('snapshot.path') ?? '';
 
   const rawSources = resolveConfiguredSourcesFromInspection(
@@ -64,17 +64,15 @@ export function getConfig(): PromptFuelConfig {
     enabledProviders,
     normalizedSources,
     refreshIntervalMinutes,
-    stateDirectory: expandHome(configuredStateDir || defaultStateDirectory()),
-    claudeProjectsPath: expandHome(configuredClaudeProjectsDir || path.join(os.homedir(), '.claude', 'projects')),
-    refreshIntervalSeconds: cfg.get<number>('refreshIntervalSeconds') ?? 300,
+    stateDirectory: internalStateDirectoryOverride || defaultStateDirectory(),
+    claudeProjectsPath: path.join(os.homedir(), '.claude', 'projects'),
     authenticatedQuota: {
-      enabled: cfg.get<boolean>('authenticatedQuota.enabled') ?? false,
       providers: authenticatedProviders,
       refreshIntervalMinutes
     },
-    codexSessionsPath: expandHome(configuredCodexDir || path.join(os.homedir(), '.codex', 'sessions')),
-    displayMode: resolveDisplayMode(cfg.get<string>('statusBarDensity') ?? 'standard'),
-    statusMode: cfg.get<'remaining' | 'used'>('statusMode') ?? 'remaining',
+    codexSessionsPath: path.join(os.homedir(), '.codex', 'sessions'),
+    displayMode: DEFAULT_DISPLAY_MODE,
+    statusMode: DEFAULT_STATUS_MODE,
     freshResetToleranceSeconds: DEFAULT_FRESH_RESET_TOLERANCE_SECONDS,
     snapshot: {
       enabled: cfg.get<boolean>('snapshot.enabled') ?? false,

@@ -122,58 +122,10 @@
           "minimum": 1,
           "description": "Minimum interval in minutes for periodic refresh. Applies to both local scanning and authenticated quota refresh."
         },
-        "promptFuel.stateDirectory": {
-          "type": "string",
-          "default": "",
-          "description": "Directory for shared usage state. Empty uses %LOCALAPPDATA%/PromptFuel on Windows or ~/.prompt-fuel elsewhere."
-        },
-        "promptFuel.claudeProjectsPath": {
-          "type": "string",
-          "default": "",
-          "description": "Claude projects root for safe assistant-message Today aggregation. Empty uses ~/.claude/projects."
-        },
-        "promptFuel.refreshIntervalSeconds": {
-          "type": "number",
-          "default": 300,
-          "minimum": 10,
-          "description": "Fallback refresh interval. Event/file changes update faster when available."
-        },
-        "promptFuel.authenticatedQuota.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable opt-in live authenticated quota refresh using existing Claude/Codex product session credentials. No live calls are made when disabled."
-        },
-        "promptFuel.codexSessionsPath": {
-          "type": "string",
-          "default": "",
-          "description": "Codex sessions root. Empty uses ~/.codex/sessions."
-        },
-        "promptFuel.statusMode": {
-          "type": "string",
-          "default": "remaining",
-          "enum": [
-            "remaining",
-            "used"
-          ],
-          "description": "Show percentages as remaining allowance or consumed usage."
-        },
-        "promptFuel.statusBarDensity": {
-          "type": "string",
-          "default": "standard",
-          "enum": [
-            "standard",
-            "compact"
-          ],
-          "enumDescriptions": [
-            "Standard: provider name, quota windows, and countdown.",
-            "Compact: shorter display with provider name and quota windows, no countdown."
-          ],
-          "description": "Status bar display density. Standard shows countdowns and full labels. Compact is shorter."
-        },
         "promptFuel.snapshot.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable opt-in local machine snapshot writer. When enabled, writes a sanitized snapshot to {stateDirectory}/snapshots/{machine}-latest.json on each refresh."
+          "description": "Enable opt-in local machine snapshot writer. When enabled, writes sanitized aggregate snapshots from PromptFuel's internal state location on each refresh."
         },
         "promptFuel.snapshot.machineLabel": {
           "type": "string",

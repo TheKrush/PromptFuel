@@ -45,32 +45,37 @@ for (const event of [
 }
 
 const properties = pkg.contributes?.configuration?.properties ?? {};
-for (const key of Object.keys(properties)) {
-  if (!key.startsWith('promptFuel.')) fail(`setting ${key} is not promptFuel namespaced`);
-  if (/issueInbox|notifications\.reset|developerMode/i.test(key)) fail(`forbidden setting ${key}`);
-}
-for (const key of [
+const expectedSettings = [
   'promptFuel.sources',
   'promptFuel.refreshIntervalMinutes',
+  'promptFuel.snapshot.enabled',
+  'promptFuel.snapshot.machineLabel',
+  'promptFuel.snapshot.path'
+];
+const removedSettings = [
   'promptFuel.stateDirectory',
   'promptFuel.claudeProjectsPath',
   'promptFuel.codexSessionsPath',
   'promptFuel.refreshIntervalSeconds',
   'promptFuel.authenticatedQuota.enabled',
-  'promptFuel.statusBarDensity',
   'promptFuel.statusMode',
-  'promptFuel.snapshot.enabled',
-  'promptFuel.snapshot.machineLabel',
-  'promptFuel.snapshot.path'
-]) {
-  if (!Object.prototype.hasOwnProperty.call(properties, key)) fail(`missing setting ${key}`);
-}
-
-for (const oldKey of [
+  'promptFuel.statusBarDensity',
   ['promptFuel.snapshot.remote', 'La', 'nes'].join(''),
   ['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')
-]) {
-  if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`old remote source setting key remains: ${oldKey}`);
+];
+for (const key of Object.keys(properties)) {
+  if (!key.startsWith('promptFuel.')) fail(`setting ${key} is not promptFuel namespaced`);
+  if (/issueInbox|notifications\.reset|developerMode/i.test(key)) fail(`forbidden setting ${key}`);
+}
+const settingKeys = Object.keys(properties).sort();
+if (JSON.stringify(settingKeys) !== JSON.stringify([...expectedSettings].sort())) {
+  fail(`public settings must be exactly ${expectedSettings.join(', ')}; got ${settingKeys.join(', ')}`);
+}
+for (const key of expectedSettings) {
+  if (!Object.prototype.hasOwnProperty.call(properties, key)) fail(`missing setting ${key}`);
+}
+for (const oldKey of removedSettings) {
+  if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`removed public setting remains: ${oldKey}`);
 }
 
 const forbiddenPattern = /AgentBridge|agentBridge|agentbridge|AGENTBRIDGE|issueInbox|simulateReset|notifications\.reset/;

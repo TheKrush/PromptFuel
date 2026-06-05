@@ -367,7 +367,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     statesByProvider.codex = mergeLocalAndAuthenticated(local, authState.cache.codex, mergeOptions);
   }
 
-  if (options.allowAuthenticated && cfg.authenticatedQuota.enabled) {
+  if (options.allowAuthenticated !== false) {
     const providers = cfg.enabledProviders.filter(provider => cfg.authenticatedQuota.providers.includes(provider));
     for (const provider of providers) {
       const now = Date.now();
@@ -423,8 +423,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     for (const provider of cfg.enabledProviders) {
       statesByProvider[provider] = annotateAuthenticatedDisabled(
         statesByProvider[provider],
-        cfg.authenticatedQuota.enabled ? 'skipped' : 'disabled',
-        cfg.authenticatedQuota.enabled ? 'Authenticated provider is not enabled for this provider.' : 'Authenticated provider disabled.'
+        'skipped',
+        'Authenticated provider skipped for this refresh.'
       );
     }
   }

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { getConfig } from './config';
+import { getConfig, setInternalStateDirectory } from './config';
 import { disposePromptFuelLogger, logPromptFuel } from './logger';
 import { registerPromptFuelPanelCommands } from './panel/promptFuelPanel';
 import { buildUsageDashboardModel } from './panel/usageDashboardModel';
@@ -28,6 +28,7 @@ function logSwallowedError(context: string, err: unknown): void {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  setInternalStateDirectory(context.globalStorageUri.fsPath);
   logPromptFuel('Activation started.');
   combinedStatusItem = createStatusBarItem(1, 'PromptFuel loading...');
   context.subscriptions.push(combinedStatusItem);
@@ -70,7 +71,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const watcherDeps = {
     onRefresh: () => void refreshNow(),
-    onAuthRefresh: () => void refreshNow({ allowAuthenticated: true }),
     onClearResetRefresh: clearResetRefreshTimer
   };
 

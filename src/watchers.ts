@@ -9,7 +9,6 @@ const SNAPSHOT_SELF_WRITE_IGNORE_MS = 5_000;
 let fileWatchers: vscode.FileSystemWatcher[] = [];
 let watcherDebounceTimer: NodeJS.Timeout | undefined;
 let refreshTimer: NodeJS.Timeout | undefined;
-let authenticatedRefreshTimer: NodeJS.Timeout | undefined;
 
 const snapshotSelfWriteIgnore = {
   latestFiles: new Map<string, number>(),
@@ -20,7 +19,6 @@ let _onRefresh: (() => void) | undefined;
 
 export interface WatcherDeps {
   onRefresh: () => void;
-  onAuthRefresh: () => void;
   onClearResetRefresh: () => void;
 }
 
@@ -134,10 +132,6 @@ export function clearRefreshTimers(): void {
     clearInterval(refreshTimer);
     refreshTimer = undefined;
   }
-  if (authenticatedRefreshTimer) {
-    clearInterval(authenticatedRefreshTimer);
-    authenticatedRefreshTimer = undefined;
-  }
 }
 
 export function markSnapshotSelfWriteTargets(cfg: {
@@ -175,14 +169,8 @@ export function configureWatchers(_context: vscode.ExtensionContext, deps: Watch
   deps.onClearResetRefresh();
 
   const cfg = getConfig();
-  const intervalMs = Math.max(10, cfg.refreshIntervalSeconds) * 1000;
+  const intervalMs = Math.max(1, cfg.refreshIntervalMinutes) * 60 * 1000;
   refreshTimer = setInterval(() => deps.onRefresh(), intervalMs);
-  if (cfg.authenticatedQuota.enabled) {
-    authenticatedRefreshTimer = setInterval(
-      () => deps.onAuthRefresh(),
-      cfg.refreshIntervalMinutes * 60 * 1000
-    );
-  }
 
   watchPathPattern(cfg.stateDirectory, 'claude.json', 'state claude');
   watchPathPattern(cfg.stateDirectory, 'codex.json', 'state codex');

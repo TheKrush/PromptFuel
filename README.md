@@ -9,7 +9,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 ## Features
 
 - **Unified source configuration** — `promptFuel.sources` controls which providers and snapshot sources are enabled, their display labels, and status bar visibility.
-- **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when authenticated quota refresh is enabled and provider APIs are available.
+- **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when provider auth state and provider APIs are available.
 - **Codex and Claude live quota support** - PromptFuel can attempt live quota reads for configured providers from existing provider auth state.
 - **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
 - **Local history secondary** - local Claude and Codex aggregate history remains visible in the dashboard and tooltip, but does not replace live quota as the primary status.
@@ -42,7 +42,7 @@ Break down usage by provider and model, with token share, estimated API-equivale
 
 ## Privacy & Data
 
-- **Local history stays local.** Authenticated live quota reads are opt-in and may contact provider services using existing provider auth state when `promptFuel.authenticatedQuota.enabled` is enabled.
+- **Local history stays local.** Live quota reads may contact provider services using existing provider auth state for sources enabled in `promptFuel.sources`.
 - **Sources are opt-in by individual source.** Each entry in `promptFuel.sources` can be independently enabled or disabled.
 - **No raw prompts, responses, or transcripts are collected or displayed.**
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
@@ -67,7 +67,7 @@ PromptFuel can write a sanitized snapshot for the current machine and read compa
 
 Set `promptFuel.snapshot.path` to a local or shared folder that contains compatible `*-latest.json` snapshot files. When the setting is empty, PromptFuel uses its default local snapshot/state behavior. When the setting is present, PromptFuel reads compatible snapshots from that folder and automatically discovers remote machine sources from the snapshot payloads.
 
-Enable `promptFuel.snapshot.enabled` to write this machine's sanitized snapshot under the PromptFuel state directory. If `promptFuel.snapshot.path` is set, the same sanitized latest snapshot and archive data are also copied to that folder. Set `promptFuel.snapshot.machineLabel` to a safe label such as `desktop`, `laptop`, `workstation`, or `build-agent`; this label is included in the snapshot payload and can appear in supported dashboard/status surfaces.
+Enable `promptFuel.snapshot.enabled` to write this machine's sanitized snapshot under PromptFuel's internal storage. If `promptFuel.snapshot.path` is set, the same sanitized latest snapshot and archive data are also copied to that folder. Set `promptFuel.snapshot.machineLabel` to a safe label such as `desktop`, `laptop`, `workstation`, or `build-agent`; this label is included in the snapshot payload and can appear in supported dashboard/status surfaces.
 
 Snapshots are aggregate-only JSON files. They may contain provider quota windows, safe daily history buckets, and model breakdowns for `claude` and/or `codex`; they must not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, or source filenames.
 
@@ -134,13 +134,6 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | --- | --- | --- |
 | `promptFuel.sources` | Unified source configuration. Keyed by source ID (`claude`, `codex`, or `machineLabel/provider`). Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
 | `promptFuel.refreshIntervalMinutes` | Minimum interval in minutes for periodic refresh (local scanning and authenticated quota). | `5` |
-| `promptFuel.stateDirectory` | Directory for shared usage state; empty uses the platform default | `""` |
-| `promptFuel.claudeProjectsPath` | Claude projects root for safe Today aggregation; empty uses `~/.claude/projects` | `""` |
-| `promptFuel.codexSessionsPath` | Codex sessions root; empty uses `~/.codex/sessions` | `""` |
-| `promptFuel.refreshIntervalSeconds` | Fallback refresh interval in seconds | `300` |
-| `promptFuel.statusBarDensity` | Status bar display density: `standard` (countdown + full labels) or `compact` (shorter) | `"standard"` |
-| `promptFuel.statusMode` | Show quota percentages as remaining allowance or used amount | `"remaining"` |
-| `promptFuel.authenticatedQuota.enabled` | Enable opt-in authenticated live quota refresh | `false` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |

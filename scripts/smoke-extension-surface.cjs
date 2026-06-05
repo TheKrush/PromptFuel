@@ -42,6 +42,24 @@ for (const event of [
 
 const settings = pkg.contributes?.configuration?.properties ?? {};
 const settingKeys = Object.keys(settings);
+const expectedSettingKeys = [
+  'promptFuel.sources',
+  'promptFuel.refreshIntervalMinutes',
+  'promptFuel.snapshot.enabled',
+  'promptFuel.snapshot.machineLabel',
+  'promptFuel.snapshot.path'
+];
+const removedSettingKeys = [
+  'promptFuel.stateDirectory',
+  'promptFuel.claudeProjectsPath',
+  'promptFuel.codexSessionsPath',
+  'promptFuel.refreshIntervalSeconds',
+  'promptFuel.authenticatedQuota.enabled',
+  'promptFuel.statusMode',
+  'promptFuel.statusBarDensity',
+  ['promptFuel.snapshot.remote', 'La', 'nes'].join(''),
+  ['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')
+];
 const forbiddenSettingPattern = new RegExp([
   ['issue', 'Inbox'].join(''),
   ['notifications', 'reset'].join('\\.'),
@@ -53,13 +71,13 @@ for (const key of settingKeys) {
   assert.doesNotMatch(key, forbiddenSettingPattern, `forbidden setting absent: ${key}`);
 }
 
-assert.ok(settingKeys.includes('promptFuel.sources'), 'unified source setting exists');
-assert.ok(settingKeys.includes('promptFuel.refreshIntervalMinutes'), 'refresh interval minutes setting exists');
-assert.ok(settingKeys.includes('promptFuel.authenticatedQuota.enabled'), 'authenticated quota setting exists');
-assert.ok(settingKeys.includes('promptFuel.snapshot.enabled'), 'snapshot writer setting exists');
-assert.ok(settingKeys.includes('promptFuel.snapshot.path'), 'snapshot path setting exists');
-assert.equal(settingKeys.includes(['promptFuel.snapshot.remote', 'La', 'nes'].join('')), false, 'old remote source setting key is absent');
-assert.equal(settingKeys.includes(['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')), false, 'old status bar source setting key is absent');
+assert.deepEqual(settingKeys.sort(), [...expectedSettingKeys].sort(), 'public settings surface is exactly the 1.0.0 model');
+for (const key of expectedSettingKeys) {
+  assert.ok(settingKeys.includes(key), `public setting exists: ${key}`);
+}
+for (const key of removedSettingKeys) {
+  assert.equal(settingKeys.includes(key), false, `removed public setting is absent: ${key}`);
+}
 
 const vscodeIgnore = fs.readFileSync(path.join(repoRoot, '.vscodeignore'), 'utf8').split(/\r?\n/);
 for (const excluded of ['.github/**', '*.vsix', '*.log', 'DO_NOT_DELETE/**', 'vsix-inspect/**', 'src/**', 'tools/**']) {
