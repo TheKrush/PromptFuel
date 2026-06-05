@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Support
+    url: https://github.com/TheKrush/PromptFuel/discussions
+    about: Ask a usage/setup question about PromptFuel.
+  - name: Report a security vulnerability
+    url: https://github.com/TheKrush/PromptFuel/security/policy
+    about: Use the security policy flow. Do not open a public issue with vulnerability details.

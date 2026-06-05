@@ -1,0 +1,48 @@
+name: Feature Request
+description: Suggest a new PromptFuel idea, improvement, or workflow.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      placeholder: What workflow or limitation should PromptFuel help with?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-behavior
+    attributes:
+      label: Proposed behavior
+      placeholder: What should PromptFuel do?
+    validations:
+      required: true
+  - type: dropdown
+    id: affected-area
+    attributes:
+      label: Affected area
+      options:
+        - Status bar
+        - Dashboard
+        - Snapshots
+        - Pricing estimates
+        - Settings
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: What workaround or different design have you considered?
+  - type: dropdown
+    id: workflow-fit
+    attributes:
+      label: Related workflow
+      description: Does this relate to PromptFuel's local-first, privacy, or multi-machine workflows?
+      options:
+        - Local-first usage tracking
+        - Privacy or data minimization
+        - Multi-machine snapshots
+        - Not sure
+        - No

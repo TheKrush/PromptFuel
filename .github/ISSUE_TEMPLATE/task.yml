@@ -1,0 +1,27 @@
+name: Task / Maintenance
+description: Track repo maintenance, cleanup, CI, packaging, or release work.
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Task summary
+      placeholder: What maintenance work should be done?
+    validations:
+      required: true
+  - type: textarea
+    id: affected-areas
+    attributes:
+      label: Affected files or areas
+      placeholder: "e.g. .github/ISSUE_TEMPLATE, scripts, CI, packaging, release docs"
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      placeholder: What should be true when this task is done?
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation expectations
+      placeholder: What checks should run, or what manual inspection is enough?

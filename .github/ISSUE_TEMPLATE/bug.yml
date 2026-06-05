@@ -1,0 +1,98 @@
+name: Bug Report
+description: Report a bug, issue, or broken behavior in PromptFuel.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: PromptFuel version
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version
+      placeholder: "e.g. 1.102.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "e.g. Windows 11, macOS 15, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Install source
+      options:
+        - Marketplace
+        - VSIX
+        - Extension Development Host
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Provider or source affected
+      options:
+        - Claude
+        - Codex
+        - Snapshot / imported source
+        - Dashboard
+        - Status bar
+        - Pricing estimates
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should PromptFuel have done?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open VS Code with PromptFuel installed.
+        2. Run PromptFuel: Refresh Now.
+        3. Open PromptFuel: Open Usage Dashboard.
+        4. See the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Relevant settings snippet
+      description: Do not include secrets, tokens, API keys, raw prompts, responses, transcripts, or private paths.
+      render: json
+      placeholder: |
+        {
+          "promptFuel.sources": {
+            "claude": { "enabled": true, "statusBar": true }
+          }
+        }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or logs
+      description: Add screenshots or logs if helpful. Do not include secrets, tokens, API keys, raw prompts, responses, transcripts, or private paths.
+  - type: checkboxes
+    id: privacy-confirmation
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have removed secrets, tokens, API keys, raw prompts, responses, transcripts, and private paths from this report.
+          required: true

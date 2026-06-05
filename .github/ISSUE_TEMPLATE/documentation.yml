@@ -1,0 +1,31 @@
+name: Documentation Update
+description: Suggest an update to README, setup docs, Marketplace copy, or guides.
+labels: [documentation]
+body:
+  - type: input
+    id: page-section
+    attributes:
+      label: Page or section affected
+      placeholder: "e.g. README > Snapshot sync, Marketplace overview, setup steps"
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is confusing, missing, or stale?
+      placeholder: Describe the documentation problem.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or correction
+      placeholder: Share the wording, screenshot update, or correction you recommend.
+  - type: dropdown
+    id: marketplace-impact
+    attributes:
+      label: Does this affect Marketplace README copy?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
