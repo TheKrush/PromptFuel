@@ -61,6 +61,7 @@ function openPromptFuelPanel(
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
     }
   );
+  panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets', 'icon.png');
 
   const panelMessageHandler = panel.webview.onDidReceiveMessage(
     (message: PromptFuelPanelMessage) => {
