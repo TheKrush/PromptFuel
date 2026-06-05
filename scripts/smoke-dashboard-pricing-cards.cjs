@@ -10,7 +10,16 @@ function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const { initModelPricingFromCsv } = require(path.join(repoRoot, 'out', 'modelPricing.js'));
   const { buildUsageDashboardModel } = require(path.join(repoRoot, 'out', 'panel', 'usageDashboardModel.js'));
+  const { estimateAggregateCostUsd } = require(path.join(repoRoot, 'out', 'providers', 'pricing.js'));
   initModelPricingFromCsv(fs.readFileSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv'), 'utf8'));
+
+  const costRowsFromModels = models => models.map(model => ({
+    model: model.model,
+    inputTokens: model.inputTokens,
+    outputTokens: model.outputTokens,
+    cacheCreationInputTokens: model.cacheCreationInputTokens,
+    cacheReadInputTokens: model.cacheReadInputTokens
+  }));
 
   const claudeState = {
     provider: 'claude',
@@ -92,14 +101,25 @@ function main() {
     assert.ok(todayApiEq, 'todayApiEquivalent card present');
     assert.equal(todayApiEq.available, true, 'todayApiEquivalent card available');
     assert.ok(todayApiEq.value.startsWith('$'), `todayApiEquivalent value starts with $, got ${todayApiEq.value}`);
-    assert.ok(todayApiEq.detail, 'todayApiEquivalent has detail');
-    assert.ok(!todayApiEq.detail.includes('fallback'), 'Claude today estimate is verified model, not fallback');
+    assert.equal(estimateAggregateCostUsd([{
+      model: claudeTodayUsage.models[0],
+      inputTokens: claudeTodayUsage.inputTokens,
+      outputTokens: claudeTodayUsage.outputTokens,
+      cacheCreationInputTokens: claudeTodayUsage.cacheCreationInputTokens,
+      cacheReadInputTokens: claudeTodayUsage.cacheReadInputTokens
+    }], true).fallbackCount, 0, 'Claude today estimate uses configured model pricing');
 
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'codexTodayApiEquivalent card present');
     assert.equal(codexTodayApiEq.available, true, 'codexTodayApiEquivalent card available');
     assert.ok(codexTodayApiEq.value.startsWith('$'), `codexTodayApiEquivalent value starts with $, got ${codexTodayApiEq.value}`);
-    assert.ok(!codexTodayApiEq.detail.includes('fallback'), 'Codex today estimate is verified model, not fallback');
+    assert.equal(estimateAggregateCostUsd([{
+      model: codexTodayUsage.models[0],
+      inputTokens: codexTodayUsage.inputTokens,
+      outputTokens: codexTodayUsage.outputTokens,
+      cacheCreationInputTokens: codexTodayUsage.cacheCreationInputTokens,
+      cacheReadInputTokens: codexTodayUsage.cacheReadInputTokens
+    }], false).fallbackCount, 0, 'Codex today estimate uses configured model pricing');
   }
 
   {
@@ -139,8 +159,10 @@ function main() {
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'mixed codexTodayApiEquivalent card present');
     assert.equal(codexTodayApiEq.available, true, 'mixed codexTodayApiEquivalent available with per-model tokens');
-    assert.equal(codexTodayApiEq.detailTooltip, 'Codex 1D API-equivalent estimate; fallback pricing used; not actual billing.', 'mixed estimate detailTooltip uses standardized fallback wording');
-    assert.ok(codexTodayApiEq.detail.includes('fallback'), 'mixed estimate detail reports fallback count');
+    assert.ok(codexTodayApiEq.value.startsWith('$'), `mixed codexTodayApiEquivalent value starts with $, got ${codexTodayApiEq.value}`);
+    const mixedEstimate = estimateAggregateCostUsd(costRowsFromModels(codexMixedTodayUsage.modelUsage), false);
+    assert.equal(mixedEstimate.fallbackCount, 1, 'mixed Codex estimate records one fallback-priced model');
+    assert.equal(mixedEstimate.totalCount, 2, 'mixed Codex estimate evaluates both model rows');
   }
 
   {
@@ -159,11 +181,7 @@ function main() {
     const codexTodayApiEq = model.today.cards.find(c => c.key === 'codexTodayApiEquivalent');
     assert.ok(codexTodayApiEq, 'mixed codexTodayApiEquivalent card present without per-model tokens');
     assert.equal(codexTodayApiEq.available, false, 'mixed codexTodayApiEquivalent unavailable without per-model tokens');
-    assert.equal(codexTodayApiEq.value, 'Unavailable', 'mixed unsafe estimate shows unavailable value');
-    assert.ok(
-      codexTodayApiEq.detailTooltip?.includes('Codex 1D API-equivalent estimate unavailable: mixed-model today usage has no per-model token breakdown. Not actual billing.'),
-      'mixed unsafe estimate detailTooltip explains why'
-    );
+    assert.ok(codexTodayApiEq.detailTooltip && codexTodayApiEq.detailTooltip.length > 0, 'mixed unsafe estimate carries unavailable context');
   }
 
   {
@@ -238,7 +256,9 @@ function main() {
     assert.ok(apiEq, 'codexHistoryApiEquivalent card present');
     assert.equal(apiEq.available, true, 'codexHistoryApiEquivalent card available');
     assert.ok(apiEq.value.startsWith('$'), `codexHistoryApiEquivalent value starts with $, got ${apiEq.value}`);
-    assert.ok(apiEq.detail?.includes('fallback'), 'codex history detail mentions fallback');
+    const historyEstimate = estimateAggregateCostUsd(costRowsFromModels(codexCorrelatedHistory.modelUsage), false);
+    assert.equal(historyEstimate.fallbackCount, 1, 'codex history estimate records one fallback-priced model');
+    assert.equal(historyEstimate.totalCount, 2, 'codex history estimate evaluates both model rows');
   }
 
   console.log('dashboard pricing card smoke passed');

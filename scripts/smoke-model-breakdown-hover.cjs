@@ -97,10 +97,16 @@ function main() {
     selected,
     { windowDays: STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS }
   );
+  const assertStatusTooltipOmitsModelBreakdown = (result, label) => {
+    assert.doesNotMatch(result.tooltip, /\*\*Models\*\*|Models \(|API est\./, `${label}: combined tooltip omits model/pricing sections`);
+    for (const provider of result.providers) {
+      assert.doesNotMatch(provider.tooltip, /\*\*Models\*\*|Models \(|API est\./, `${label}: provider tooltip omits model/pricing sections`);
+    }
+  };
 
   {
     const result = formatStatus([baseState], baseOptions);
-    assert.ok(!result.tooltip.includes('Models ('), 'no model breakdown section when no breakdown data');
+    assertStatusTooltipOmitsModelBreakdown(result, 'no breakdown data');
     console.log('PASS: model breakdown section absent when no breakdown data provided');
   }
 
@@ -114,10 +120,7 @@ function main() {
       }
     };
     const result = formatStatus([baseState], options);
-    assert.ok(!result.tooltip.includes('Models ('), 'combined status tooltip omits model breakdown section');
-    assert.ok(!result.tooltip.includes('| Provider | Model | Tokens | Msgs/Turns | API est. |'), 'combined status tooltip omits model table header');
-    assert.ok(!result.tooltip.includes('| Claude | Sonnet 4.6 | **150.0K** | 45 |'), 'combined status tooltip omits model rows');
-    assert.ok(!result.providers[0].tooltip.includes('**Models**'), 'provider status tooltip omits model breakdown section');
+    assertStatusTooltipOmitsModelBreakdown(result, 'provided local breakdown');
     console.log('PASS: status tooltip omits model breakdown data even when provided');
   }
 
@@ -162,9 +165,7 @@ function main() {
     assert.equal(hoverBreakdown.codex[0].costUsd, 0.07);
 
     const result = formatStatus([baseState], { ...baseOptions, modelBreakdown: hoverBreakdown });
-    assert.ok(!result.tooltip.includes('Models ('), 'status tooltip omits remote model table');
-    assert.ok(!result.tooltip.includes('| Codex | gpt-5.5 | **7.0K** | 3 | ¢7.0 |'), 'status tooltip omits remote model rows');
-    assert.ok(!result.tooltip.includes('snapshot history included'), 'status tooltip omits model-table snapshot note');
+    assertStatusTooltipOmitsModelBreakdown(result, 'selected remote breakdown');
     console.log('PASS: selected remote historyBuckets model rows aggregate but are omitted from status tooltip');
   }
 
@@ -199,8 +200,7 @@ function main() {
     assert.equal(hoverBreakdown.codex[0].assistantMessages, 5);
     assert.equal(hoverBreakdown.codex[0].costUsd, 0.1);
     const result = formatStatus([codexState], { ...baseOptions, modelBreakdown: hoverBreakdown });
-    assert.ok(!result.tooltip.includes('| Codex | gpt-5.5 |'), 'status tooltip omits merged model rows');
-    assert.ok(!result.tooltip.includes('Models ('), 'status tooltip omits model breakdown section');
+    assertStatusTooltipOmitsModelBreakdown(result, 'local and remote breakdown');
     console.log('PASS: local and remote Codex model rows merge but are omitted from status tooltip');
   }
 

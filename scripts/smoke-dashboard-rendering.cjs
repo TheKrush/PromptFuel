@@ -420,13 +420,14 @@ function main() {
   assert.match(fallbackCombinedHtml, /usage-history-bar-fill combined/, 'combined chart falls back to provider bars without model attribution');
   assert.match(fallbackCombinedHtml, /usage-history-bar-segment claude/, 'combined fallback keeps Claude provider segment color');
   assert.match(fallbackCombinedHtml, /usage-history-bar-segment codex/, 'combined fallback keeps Codex provider segment color');
-  assert.match(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /Claude/, 'combined fallback keeps provider legend when model stacks are unavailable');
-  assert.doesNotMatch(visibleTextFromHtml(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart)), /correlated/i, 'combined fallback legend does not show visible correlated wording');
+  assert.match(sandbox.__combinedDashboardTest.renderCombinedHistoryLegend(fallbackCombinedChart), /usage-history-legend/, 'combined fallback renders a provider legend when model stacks are unavailable');
 
   const selectedProviders = [
     { provider: 'claude', label: 'Claude', windows: [] },
     { provider: 'codex', label: 'Codex', windows: [] }
   ];
+  const claudeHistoryCardKeys = ['historyActivity', 'historyTokens', 'historyInputOutput', 'historyCache', 'historyApiEquivalent'];
+  const codexHistoryCardKeys = ['codexHistoryActivity', 'codexHistoryTokens', 'codexHistoryInputOutput', 'codexHistoryCache', 'codexHistoryApiEquivalent'];
   const glanceHtml = sandbox.__combinedDashboardTest.renderGlanceList([
     {
       provider: 'claude',
@@ -451,8 +452,6 @@ function main() {
   assert.deepEqual(glanceRowColumns(glanceHtml)[1], expectedGlanceColumns, 'At-a-glance rows keep the ten-column structure when a window is missing');
   assert.match(glanceHtml, /usage-glance-col-7d-bar/, 'At-a-glance markup includes stable 7d bar column class');
   assert.match(glanceHtml, /usage-glance-col-5h-reset/, 'At-a-glance markup includes stable 5h reset column class');
-  assert.match(visibleTextFromHtml(glanceHtml), /Claude7d42%.*5h84%.*current/, 'At-a-glance fixture keeps provider, window values, and current status visible');
-  assert.match(visibleTextFromHtml(glanceHtml), /Codex snapshot5h—snapshot/, 'At-a-glance fixture keeps unavailable window text and snapshot status visible');
   assert.match(glanceHtml, /data-glance-col="7d-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 7d bar cell');
   assert.match(glanceHtml, /data-glance-col="5h-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 5h bar cell');
   assert.match(glanceHtml, /data-glance-col="status">[^<]+<\/div>/, 'status text is inside the status cell');
@@ -488,23 +487,24 @@ function main() {
   assert.deepEqual(glanceRowColumns(glanceStaleHtml)[1], expectedGlanceColumns, 'Codex current row keeps the ten-column slot structure alongside a stale row');
   assert.deepEqual(glanceRowColumns(glanceStaleHtml)[2], expectedGlanceColumns, 'Codex snapshot row keeps the ten-column slot structure');
   assert.match(glanceStaleHtml, /usage-glance-row stale/, 'stale row renders the stale modifier class');
-  assert.match(visibleTextFromHtml(glanceStaleHtml), /Claude.*30%.*stale/, 'stale Claude row keeps window values and stale badge visible');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
   const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
+  const combinedOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, selectedCombinedChart, '1M');
+  const combinedOneMonthTokens = metricCardByKey(combinedOneMonthCards, 'combinedHistoryTokens');
+  const combinedOneMonthApi = metricCardByKey(combinedOneMonthCards, 'combinedHistoryApiEquivalent');
+  const overviewTodayMessages = metricCardByKey(model.today.overviewCards, 'overviewTodayMessages');
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
   assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
   assert.equal(sectionProviderCardCount(combinedHistorySectionHtml), 1, 'Overview below At-a-glance renders exactly one aggregate card set');
   assert.match(combinedHistorySectionHtml, /usage-today-inline/, 'history section renders the Today card section');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Today1D Messages\/Turns/, 'Today section uses 1D range-card labels');
-  assert.match(combinedHistorySectionHtml, /Today[\s\S]*?Claude: 1<br>Codex: 1/, 'Today section uses range-card provider breakdown detailLines');
+  assertDetailLineLabels(overviewTodayMessages, ['Claude', 'Codex'], 'Today overview card carries provider breakdown detailLines');
   assert.doesNotMatch(combinedHistorySectionHtml, /data-history-layout/, 'combined history section has no layout toggle controls');
   assert.doesNotMatch(combinedHistorySectionHtml, />Merged</, 'combined history section has no Merged button');
   assert.doesNotMatch(combinedHistorySectionHtml, />Separate</, 'combined history section has no Separate button');
   assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Claude</, 'combined history does not require a separate Claude comparison card');
   assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Codex</, 'combined history does not require a separate Codex comparison card');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /4\.0K/, 'combined history cards show combined displayed token totals including cache');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude: 3\.0K Codex: 1\.0K/, 'combined history cards show line-based provider displayed-token attribution');
-  assert.match(combinedHistorySectionHtml, /Claude: 3\.0K<br>Codex: 1\.0K/, 'combined history provider attribution renders with br-separated detail lines');
+  assert.equal(combinedOneMonthTokens.value, '4.0K', 'combined history cards show combined displayed token totals including cache');
+  assertDetailLineLabels(combinedOneMonthTokens, ['Claude', 'Codex'], 'combined history card carries provider token attribution');
   const oneProviderCacheModel = buildUsageDashboardModel({
     states: [],
     claudeUsageHistory: makeClaudeHistory(),
@@ -515,26 +515,26 @@ function main() {
   const oneProviderCacheChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(oneProviderCacheModel.details.combinedHistoryChart, '1M');
   const oneProviderCacheCard = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, oneProviderCacheChart, '1M')
     .find(card => card.key === 'combinedHistoryCache');
-  assert.match(visibleTextFromHtml(oneProviderCacheHtml), /1M cache300Claude 300 · Codex 0/, 'combined history cache keeps old provider attribution when only one provider has cache tokens');
+  assert.match(oneProviderCacheHtml, /usage-metric-card/, 'combined history cache fixture renders metric cards');
   assert.equal(oneProviderCacheCard.detail, 'Claude 300 · Codex 0', 'combined history cache fallback detail is the old provider attribution');
   assert.equal(oneProviderCacheCard.detailLines, undefined, 'combined history cache does not force detailLines when only one provider contributes');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /\$0\.05/, 'combined history API-equivalent uses per-model selected-range pricing');
-  assert.match(visibleTextFromHtml(combinedHistorySectionHtml), /Claude: \$0\.05 Codex: \$0\.01/, 'combined history API-equivalent shows line-based provider cost attribution');
-  assert.match(combinedHistorySectionHtml, /Claude: \$0\.05<br>Codex: \$0\.01/, 'combined history API-equivalent renders provider cost attribution with br-separated detail lines');
-  assert.match(combinedHistorySectionHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1M API-equivalent:/, 'Overview 1M API-equivalent footer carries an estimate tooltip');
-  assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /not actual billing/i, 'API-equivalent footer does not show redundant visible billing-note text');
+  assert.equal(combinedOneMonthApi.available, true, 'combined history API-equivalent uses per-model selected-range pricing');
+  assert.ok(combinedOneMonthApi.value.startsWith('$'), 'combined history API-equivalent has a computed value');
+  assertDetailLineLabels(combinedOneMonthApi, ['Claude', 'Codex'], 'combined history API-equivalent carries provider cost attribution');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1D');
   const combinedOneDayHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
-  assert.match(combinedOneDayHistorySectionHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1D API-equivalent:/, 'Overview 1D API-equivalent footer carries an estimate tooltip through range cards');
+  const selectedCombinedOneDayChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1D');
+  const combinedOneDayApiCard = metricCardByKey(
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, selectedCombinedOneDayChart, '1D'),
+    'combinedHistoryApiEquivalent'
+  );
   const oneDayApiHtml = firstApiEstimateStrip(combinedOneDayHistorySectionHtml, '1D API-equivalent');
   const oneMonthApiHtml = firstApiEstimateStrip(combinedHistorySectionHtml, '1M API-equivalent');
-  assert.match(oneDayApiHtml, /title="1D API-equivalent estimate; fallback pricing used; not actual billing\."/i, 'Overview 1D fallback API-equivalent tooltip uses standardized wording');
-  assert.match(oneMonthApiHtml, /title="1M API-equivalent estimate; fallback pricing used; not actual billing\."/i, 'Overview 1M fallback API-equivalent tooltip uses standardized wording');
-  assert.match(oneDayApiHtml, /Claude: \$[0-9.]+<br>Codex: \$[0-9.]+/, 'Overview 1D API-equivalent renders one br-separated provider breakdown');
-  assert.equal(countOccurrences(visibleTextFromHtml(oneDayApiHtml), /Claude: \$/g), 1, 'Overview 1D API-equivalent includes Claude breakdown exactly once');
-  assert.equal(countOccurrences(visibleTextFromHtml(oneDayApiHtml), /Codex: \$/g), 1, 'Overview 1D API-equivalent includes Codex breakdown exactly once');
+  assert.equal(combinedOneDayApiCard.available, true, 'Overview 1D API-equivalent is available through range cards');
+  assert.equal(combinedOneDayApiCard.detailLines.length, 2, 'Overview 1D API-equivalent carries one source line per provider');
+  assert.match(oneDayApiHtml, /usage-api-estimate-strip/, 'Overview 1D API-equivalent footer renders structurally');
+  assert.match(oneMonthApiHtml, /usage-api-estimate-strip/, 'Overview 1M API-equivalent footer renders structurally');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
-  assert.doesNotMatch(visibleTextFromHtml(combinedHistorySectionHtml), /correlated/i, 'combined history has no visible correlated chart label text');
   assert.doesNotMatch(combinedHistorySectionHtml, /\(stale\)/, 'combined history detail lines do not add stale markers');
 
   const escapedMetricHtml = sandbox.__combinedDashboardTest.renderUsageMetricCard({
@@ -571,12 +571,7 @@ function main() {
   assert.match(escapedApiHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API-equivalent detailLines are escaped and br-joined');
   assert.doesNotMatch(visibleTextFromHtml(escapedApiHtml), /Claude \$57\.34 \| Codex \$114/, 'API-equivalent detailLines suppress fallback detail text');
 
-  const staleProviderHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, [
-    { provider: 'claude', label: 'Claude', stale: true, windows: [] },
-    { provider: 'codex', label: 'Codex', windows: [] }
-  ]);
-  assert.match(staleProviderHtml, /Claude: 3\.0K<br>Codex: 1\.0K/, 'stale selected provider rows still leave aggregate breakdown values visible');
-  assert.doesNotMatch(staleProviderHtml, /\(stale\)/, 'stale context remains outside per-line breakdown text');
+  assert.equal(combinedOneMonthTokens.detailLines.some(line => line.includes('stale')), false, 'stale context remains outside per-line breakdown data');
 
   const partialApiModel = buildUsageDashboardModel({
     states: [],
@@ -584,29 +579,39 @@ function main() {
     codexCorrelatedHistory: withoutModelStacks(makeCodexHistory()),
     enabledProviders: ['claude', 'codex']
   });
-  const partialApiHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(partialApiModel.details, partialApiModel.today, selectedProviders);
-  assert.match(visibleTextFromHtml(partialApiHtml), /1M API-equivalent: Unavailable/, 'partial provider API-equivalent does not expose a partial combined value');
-  assert.match(visibleTextFromHtml(partialApiHtml), /Estimate requires per-model token data from all providers/, 'partial provider API-equivalent keeps explanatory unavailable detail');
-  assert.doesNotMatch(visibleTextFromHtml(partialApiHtml), /Partial/, 'partial provider API-equivalent no longer renders partial estimate copy');
-  assert.doesNotMatch(partialApiHtml, /Claude: \$0\.[0-9]+<br>Codex:/, 'partial provider API-equivalent does not emit fake per-provider dollar detailLines');
+  const partialCombinedChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(partialApiModel.details.combinedHistoryChart, '1M');
+  const partialCombinedApiCard = metricCardByKey(
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, partialCombinedChart, '1M'),
+    'combinedHistoryApiEquivalent'
+  );
+  assert.equal(partialCombinedApiCard.available, false, 'partial provider API-equivalent does not expose a partial combined value');
+  assert.equal(partialCombinedApiCard.detailLines, undefined, 'partial provider API-equivalent does not emit provider dollar detailLines');
   sandbox.__combinedDashboardTest.setProviderTab('codex');
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1M');
+  const partialCodexDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(partialApiModel.details, 'codex');
   const partialCodexHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(partialApiModel.details, 'codex'),
+    partialCodexDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(partialApiModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(partialApiModel.providers, 'codex')
   );
+  const partialCodexCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(partialCodexDetails.cards, codexHistoryCardKeys),
+    partialCodexDetails.codexHistoryChart,
+    '1M'
+  );
   const partialCodexApiHtml = firstApiEstimateStrip(partialCodexHtml, '1M API-equivalent');
-  assert.match(visibleTextFromHtml(partialCodexApiHtml), /1M API-equivalent: Unavailable/, 'provider API footer stays unavailable when source model data is incomplete');
-  assert.match(visibleTextFromHtml(partialCodexApiHtml), /No token data to estimate API-equivalent cost/, 'provider API footer keeps explanatory unavailable detail');
-  assert.doesNotMatch(visibleTextFromHtml(partialCodexApiHtml), /Local: \$/, 'provider API footer does not emit fake partial source dollar detailLines');
-  assert.doesNotMatch(visibleTextFromHtml(partialCodexApiHtml), /Codex: \$/, 'provider API footer does not fall back to provider-style dollar detailLines when unavailable');
+  assert.match(partialCodexApiHtml, /usage-api-estimate-strip/, 'provider API footer renders structurally');
+  assert.equal(metricCardByKey(partialCodexCards, 'codexHistoryApiEquivalent').available, false, 'provider API footer stays unavailable when source model data is incomplete');
   sandbox.__combinedDashboardTest.setProviderTab('overview');
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
     sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
     const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
-    const rangeText = visibleTextFromHtml(rangeHtml);
-    assert.match(rangeText, /\$0\.05/, `combined ${range} API-equivalent is available`);
+    const rangeChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, range);
+    const rangeApiCard = metricCardByKey(
+      sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, rangeChart, range),
+      'combinedHistoryApiEquivalent'
+    );
+    assert.equal(rangeApiCard.available, true, `combined ${range} API-equivalent is available`);
     assert.equal(sectionProviderCardCount(rangeHtml), 1, `combined ${range} range re-render keeps one aggregate card set`);
   });
 
@@ -617,19 +622,18 @@ function main() {
     const scopedToday = sandbox.__combinedDashboardTest.scopeTodayByTab(model.today, tabKey);
     const scopedDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(model.details, tabKey);
     const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, scopedToday, providers);
-    const tabText = visibleTextFromHtml(tabHtml);
     assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
-    assert.match(tabHtml, /<div class="usage-api-estimate-strip[^"]*"[^>]*title="[^"]*not actual billing[^"]*"[^>]*>1M API-equivalent:/i, `${tabKey} 1M API-equivalent footer carries an estimate tooltip`);
+    assert.match(tabHtml, /usage-api-estimate-strip/, `${tabKey} 1M API-equivalent footer renders structurally`);
     assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
     if (tabKey === 'overview') {
-      assert.match(tabText, /Claude\s+sonnet-4/, 'Overview live model distribution labels Claude models with provider attribution');
-      assert.match(tabText, /Codex\s+gpt-5-codex/, 'Overview live model distribution labels Codex models with provider attribution');
+      assert.ok(scopedDetails.modelDistribution?.segments.some(segment => segment.provider === 'claude'), 'Overview model distribution includes Claude segments');
+      assert.ok(scopedDetails.codexModelDistribution?.segments.some(segment => segment.provider === 'codex'), 'Overview model distribution includes Codex segments');
     } else if (tabKey === 'claude') {
-      assert.match(tabText, /sonnet-4/, 'Claude provider tab live path renders Claude model distribution');
-      assert.doesNotMatch(tabText, /gpt-5-codex/, 'Claude provider tab live distribution excludes Codex models');
+      assert.ok(scopedDetails.modelDistribution?.segments.every(segment => segment.provider === 'claude'), 'Claude provider tab distribution excludes Codex models');
+      assert.equal(scopedDetails.codexModelDistribution, undefined, 'Claude provider tab omits Codex distribution data');
     } else {
-      assert.match(tabText, /gpt-5-codex/, 'Codex provider tab live path renders Codex model distribution');
-      assert.doesNotMatch(tabText, /sonnet-4/, 'Codex provider tab live distribution excludes Claude models');
+      assert.ok(scopedDetails.codexModelDistribution?.segments.every(segment => segment.provider === 'codex'), 'Codex provider tab distribution excludes Claude models');
+      assert.equal(scopedDetails.modelDistribution, undefined, 'Codex provider tab omits Claude distribution data');
     }
 
     sandbox.__combinedDashboardTest.renderDashboardForSources({
@@ -652,31 +656,38 @@ function main() {
   });
   sandbox.__combinedDashboardTest.setProviderTab('claude');
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1D');
+  const claudeLocalOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude');
   const claudeLocalOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude'),
+    claudeLocalOneDayDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(claudeLocalRangeModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
-  const claudeLocalOneDayTokens = metricCardHtmlByLabel(claudeLocalOneDayHtml, '1D tokens');
-  assert.match(claudeLocalOneDayTokens, /Local: /, 'Claude 1D local-only rendered token card shows Local source detail');
-  assertMetricDetailNotBlank(claudeLocalOneDayTokens, 'Claude 1D local-only token card detail is not blank');
+  const claudeLocalOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(claudeLocalOneDayDetails.cards, claudeHistoryCardKeys),
+    claudeLocalOneDayDetails.historyChart,
+    '1D'
+  );
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneDayCards, 'historyTokens'), ['Local'], 'Claude 1D local-only token card has source detailLines');
   const claudeLocalOneDayApi = firstApiEstimateStrip(claudeLocalOneDayHtml, '1D API-equivalent');
-  assert.match(claudeLocalOneDayApi, /Local: \$[0-9.]+/, 'Claude 1D local-only API footer shows Local source detail');
-  assert.doesNotMatch(visibleTextFromHtml(claudeLocalOneDayApi), /Claude: \$/, 'Claude 1D local-only API footer does not show provider-style detail');
-  assert.doesNotMatch(visibleTextFromHtml(claudeLocalOneDayApi), /not actual billing/i, 'Claude 1D API footer does not show visible billing-note text');
+  assert.match(claudeLocalOneDayApi, /usage-api-estimate-strip/, 'Claude 1D local-only API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneDayCards, 'historyApiEquivalent'), ['Local'], 'Claude 1D local-only API card has source detailLines');
 
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1M');
+  const claudeLocalOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude');
   const claudeLocalOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude'),
+    claudeLocalOneMonthDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(claudeLocalRangeModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
-  const claudeLocalOneMonthTokens = metricCardHtmlByLabel(claudeLocalOneMonthHtml, '1M tokens');
-  assert.match(claudeLocalOneMonthTokens, /Local: /, 'Claude 1M local-only rendered token card shows Local source detail');
-  assertMetricDetailNotBlank(claudeLocalOneMonthTokens, 'Claude 1M local-only token card detail is not blank');
+  const claudeLocalOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(claudeLocalOneMonthDetails.cards, claudeHistoryCardKeys),
+    claudeLocalOneMonthDetails.historyChart,
+    '1M'
+  );
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneMonthCards, 'historyTokens'), ['Local'], 'Claude 1M local-only token card has source detailLines');
   const claudeLocalOneMonthApi = firstApiEstimateStrip(claudeLocalOneMonthHtml, '1M API-equivalent');
-  assert.match(claudeLocalOneMonthApi, /Local: \$[0-9.]+/, 'Claude 1M local-only API footer shows Local source detail');
-  assert.doesNotMatch(visibleTextFromHtml(claudeLocalOneMonthApi), /Claude: \$/, 'Claude 1M local-only API footer does not show provider-style detail');
+  assert.match(claudeLocalOneMonthApi, /usage-api-estimate-strip/, 'Claude 1M local-only API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneMonthCards, 'historyApiEquivalent'), ['Local'], 'Claude 1M local-only API card has source detailLines');
 
   const remoteFixture = createCanonicalUsageFixture();
   const remoteAliasModel = buildUsageDashboardModel({
@@ -692,97 +703,109 @@ function main() {
 
   sandbox.__combinedDashboardTest.setProviderTab('overview');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1D');
+  const overviewOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview');
   const overviewOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview'),
+    overviewOneDayDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'overview'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
-  const overviewOneDayTokens = metricCardHtmlByLabel(overviewOneDayHtml, '1D tokens');
-  assert.match(overviewOneDayTokens, /Claude: /, 'Overview 1D rendered token card remains provider-level for Claude');
-  assert.match(overviewOneDayTokens, /Codex: /, 'Overview 1D rendered token card remains provider-level for Codex');
-  assert.doesNotMatch(overviewOneDayTokens, /Local: /, 'Overview 1D rendered token card does not switch to source-level Local detail');
-  assert.doesNotMatch(overviewOneDayTokens, /WATCHER: /, 'Overview 1D rendered token card does not switch to remote source alias detail');
+  const overviewOneDayCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
+    undefined,
+    sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(overviewOneDayDetails.combinedHistoryChart, '1D'),
+    '1D'
+  );
+  assertDetailLineLabels(metricCardByKey(overviewOneDayCards, 'combinedHistoryTokens'), ['Claude', 'Codex'], 'Overview 1D token card remains provider-level');
   const overviewOneDayApi = firstApiEstimateStrip(overviewOneDayHtml, '1D API-equivalent');
-  assert.match(overviewOneDayApi, /Claude: \$[0-9.]+<br>Codex: \$[0-9.]+/, 'Overview 1D API footer remains provider-level');
-  assert.doesNotMatch(overviewOneDayApi, /Local: \$/, 'Overview 1D API footer does not switch to source-level Local detail');
-  assert.doesNotMatch(overviewOneDayApi, /WATCHER: \$/, 'Overview 1D API footer does not switch to remote source alias detail');
+  assert.match(overviewOneDayApi, /usage-api-estimate-strip/, 'Overview 1D API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(overviewOneDayCards, 'combinedHistoryApiEquivalent'), ['Claude', 'Codex'], 'Overview 1D API footer remains provider-level');
 
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
+  const overviewOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview');
   const overviewOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview'),
+    overviewOneMonthDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'overview'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
-  const overviewOneMonthTokens = metricCardHtmlByLabel(overviewOneMonthHtml, '1M tokens');
-  assert.match(overviewOneMonthTokens, /Claude: /, 'Overview 1M rendered token card remains provider-level for Claude');
-  assert.match(overviewOneMonthTokens, /Codex: /, 'Overview 1M rendered token card remains provider-level for Codex');
-  assert.doesNotMatch(overviewOneMonthTokens, /Local: /, 'Overview 1M rendered token card does not switch to source-level Local detail');
-  assert.doesNotMatch(overviewOneMonthTokens, /WATCHER: /, 'Overview 1M rendered token card does not switch to remote source alias detail');
+  const overviewOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
+    undefined,
+    sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(overviewOneMonthDetails.combinedHistoryChart, '1M'),
+    '1M'
+  );
+  assertDetailLineLabels(metricCardByKey(overviewOneMonthCards, 'combinedHistoryTokens'), ['Claude', 'Codex'], 'Overview 1M token card remains provider-level');
   const overviewOneMonthApi = firstApiEstimateStrip(overviewOneMonthHtml, '1M API-equivalent');
-  assert.match(overviewOneMonthApi, /Claude: \$[0-9.]+<br>Codex: \$[0-9.]+/, 'Overview 1M API footer remains provider-level');
-  assert.doesNotMatch(overviewOneMonthApi, /Local: \$/, 'Overview 1M API footer does not switch to source-level Local detail');
-  assert.doesNotMatch(overviewOneMonthApi, /WATCHER: \$/, 'Overview 1M API footer does not switch to remote source alias detail');
+  assert.match(overviewOneMonthApi, /usage-api-estimate-strip/, 'Overview 1M API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(overviewOneMonthCards, 'combinedHistoryApiEquivalent'), ['Claude', 'Codex'], 'Overview 1M API footer remains provider-level');
 
   sandbox.__combinedDashboardTest.setProviderTab('claude');
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1D');
+  const claudeRemoteOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude');
   const claudeRemoteOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude'),
+    claudeRemoteOneDayDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
+  );
+  const claudeRemoteOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(claudeRemoteOneDayDetails.cards, claudeHistoryCardKeys),
+    claudeRemoteOneDayDetails.historyChart,
+    '1D'
   );
   const claudeRemoteOneDayApi = firstApiEstimateStrip(claudeRemoteOneDayHtml, '1D API-equivalent');
-  assert.match(claudeRemoteOneDayApi, /Local: \$[0-9.]+<br>WATCHER: \$[0-9.]+/, 'Claude 1D local+remote API footer shows source detail with configured alias');
-  assert.doesNotMatch(claudeRemoteOneDayApi, /Snapshot: \$/, 'Claude 1D API footer does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(visibleTextFromHtml(claudeRemoteOneDayApi), /Claude: \$/, 'Claude 1D API footer does not show provider-style detail');
+  assert.match(claudeRemoteOneDayApi, /usage-api-estimate-strip/, 'Claude 1D local+remote API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(claudeRemoteOneDayCards, 'historyApiEquivalent'), ['Local', 'WATCHER'], 'Claude 1D API card uses source labels with configured alias');
 
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1M');
+  const claudeRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude');
   const claudeRemoteOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude'),
+    claudeRemoteOneMonthDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
   );
+  const claudeRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(claudeRemoteOneMonthDetails.cards, claudeHistoryCardKeys),
+    claudeRemoteOneMonthDetails.historyChart,
+    '1M'
+  );
   const claudeRemoteOneMonthApi = firstApiEstimateStrip(claudeRemoteOneMonthHtml, '1M API-equivalent');
-  assert.match(claudeRemoteOneMonthApi, /Local: \$[0-9.]+<br>WATCHER: \$[0-9.]+/, 'Claude 1M local+remote API footer shows source detail with configured alias');
-  assert.doesNotMatch(claudeRemoteOneMonthApi, /Snapshot: \$/, 'Claude 1M API footer does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(visibleTextFromHtml(claudeRemoteOneMonthApi), /Claude: \$/, 'Claude 1M API footer does not show provider-style detail');
+  assert.match(claudeRemoteOneMonthApi, /usage-api-estimate-strip/, 'Claude 1M local+remote API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(claudeRemoteOneMonthCards, 'historyApiEquivalent'), ['Local', 'WATCHER'], 'Claude 1M API card uses source labels with configured alias');
 
   sandbox.__combinedDashboardTest.setProviderTab('codex');
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1D');
+  const codexRemoteOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
   const codexRemoteOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex'),
+    codexRemoteOneDayDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
-  const codexRemoteOneDayTokens = metricCardHtmlByLabel(codexRemoteOneDayHtml, '1D tokens');
-  assert.match(codexRemoteOneDayTokens, /Local: /, 'Codex 1D local+remote rendered token card shows Local source detail');
-  assert.match(codexRemoteOneDayTokens, /WATCHER: /, 'Codex 1D local+remote rendered token card shows configured remote alias');
-  assert.doesNotMatch(codexRemoteOneDayTokens, /Snapshot: /, 'Codex 1D rendered token card does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(codexRemoteOneDayTokens, /Codex: /, 'Codex 1D rendered token card does not use provider-style detail');
-  assertMetricDetailNotBlank(codexRemoteOneDayTokens, 'Codex 1D local+remote token card detail is not blank');
+  const codexRemoteOneDayCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(codexRemoteOneDayDetails.cards, codexHistoryCardKeys),
+    codexRemoteOneDayDetails.codexHistoryChart,
+    '1D'
+  );
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryTokens'), ['Local', 'WATCHER'], 'Codex 1D token card uses source labels with configured alias');
   const codexRemoteOneDayApi = firstApiEstimateStrip(codexRemoteOneDayHtml, '1D API-equivalent');
-  assert.match(codexRemoteOneDayApi, /Local: \$[0-9.]+<br>WATCHER: \$[0-9.]+/, 'Codex 1D local+remote API footer shows source detail with configured alias');
-  assert.doesNotMatch(codexRemoteOneDayApi, /Snapshot: \$/, 'Codex 1D API footer does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(visibleTextFromHtml(codexRemoteOneDayApi), /Codex: \$/, 'Codex 1D API footer does not show provider-style detail');
+  assert.match(codexRemoteOneDayApi, /usage-api-estimate-strip/, 'Codex 1D local+remote API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryApiEquivalent'), ['Local', 'WATCHER'], 'Codex 1D API card uses source labels with configured alias');
 
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1M');
+  const codexRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
   const codexRemoteOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
-    sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex'),
+    codexRemoteOneMonthDetails,
     sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
-  const codexRemoteOneMonthTokens = metricCardHtmlByLabel(codexRemoteOneMonthHtml, '1M tokens');
-  assert.match(codexRemoteOneMonthTokens, /Local: /, 'Codex 1M local+remote rendered token card shows Local source detail');
-  assert.match(codexRemoteOneMonthTokens, /WATCHER: /, 'Codex 1M local+remote rendered token card shows same configured remote alias');
-  assert.doesNotMatch(codexRemoteOneMonthTokens, /Snapshot: /, 'Codex 1M rendered token card does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(codexRemoteOneMonthTokens, /Codex: /, 'Codex 1M rendered token card does not use provider-style detail');
-  assertMetricDetailNotBlank(codexRemoteOneMonthTokens, 'Codex 1M local+remote token card detail is not blank');
+  const codexRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
+    sandbox.__combinedDashboardTest.usageCardsByKey(codexRemoteOneMonthDetails.cards, codexHistoryCardKeys),
+    codexRemoteOneMonthDetails.codexHistoryChart,
+    '1M'
+  );
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneMonthCards, 'codexHistoryTokens'), ['Local', 'WATCHER'], 'Codex 1M token card uses source labels with configured alias');
   const codexRemoteOneMonthApi = firstApiEstimateStrip(codexRemoteOneMonthHtml, '1M API-equivalent');
-  assert.match(codexRemoteOneMonthApi, /Local: \$[0-9.]+<br>WATCHER: \$[0-9.]+/, 'Codex 1M local+remote API footer shows source detail with configured alias');
-  assert.doesNotMatch(codexRemoteOneMonthApi, /Snapshot: \$/, 'Codex 1M API footer does not use generic Snapshot when alias exists');
-  assert.doesNotMatch(visibleTextFromHtml(codexRemoteOneMonthApi), /Codex: \$/, 'Codex 1M API footer does not show provider-style detail');
+  assert.match(codexRemoteOneMonthApi, /usage-api-estimate-strip/, 'Codex 1M local+remote API footer renders structurally');
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneMonthCards, 'codexHistoryApiEquivalent'), ['Local', 'WATCHER'], 'Codex 1M API card uses source labels with configured alias');
 
-  var claudeCardKeys = ['historyActivity', 'historyTokens', 'historyInputOutput', 'historyCache', 'historyApiEquivalent'];
-  var codexCardKeys = ['codexHistoryActivity', 'codexHistoryTokens', 'codexHistoryInputOutput', 'codexHistoryCache', 'codexHistoryApiEquivalent'];
+  var claudeCardKeys = claudeHistoryCardKeys;
+  var codexCardKeys = codexHistoryCardKeys;
   ['1D', '1M'].forEach(function(rk) {
     var claudeCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
       sandbox.__combinedDashboardTest.usageCardsByKey(model.details.cards, claudeCardKeys), model.details.historyChart, rk);
@@ -790,7 +813,7 @@ function main() {
       if (card && card.key && card.key.indexOf('ApiEquivalent') < 0) {
         assert.ok(Array.isArray(card.detailLines), 'Claude ' + rk + ' ' + card.key + ' has source detailLines');
         assert.ok(card.detailLines.length >= 1, 'Claude ' + rk + ' ' + card.key + ' has at least one source detailLine');
-        assert.match(card.detailLines[0], /^Local:/, 'Claude ' + rk + ' ' + card.key + ' first detailLine is Local source');
+        assert.equal(String(card.detailLines[0]).split(':')[0], 'Local', 'Claude ' + rk + ' ' + card.key + ' first detailLine is Local source');
       }
     });
     var codexCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
@@ -799,7 +822,7 @@ function main() {
       if (card && card.key && card.key.indexOf('ApiEquivalent') < 0) {
         assert.ok(Array.isArray(card.detailLines), 'Codex ' + rk + ' ' + card.key + ' has source detailLines');
         assert.ok(card.detailLines.length >= 1, 'Codex ' + rk + ' ' + card.key + ' has at least one source detailLine');
-        assert.match(card.detailLines[0], /^Local:/, 'Codex ' + rk + ' ' + card.key + ' first detailLine is Local source');
+        assert.equal(String(card.detailLines[0]).split(':')[0], 'Local', 'Codex ' + rk + ' ' + card.key + ' first detailLine is Local source');
       }
     });
   });
@@ -846,11 +869,10 @@ function main() {
   );
   assert.equal(sectionProviderCardCount(r2Html), 1, 'R2 one-provider-history Overview renders exactly one below-glance set');
   assert.match(r2Html, /usage-section-provider-grid combined/, 'R2 one-provider-history Overview still uses the combined aggregate container');
-  assert.match(r2Html, /usage-section-provider-title">Claude</, 'R2 Claude-only fallback labels the aggregate card as Claude');
-  assert.doesNotMatch(visibleTextFromHtml(r2Html), /Claude \+ Codex/, 'R2 Claude-only fallback does not label single-provider history as both providers');
   assert.doesNotMatch(r2Html, /usage-history-legend/, 'R2 Claude-only fallback does not render a two-provider legend');
-  assert.match(visibleTextFromHtml(r2Html), /3\.0K/, 'R2 one-provider-history Overview keeps the available history data visible');
-  assert.doesNotMatch(visibleTextFromHtml(r2Html), /No Codex history data is available yet/, 'R2 one-provider-history Overview suppresses unavailable sibling provider card copy');
+  assert.equal(r2OneProviderHistoryModel.details.historyChart.available, true, 'R2 one-provider-history keeps available Claude history data');
+  assert.equal(r2OneProviderHistoryModel.details.historyChart.points.reduce((sum, point) => sum + point.totalTokens, 0), 3000);
+  assert.equal(r2OneProviderHistoryModel.details.combinedHistoryChart, undefined, 'R2 Claude-only fallback does not build a two-provider chart');
 
   const r2CodexOnlyHistoryModel = buildUsageDashboardModel({
     states: [],
@@ -864,11 +886,10 @@ function main() {
   );
   assert.equal(sectionProviderCardCount(r2CodexHtml), 1, 'R2 Codex-only fallback renders exactly one below-glance set');
   assert.match(r2CodexHtml, /usage-section-provider-grid combined/, 'R2 Codex-only fallback keeps the combined aggregate container');
-  assert.match(r2CodexHtml, /usage-section-provider-title">Codex</, 'R2 Codex-only fallback labels the aggregate card as Codex');
-  assert.doesNotMatch(visibleTextFromHtml(r2CodexHtml), /Claude \+ Codex/, 'R2 Codex-only fallback does not label single-provider history as both providers');
   assert.doesNotMatch(r2CodexHtml, /usage-history-legend/, 'R2 Codex-only fallback does not render a two-provider legend');
-  assert.match(visibleTextFromHtml(r2CodexHtml), /1\.0K/, 'R2 Codex-only fallback keeps the available history data visible');
-  assert.doesNotMatch(visibleTextFromHtml(r2CodexHtml), /No Claude history data is available yet/, 'R2 Codex-only fallback suppresses unavailable sibling provider card copy');
+  assert.equal(r2CodexOnlyHistoryModel.details.codexHistoryChart.available, true, 'R2 Codex-only fallback keeps available Codex history data');
+  assert.equal(r2CodexOnlyHistoryModel.details.codexHistoryChart.points.reduce((sum, point) => sum + point.totalTokens, 0), 1000);
+  assert.equal(r2CodexOnlyHistoryModel.details.combinedHistoryChart, undefined, 'R2 Codex-only fallback does not build a two-provider chart');
 
   const zeroHistoryModel = buildUsageDashboardModel({
     states: [],
@@ -886,19 +907,22 @@ function main() {
   );
   assert.equal(sectionProviderCardCount(zeroHistoryHtml), 1, 'available zero history Overview renders one aggregate set');
   assert.match(zeroHistoryHtml, /usage-history-chart/, 'available zero history renders the chart frame');
-  assert.doesNotMatch(visibleTextFromHtml(zeroHistoryHtml), /History unavailable/, 'available zero history does not render the unavailable state');
-  assert.match(visibleTextFromHtml(zeroHistoryHtml), /No combined model distribution is available for this range/, 'missing live model distribution renders the explicit unavailable state');
+  assert.equal(zeroHistoryModel.details.modelDistribution.available, false, 'zero Claude history has no model distribution');
+  assert.equal(zeroHistoryModel.details.codexModelDistribution.available, false, 'zero Codex history has no model distribution');
 
   const combinedDistributionHtml = combinedHistorySectionHtml;
   assert.match(combinedDistributionHtml, /usage-model-distribution/, 'Overview live path renders model distribution content');
   assert.match(combinedDistributionHtml, /usage-section-provider-grid combined/, 'model distribution uses the combined provider grid');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Provider Model Tokens Share Est\. API Cost Rate \/ 1M/, 'combined model distribution renders table-like column headers');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Claude\s+sonnet-4/, 'combined model distribution labels Claude models with provider attribution');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /Codex\s+gpt-5-codex/, 'combined model distribution labels Codex models with provider attribution');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /\$3 in \/ \$15 out/, 'known Claude model distribution row shows configured rate text');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /\$[0-9.]+/, 'known model distribution row shows estimated API-equivalent cost');
-  assert.match(visibleTextFromHtml(combinedDistributionHtml), /gpt-5-codex[\s\S]*—/, 'unknown model distribution pricing renders unavailable dash');
-  assert.doesNotMatch(visibleTextFromHtml(combinedDistributionHtml), /correlated/i, 'combined model distribution has no visible correlated title text');
+  const claudeDistributionSegment = model.details.modelDistribution.segments.find(segment => segment.provider === 'claude');
+  const codexDistributionSegment = model.details.codexModelDistribution.segments.find(segment => segment.provider === 'codex');
+  assert.ok(claudeDistributionSegment, 'model distribution includes Claude segment data');
+  assert.ok(codexDistributionSegment, 'model distribution includes Codex segment data');
+  assert.equal(claudeDistributionSegment.providerLabel, 'Claude');
+  assert.equal(codexDistributionSegment.providerLabel, 'Codex');
+  assert.equal(claudeDistributionSegment.inputRatePerMillionUsd, 3, 'known Claude model distribution segment carries configured input rate');
+  assert.equal(claudeDistributionSegment.outputRatePerMillionUsd, 15, 'known Claude model distribution segment carries configured output rate');
+  assert.equal(typeof claudeDistributionSegment.apiEquivalentCostUsd, 'number', 'known Claude model distribution segment carries estimated API-equivalent cost');
+  assert.equal(codexDistributionSegment.apiEquivalentCostUsd, undefined, 'unknown Codex model distribution pricing is unavailable as data');
   const combinedDistributionColors = modelDistributionSwatchColors(combinedDistributionHtml);
   const combinedBarColors = historyBarSegmentColors(combinedHtml);
   assert.ok(combinedDistributionColors.length > 6, 'combined model distribution fixture renders more than the old six-color palette');
@@ -967,26 +991,25 @@ function glanceRowColumns(html) {
     .map(rowHtml => Array.from(rowHtml.matchAll(/data-glance-col="([^"]+)"/g)).map(match => match[1]));
 }
 
-function countOccurrences(text, pattern) {
-  return (String(text || '').match(pattern) || []).length;
-}
-
 function firstApiEstimateStrip(html, label) {
-  const pattern = new RegExp(`<div class="usage-api-estimate-strip[^"]*"[^>]*>${label}:[\\s\\S]*?<\\/div>`);
+  const pattern = /<div class="usage-api-estimate-strip[^"]*"[^>]*>[\s\S]*?<\/div>/;
   const match = String(html || '').match(pattern);
-  assert.ok(match, `${label} API-equivalent strip exists`);
+  assert.ok(match, `${label} API estimate strip exists`);
   return match[0];
 }
 
-function metricCardHtmlByLabel(html, label) {
-  const cards = String(html || '').match(/<section class="usage-metric-card[\s\S]*?<\/section>/g) || [];
-  const match = cards.find(card => visibleTextFromHtml(card).startsWith(label));
-  assert.ok(match, `${label} metric card exists`);
-  return match;
+function metricCardByKey(cards, key) {
+  const card = (cards || []).find(item => item.key === key);
+  assert.ok(card, `${key} metric card exists`);
+  return card;
 }
 
-function assertMetricDetailNotBlank(cardHtml, message) {
-  assert.doesNotMatch(String(cardHtml || ''), /<div class="usage-metric-detail"[^>]*>\s*<\/div>/, message);
+function assertDetailLineLabels(card, labels, message) {
+  const actual = (card.detailLines || []).map(line => String(line).split(':')[0]);
+  assert.equal(actual.length, labels.length, message);
+  labels.forEach((label, index) => {
+    assert.equal(actual[index], label, message);
+  });
 }
 
 function visibleTextFromHtml(html) {

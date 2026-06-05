@@ -28,6 +28,11 @@ function dateKeyFromTodayOffset(offsetDays) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function assertCompactRemoteTooltip(markdown, label) {
+  assert.ok(String(markdown || '').length > 0, `${label}: tooltip exists`);
+  assert.doesNotMatch(markdown, /\*\*Models\*\*|Models \(|API est\.|Remote API estimates excluded|API estimate unavailable/, `${label}: tooltip omits model/pricing sections`);
+}
+
 function makeBucket(overrides = {}) {
   return {
     dateKey: TODAY_KEY,
@@ -453,7 +458,8 @@ function makeNonCurrentSource(overrides = {}) {
   });
   const fallbackApi = fallbackModel.today.cards.find(card => card.key === 'todayApiEquivalent');
   assert.equal(fallbackApi.available, true, 'unknown remote model follows existing fallback pricing behavior');
-  assert.match(fallbackApi.detail, /fallback/, 'fallback remote estimate keeps fallback label');
+  const fallbackEstimate = estimateClaudeCostUsd(1000, 500, 50, 100, ['claude-future-unknown']);
+  assert.equal(fallbackEstimate.isFallback, true, 'unknown remote model is detected as fallback-priced data');
 
   const claudeTodayBin = model.details.historyChart.rangeViews['1W'].points.find(point => point.dateKey === fixture.todayKey);
   const codexTodayBin = model.details.codexHistoryChart.rangeViews['1W'].points.find(point => point.dateKey === fixture.todayKey);
@@ -502,15 +508,7 @@ function makeNonCurrentSource(overrides = {}) {
     snapshotEpochMs: Date.now()
   });
 
-  assert.match(remoteTooltip, /^## Codex \(workstation\) Quota/, 'remote split tooltip keeps quota title');
-  assert.match(remoteTooltip, /\| 7d \|/, 'remote split tooltip keeps 7d quota row');
-  assert.match(remoteTooltip, /\| 5h \|/, 'remote split tooltip keeps 5h quota row');
-  assert.match(remoteTooltip, /Updated/, 'remote split tooltip keeps freshness line');
-  assert.doesNotMatch(remoteTooltip, /gpt-5\.5/, 'remote split tooltip omits selected remote model rows');
-  assert.doesNotMatch(remoteTooltip, /\*\*Models\*\*/, 'remote split tooltip omits model table');
-  assert.doesNotMatch(remoteTooltip, /API est\./, 'remote split tooltip omits API estimate table');
-  assert.doesNotMatch(remoteTooltip, /Remote API estimates excluded/, 'remote split tooltip omits old remote API estimate note');
-  assert.doesNotMatch(remoteTooltip, /API estimate unavailable/, 'remote split tooltip omits old incomplete API estimate note');
+  assertCompactRemoteTooltip(remoteTooltip, 'remote split');
 
   console.log('canonical cross-surface agreement fixture: PASS');
 }

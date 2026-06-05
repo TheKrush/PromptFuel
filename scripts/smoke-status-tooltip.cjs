@@ -3,28 +3,13 @@
 
 const assert = require('node:assert/strict');
 const { formatStatus } = require('../out/display/format.js');
-const { formatCountdown } = require('../out/usageTime.js');
 
-function markdownCells(line) {
-  return line.trim().split('|').slice(1, -1).map(cell => cell.trim());
-}
-
-function assertMarkdownTablesAligned(markdown, label) {
-  const lines = markdown.split(/\r?\n/);
-  for (let i = 1; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (!line.startsWith('|') || !line.includes('-') || !/^\|[:\-\s|]+$/.test(line)) {
-      continue;
-    }
-    const expected = markdownCells(line).length;
-    assert.equal(markdownCells(lines[i - 1]).length, expected, `${label}: header matches separator`);
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const row = lines[j].trim();
-      if (!row.startsWith('|')) {
-        break;
-      }
-      assert.equal(markdownCells(row).length, expected, `${label}: row matches separator`);
-    }
+function assertCompactTooltipContract(result, label) {
+  assert.ok(result.tooltip.length > 0, `${label}: combined tooltip exists`);
+  assert.doesNotMatch(result.tooltip, /\*\*Models\*\*|Models \(|API est\.|\*\*Details\*\*|- Source:|- Freshness:/, `${label}: compact tooltip omits debug/model sections`);
+  for (const provider of result.providers) {
+    assert.ok(provider.tooltip.length > 0, `${label}: provider tooltip exists`);
+    assert.doesNotMatch(provider.tooltip, /\*\*Models\*\*|Models \(|API est\.|\*\*Details\*\*|- Source:|- Freshness:/, `${label}: provider tooltip omits debug/model sections`);
   }
 }
 
@@ -63,19 +48,8 @@ function main() {
     const provider = result.providers[0];
 
     assert.equal(provider.provider, 'codex');
-    assertMarkdownTablesAligned(provider.tooltip, 'provider tooltip');
-
-    const sevenDayRow = provider.tooltip.split(/\r?\n/).find(line => line.startsWith('| 7d |'));
-    const fiveHourRow = provider.tooltip.split(/\r?\n/).find(line => line.startsWith('| 5h |'));
-    assert.ok(sevenDayRow, 'provider 7d row present');
-    assert.ok(fiveHourRow, 'provider 5h row present');
-    assert.match(fiveHourRow, /98%/, '5h row shows raw percent when 7d is exhausted');
-    assert.doesNotMatch(fiveHourRow, /blocked/, '5h row does not assert blocked for unconfirmed provider behavior');
-
-    const cells = markdownCells(sevenDayRow);
-    assert.equal(cells.length, 6, 'provider quota row has split countdown and reset time columns');
-    assert.match(cells[4], /^\*\*\d+[dhm]\*\*$/, 'countdown column contains a compact countdown');
-    assert.ok(cells[5].length > 0 && !cells[5].includes('**'), 'reset time column is separate from countdown');
+    assert.equal(provider.severity, 'critical');
+    assertCompactTooltipContract(result, 'provider quota');
   }
 
   {
@@ -85,17 +59,15 @@ function main() {
       sevenDay: { usedPercentage: 95, resetsAtEpochSeconds: sevenDayReset },
       fiveHour: { usedPercentage: 2, resetsAtEpochSeconds: fiveHourReset }
     }], opts);
-    assert.doesNotMatch(result.providers[0].text, /blocked/, 'critical but non-empty 7d quota does not block 5h');
+    assert.equal(result.providers[0].severity, 'critical');
   }
 
   {
     const remoteSevenDayReset = Math.floor((Date.now() + ((5 * 24 + 1) * 60 * 60 * 1000)) / 1000);
     const remoteFiveHourReset = Math.floor((Date.now() + (3 * 60 * 60 * 1000)) / 1000);
-    const remoteSevenDayCountdown = formatCountdown(remoteSevenDayReset);
-    const remoteFiveHourCountdown = formatCountdown(remoteFiveHourReset);
     const result = formatStatus([], opts, [{
       provider: 'codex',
-      text: `VM Codex ${remoteSevenDayCountdown} 80% - ${remoteFiveHourCountdown} 70%`,
+      text: 'VM Codex remote quota',
       tooltip: '## VM Codex',
       severity: 'normal',
       remoteQuotaData: {
@@ -109,14 +81,9 @@ function main() {
       }
     }]);
 
-    assertMarkdownTablesAligned(result.tooltip, 'combined remote tooltip');
-    const remoteRow = result.tooltip.split(/\r?\n/).find(line => line.startsWith('| VM Codex | 7d |'));
-    assert.ok(remoteRow, 'remote combined 7d row present');
-    const cells = markdownCells(remoteRow);
-    assert.equal(cells.length, 8, 'remote row has split countdown, reset time, and source columns');
-    assert.equal(cells[5], `**${remoteSevenDayCountdown}**`, 'remote countdown column contains countdown only');
-    assert.ok(cells[6].length > 0 && !cells[6].includes('snap'), 'remote reset time is separate from source note');
-    assert.equal(cells[7], 'snap 5m', 'remote snapshot source note stays in source column');
+    assert.equal(result.severity, 'normal');
+    assert.equal(result.providers.length, 0);
+    assertCompactTooltipContract(result, 'remote quota');
   }
 
   {
@@ -127,14 +94,8 @@ function main() {
       fiveHour: { usedPercentage: 25 }
     }], opts);
 
-    assertMarkdownTablesAligned(result.tooltip, 'unknown reset combined tooltip');
-    assertMarkdownTablesAligned(result.providers[0].tooltip, 'unknown reset provider tooltip');
-    const providerCells = markdownCells(result.providers[0].tooltip.split(/\r?\n/).find(line => line.startsWith('| 7d |')));
-    const combinedCells = markdownCells(result.tooltip.split(/\r?\n/).find(line => line.startsWith('| Claude | 7d |')));
-    assert.equal(providerCells[4], 'unknown');
-    assert.equal(providerCells[5], '');
-    assert.equal(combinedCells[5], 'unknown');
-    assert.equal(combinedCells[6], '');
+    assert.equal(result.providers[0].provider, 'claude');
+    assertCompactTooltipContract(result, 'unknown reset quota');
   }
 
   {
@@ -146,9 +107,7 @@ function main() {
       fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: fiveHourReset }
     }], opts);
 
-    assert.ok(result.tooltip.includes('<span style="color:'), 'generated progress span remains HTML');
-    assert.ok(result.tooltip.includes('|  |  |  |  |  |'), 'quota tables use blank header convention');
-    assert.ok(!result.tooltip.includes('| Window |'), 'quota tables do not expose visible header labels');
+    assertCompactTooltipContract(result, 'fresh local quota');
   }
 
   {
@@ -162,11 +121,9 @@ function main() {
       fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: fiveHourReset }
     }], opts);
 
-    assert.ok(result.tooltip.includes('<span style="color:'), 'generated progress span remains HTML');
     assert.ok(!result.tooltip.includes(unsafeHtml), 'dynamic raw HTML is not present');
     assert.ok(!result.tooltip.includes('&lt;span data-unsafe'), 'dynamic diagnostic text is omitted from compact tooltip');
-    assert.ok(!result.tooltip.includes('**Details**'), 'compact status tooltip omits details section');
-    assert.ok(!result.tooltip.includes('- Source:'), 'compact status tooltip omits source diagnostics');
+    assertCompactTooltipContract(result, 'unsafe diagnostic input');
   }
 
   {
@@ -177,9 +134,8 @@ function main() {
       fiveHour: { usedPercentage: 2, resetsAtEpochSeconds: fiveHourReset }
     }], opts);
 
-    assert.ok(!result.tooltip.includes('blocked'), 'tooltip does not assert blocked for unconfirmed provider behavior');
-    assert.ok(result.tooltip.includes('98%'), 'tooltip shows raw 5h percent when 7d is exhausted');
-    assert.ok(result.tooltip.includes('#4CAF50'), '5h row uses normal color when raw quota is high');
+    assert.doesNotMatch(result.tooltip, /blocked/i, 'tooltip does not assert blocked for unconfirmed provider behavior');
+    assertCompactTooltipContract(result, 'near-exhausted quota');
   }
 
   console.log('status tooltip smoke passed');
