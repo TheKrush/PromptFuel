@@ -10,6 +10,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 
 - **Unified source configuration** — `promptFuel.sources` controls which providers and snapshot sources are enabled, their display labels, and status bar visibility.
 - **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when provider auth state and provider APIs are available.
+- **Status bar density** - choose the standard full-label display or compact short-label display with `promptFuel.statusBarDensity`.
 - **Codex and Claude live quota support** - PromptFuel can attempt live quota reads for configured providers from existing provider auth state.
 - **Safe stale states** - when a live quota refresh fails after a prior success, PromptFuel can show cached/stale quota instead of raw errors.
 - **Local history secondary** - local Claude and Codex aggregate history remains visible in the dashboard and tooltip, but does not replace live quota as the primary status.
@@ -134,6 +135,7 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | --- | --- | --- |
 | `promptFuel.sources` | Unified source configuration. Keyed by source ID (`claude`, `codex`, or `machineLabel/provider`). Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
 | `promptFuel.refreshIntervalMinutes` | Minimum interval in minutes for periodic refresh (local scanning and authenticated quota). | `5` |
+| `promptFuel.statusBarDensity` | Status bar label density: `standard` uses full source labels and reset countdowns; `compact` uses source `shortLabel` values and compact quota windows. | `"standard"` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |

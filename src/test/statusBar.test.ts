@@ -65,6 +65,7 @@ describe('buildRemoteStatusBarItems', () => {
 
     assert.equal(items.length, 1);
     assert.equal(items[0].provider, 'codex');
+    assert.match(items[0].text, /^XW /);
     assert.equal(items[0].severity, 'normal');
     assert.deepEqual(items[0].remoteQuotaData, {
       label: 'Codex \u00B7 WATCHER',
@@ -88,6 +89,7 @@ describe('buildRemoteStatusBarItems', () => {
 
     assert.equal(items.length, 1);
     assert.equal(items[0].provider, 'codex');
+    assert.match(items[0].text, /^Codex \u00B7 WATCHER /);
     assert.equal(items[0].remoteQuotaData?.label, 'Codex \u00B7 WATCHER');
     assert.equal(items[0].remoteQuotaData?.sevenDayRemainingPercent, 65);
     assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, 22);

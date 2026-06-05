@@ -47,6 +47,7 @@ code --extensionDevelopmentPath=.
 ## Contribution Expectations
 
 - **Settings** must be under `promptFuel.*` (e.g., `promptFuel.sources`).
+- The public 1.0.0 settings surface has six settings: `promptFuel.sources`, `promptFuel.refreshIntervalMinutes`, `promptFuel.statusBarDensity`, `promptFuel.snapshot.enabled`, `promptFuel.snapshot.machineLabel`, and `promptFuel.snapshot.path`.
 - **Commands** must be under `promptFuel.*` (e.g., `promptFuel.openDashboard`).
 - Authenticated live quota refresh is internal for enabled sources; source visibility is controlled through `promptFuel.sources`.
 - Live quota requires existing provider OAuth/auth state. Do not add PromptFuel-specific auth UI unless explicitly scoped.

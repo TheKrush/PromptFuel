@@ -8,6 +8,7 @@ PromptFuel is ready for its public 1.0.0 release with a unified source configura
 
 - Added `promptFuel.sources` as the canonical configuration for local providers and imported snapshot sources, including `label`, `shortLabel`, `enabled`, and `statusBar` controls.
 - Added top-level `promptFuel.refreshIntervalMinutes` for periodic local scanning and authenticated quota refresh.
+- Restored `promptFuel.statusBarDensity` for choosing `standard` or `compact` status bar display.
 - Removed older scattered provider, authenticated-quota, snapshot-source, status-bar-source, and public threshold settings from the public configuration surface.
 - Kept snapshot writer/reader settings separate as `promptFuel.snapshot.enabled`, `promptFuel.snapshot.machineLabel`, and `promptFuel.snapshot.path`.
 - Updated source semantics so omitted local providers do not appear as unavailable in the dashboard or status bar.
@@ -24,6 +25,7 @@ PromptFuel is ready for its public 1.0.0 release with a unified source configura
 
 - Use `promptFuel.sources` instead of the removed provider/snapshot/status-bar source settings.
 - Use top-level `promptFuel.refreshIntervalMinutes` instead of removed authenticated-quota refresh interval settings.
+- Use `promptFuel.statusBarDensity` to choose standard or compact status bar display.
 - Public quota threshold settings were removed; PromptFuel uses its built-in 6-level remaining-quota scale.
 - API-equivalent cost estimates are approximate and based on PromptFuel's configured model-rate table. They are not actual billing records.
 

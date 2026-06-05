@@ -1,4 +1,4 @@
-import { KNOWN_PROVIDERS, LOCAL_PROVIDER_IDS, ProviderName, SourceConfigEntry } from './types';
+import { DisplayMode, KNOWN_PROVIDERS, LOCAL_PROVIDER_IDS, ProviderName, SourceConfigEntry } from './types';
 
 export interface SourceConfigInspection {
   defaultValue?: Record<string, Partial<SourceConfigEntry>>;
@@ -81,4 +81,8 @@ export function getSnapshotSourcesFromSources(sources: Record<string, SourceConf
   }
 
   return { remoteSources, statusBarSources, remoteMachineLabels };
+}
+
+export function normalizeStatusBarDensity(value: unknown): DisplayMode {
+  return value === 'compact' ? 'compact' : 'standard';
 }

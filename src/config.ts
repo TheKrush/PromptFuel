@@ -6,7 +6,8 @@ import {
   resolveConfiguredSourcesFromInspection,
   resolveSourcesFromRaw,
   getEnabledProvidersFromSources,
-  getSnapshotSourcesFromSources
+  getSnapshotSourcesFromSources,
+  normalizeStatusBarDensity
 } from './configSources';
 
 export interface PromptFuelConfig {
@@ -38,7 +39,6 @@ export interface SnapshotConfig {
 }
 
 const DEFAULT_FRESH_RESET_TOLERANCE_SECONDS = 120;
-const DEFAULT_DISPLAY_MODE: DisplayMode = 'standard';
 const DEFAULT_STATUS_MODE: 'remaining' = 'remaining';
 
 let internalStateDirectoryOverride: string | undefined;
@@ -50,6 +50,7 @@ export function setInternalStateDirectory(dirPath: string): void {
 export function getConfig(): PromptFuelConfig {
   const cfg = vscode.workspace.getConfiguration('promptFuel');
   const configuredSnapshotPath = cfg.get<string>('snapshot.path') ?? '';
+  const displayMode = normalizeStatusBarDensity(cfg.get<unknown>('statusBarDensity'));
 
   const rawSources = resolveConfiguredSourcesFromInspection(
     cfg.inspect<Record<string, Partial<SourceConfigEntry>>>('sources')
@@ -71,7 +72,7 @@ export function getConfig(): PromptFuelConfig {
       refreshIntervalMinutes
     },
     codexSessionsPath: path.join(os.homedir(), '.codex', 'sessions'),
-    displayMode: DEFAULT_DISPLAY_MODE,
+    displayMode,
     statusMode: DEFAULT_STATUS_MODE,
     freshResetToleranceSeconds: DEFAULT_FRESH_RESET_TOLERANCE_SECONDS,
     snapshot: {

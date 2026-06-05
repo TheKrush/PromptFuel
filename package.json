@@ -122,6 +122,19 @@
           "minimum": 1,
           "description": "Minimum interval in minutes for periodic refresh. Applies to both local scanning and authenticated quota refresh."
         },
+        "promptFuel.statusBarDensity": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "compact"
+          ],
+          "enumDescriptions": [
+            "Standard: provider name, quota windows, and countdown.",
+            "Compact: shorter display with provider short labels and quota windows, no countdown."
+          ],
+          "default": "standard",
+          "description": "Controls status bar label density. Use standard for full source labels and reset countdowns, or compact for short source labels and compact quota windows."
+        },
         "promptFuel.snapshot.enabled": {
           "type": "boolean",
           "default": false,

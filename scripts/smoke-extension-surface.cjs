@@ -45,6 +45,7 @@ const settingKeys = Object.keys(settings);
 const expectedSettingKeys = [
   'promptFuel.sources',
   'promptFuel.refreshIntervalMinutes',
+  'promptFuel.statusBarDensity',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
   'promptFuel.snapshot.path'
@@ -56,7 +57,6 @@ const removedSettingKeys = [
   'promptFuel.refreshIntervalSeconds',
   'promptFuel.authenticatedQuota.enabled',
   'promptFuel.statusMode',
-  'promptFuel.statusBarDensity',
   ['promptFuel.snapshot.remote', 'La', 'nes'].join(''),
   ['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')
 ];
@@ -75,6 +75,9 @@ assert.deepEqual(settingKeys.sort(), [...expectedSettingKeys].sort(), 'public se
 for (const key of expectedSettingKeys) {
   assert.ok(settingKeys.includes(key), `public setting exists: ${key}`);
 }
+assert.equal(settings['promptFuel.statusBarDensity']?.type, 'string', 'statusBarDensity is a string setting');
+assert.deepEqual(settings['promptFuel.statusBarDensity']?.enum, ['standard', 'compact'], 'statusBarDensity supports standard and compact');
+assert.equal(settings['promptFuel.statusBarDensity']?.default, 'standard', 'statusBarDensity defaults to standard');
 for (const key of removedSettingKeys) {
   assert.equal(settingKeys.includes(key), false, `removed public setting is absent: ${key}`);
 }

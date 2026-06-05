@@ -48,6 +48,7 @@ const properties = pkg.contributes?.configuration?.properties ?? {};
 const expectedSettings = [
   'promptFuel.sources',
   'promptFuel.refreshIntervalMinutes',
+  'promptFuel.statusBarDensity',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
   'promptFuel.snapshot.path'
@@ -59,7 +60,6 @@ const removedSettings = [
   'promptFuel.refreshIntervalSeconds',
   'promptFuel.authenticatedQuota.enabled',
   'promptFuel.statusMode',
-  'promptFuel.statusBarDensity',
   ['promptFuel.snapshot.remote', 'La', 'nes'].join(''),
   ['promptFuel.snapshot.statusBar', 'La', 'nes'].join('')
 ];
@@ -74,6 +74,12 @@ if (JSON.stringify(settingKeys) !== JSON.stringify([...expectedSettings].sort())
 for (const key of expectedSettings) {
   if (!Object.prototype.hasOwnProperty.call(properties, key)) fail(`missing setting ${key}`);
 }
+const densitySetting = properties['promptFuel.statusBarDensity'];
+if (densitySetting?.type !== 'string') fail('promptFuel.statusBarDensity must be a string setting');
+if (JSON.stringify(densitySetting?.enum ?? []) !== JSON.stringify(['standard', 'compact'])) {
+  fail('promptFuel.statusBarDensity enum must be standard, compact');
+}
+if (densitySetting?.default !== 'standard') fail('promptFuel.statusBarDensity default must be standard');
 for (const oldKey of removedSettings) {
   if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`removed public setting remains: ${oldKey}`);
 }

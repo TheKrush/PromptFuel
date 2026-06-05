@@ -4,7 +4,8 @@ import {
   resolveConfiguredSourcesFromInspection,
   resolveSourcesFromRaw,
   getEnabledProvidersFromSources,
-  getSnapshotSourcesFromSources
+  getSnapshotSourcesFromSources,
+  normalizeStatusBarDensity
 } from '../configSources';
 import type { SourceConfigEntry } from '../types';
 
@@ -190,5 +191,14 @@ describe('getSnapshotSourcesFromSources', () => {
     assert.deepEqual(result.remoteMachineLabels, {
       WATCHER: 'WATCHER'
     });
+  });
+});
+
+describe('status bar density config', () => {
+  it('maps public density values to display modes', () => {
+    assert.equal(normalizeStatusBarDensity('standard'), 'standard');
+    assert.equal(normalizeStatusBarDensity('compact'), 'compact');
+    assert.equal(normalizeStatusBarDensity('countdown'), 'standard');
+    assert.equal(normalizeStatusBarDensity(undefined), 'standard');
   });
 });
