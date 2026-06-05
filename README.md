@@ -20,6 +20,26 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 - **Cross-machine imports** - automatically discover compatible snapshot files from other installs, including safe configured machine labels and provider sources.
 - **Manual and auto refresh** - run **PromptFuel: Refresh Now** on demand, or use the configurable auto-refresh interval.
 
+## Screenshots
+
+### Dashboard overview
+
+PromptFuel gives you one local-first dashboard for quota windows, usage history, token trends, model distribution, and API-equivalent estimates.
+
+![PromptFuel dashboard overview](docs/images/promptfuel-dashboard-overview.png)
+
+### Status bar quota monitor
+
+See live quota state from the VS Code status bar, including local providers and configured snapshot sources.
+
+![PromptFuel status bar quota tooltip](docs/images/promptfuel-status-bar-tooltip.png)
+
+### Model distribution
+
+Break down usage by provider and model, with token share, estimated API-equivalent cost, and configured rate-per-1M values.
+
+![PromptFuel model distribution table](docs/images/promptfuel-model-distribution.png)
+
 ## Privacy & Data
 
 - **Local history stays local.** Authenticated live quota reads are opt-in and may contact provider services using existing provider auth state when `promptFuel.authenticatedQuota.enabled` is enabled.

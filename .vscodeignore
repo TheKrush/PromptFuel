@@ -28,6 +28,7 @@ tsconfig.json
 out/**
 assets/**
 !assets/icon.png
+!docs/images/**
 !LICENSE
 !package.json
 !CHANGELOG.md
