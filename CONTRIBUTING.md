@@ -22,10 +22,7 @@ npm run compile
 Run smoke tests and validate:
 
 ```bash
-npm run smoke:core
-npm run smoke:providers
-npm run validate:manifest
-npm run package
+powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1 -SkipInstall
 ```
 
 Launch Extension Development Host from VS Code's Run & Debug panel (`F5`), or:
@@ -41,7 +38,7 @@ code --extensionDevelopmentPath=.
 1. **Fork or branch from `master`** — external contributors should fork; collaborators may create a feature branch.
 2. **Create or link an issue** — reference an existing issue or open a new one outlining what you plan to do.
 3. **Make focused, readable commits** — group related changes, use clear messages, and describe *why* a change was made.
-4. **Add tests where appropriate** — update or add tests if the project has them; include validation steps for scripts or workflows. Smoke tests (`scripts/smoke-core.cjs`, `scripts/smoke-providers.cjs`) use the compiled `out/` directory and may run without VS Code.
+4. **Add tests where appropriate** — update or add tests if the project has them; include validation steps for scripts or workflows. Unit tests and smoke tests use the compiled `out/` directory and may run without VS Code.
 5. **Open a Pull Request** — describe the change, link the relevant issue, and call out anything that might affect CI, workflows, or other repos.
 6. **Respond to review** — keep the conversation constructive; tidy follow-up commits are fine.
 
@@ -49,11 +46,11 @@ code --extensionDevelopmentPath=.
 
 ## Contribution Expectations
 
-- **Settings** must be under `promptFuel.*` (e.g., `promptFuel.enabledProviders`).
+- **Settings** must be under `promptFuel.*` (e.g., `promptFuel.sources`).
 - **Commands** must be under `promptFuel.*` (e.g., `promptFuel.openDashboard`).
-- `promptFuel.liveQuotaEnabled` defaults to `true`; users can set it to `false` to disable live quota reads.
+- Authenticated live quota refresh is opt-in through `promptFuel.authenticatedQuota.enabled`.
 - Live quota requires existing provider OAuth/auth state. Do not add PromptFuel-specific auth UI unless explicitly scoped.
-- Snapshots are not implemented. Do not commit snapshot or cached provider state unless explicitly scoped.
+- Machine snapshots are aggregate-only sanitized JSON. Do not commit snapshot or cached provider state unless explicitly scoped.
 - Do **not** commit raw prompts, responses, or conversation transcripts.
 - Do **not** include authenticated provider credentials, tokens, or API keys.
 - Do **not** reference reference-implementation branding, internal paths, or coordination infrastructure from PromptFuel source code.
@@ -63,7 +60,7 @@ code --extensionDevelopmentPath=.
 
 ## Pull Requests
 
-Describe the validation run in your PR or issue — include which of `npm run smoke:core`, `npm run smoke:providers`, `npm run validate:manifest`, and `npm run package` passed. Keep changes focused; split into separate PRs if a change touches multiple concerns.
+Describe the validation run in your PR or issue — include whether `.\tools\dev-validate-install.ps1` passed, or list any narrower diagnostic command used after a failure. Keep changes focused; split into separate PRs if a change touches multiple concerns.
 
 ---
 

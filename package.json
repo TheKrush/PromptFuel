@@ -114,7 +114,7 @@
               }
             }
           },
-          "description": "Unified source configuration. Each key is a source ID (e.g. \"claude\", \"codex\", or a snapshot source like \"WATCHER/codex\"). Controls enablement, display labels, and status bar visibility."
+          "description": "Unified source configuration. Each key is a source ID (e.g. \"claude\", \"codex\", or a snapshot source like \"desktop/codex\"). Controls enablement, display labels, and status bar visibility."
         },
         "promptFuel.refreshIntervalMinutes": {
           "type": "number",

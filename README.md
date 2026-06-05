@@ -78,7 +78,7 @@ When `promptFuel.snapshot.path` points to a shared folder, PromptFuel discovers 
 
 **Settings:**
 
-- `promptFuel.sources` — unified source configuration. Each key is a source ID (e.g. `claude`, `codex`, or `WATCHER/codex`). Controls enablement, display labels, and status bar visibility via `enabled`, `label`, `shortLabel`, and `statusBar` fields.
+- `promptFuel.sources` — unified source configuration. Each key is a source ID (e.g. `claude`, `codex`, or `desktop/codex`). Controls enablement, display labels, and status bar visibility via `enabled`, `label`, `shortLabel`, and `statusBar` fields.
 
 **Worked example:**
 

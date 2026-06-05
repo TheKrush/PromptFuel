@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.0.0
+
+PromptFuel is ready for its public 1.0.0 release with a unified source configuration model, cleaner snapshot import behavior, CSV-backed model pricing estimates, and a more polished dashboard/status-bar surface.
+
+**Included in this release:**
+
+- Added `promptFuel.sources` as the canonical configuration for local providers and imported snapshot sources, including `label`, `shortLabel`, `enabled`, and `statusBar` controls.
+- Added top-level `promptFuel.refreshIntervalMinutes` for periodic local scanning and authenticated quota refresh.
+- Removed older scattered provider, authenticated-quota, snapshot-source, status-bar-source, and public threshold settings from the public configuration surface.
+- Kept snapshot writer/reader settings separate as `promptFuel.snapshot.enabled`, `promptFuel.snapshot.machineLabel`, and `promptFuel.snapshot.path`.
+- Updated source semantics so omitted local providers do not appear as unavailable in the dashboard or status bar.
+- Improved imported snapshot source labels, including compact status-bar short labels and full labels in dashboard/tooltip views.
+- Removed the unsupported `blocked` status-bar label while preserving raw 7d/5h remaining values.
+- Simplified the status-bar tooltip and set the dashboard webview tab icon to the PromptFuel icon.
+- Moved model pricing estimates to `data/model-pricing-estimates.csv`, loaded at extension startup and cached in memory.
+- Updated the model distribution table with Provider, Model, Tokens, Share, Est. API Cost, and Rate / 1M columns, including right-aligned numeric fields and tighter model/provider spacing.
+- Reduced hardcoded model pricing to fallback estimate behavior and documented the `codex-auto-review` alias mapping.
+- Updated validation so `.\tools\dev-validate-install.ps1` runs unit tests as part of the dev package/install pass.
+- Decoupled smoke coverage from brittle UI text where practical while preserving behavior checks for source filtering, snapshots, dashboard rendering, status text, and pricing.
+
+**Breaking/config changes from 0.9.1:**
+
+- Use `promptFuel.sources` instead of the removed provider/snapshot/status-bar source settings.
+- Use top-level `promptFuel.refreshIntervalMinutes` instead of removed authenticated-quota refresh interval settings.
+- Public quota threshold settings were removed; PromptFuel uses its built-in 6-level remaining-quota scale.
+- API-equivalent cost estimates are approximate and based on PromptFuel's configured model-rate table. They are not actual billing records.
+
 ## 0.9.0
 
 PromptFuel simplifies its dashboard rendering model by removing the Merged/Separate layout toggle, unifying the aggregate card path, and adding consistent contributor breakdowns across all tabs.

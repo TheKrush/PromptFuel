@@ -65,9 +65,11 @@ const vscodeIgnore = fs.readFileSync(path.join(repoRoot, '.vscodeignore'), 'utf8
 for (const excluded of ['.github/**', '*.vsix', '*.log', 'DO_NOT_DELETE/**', 'vsix-inspect/**', 'src/**', 'tools/**']) {
   assert.ok(vscodeIgnore.includes(excluded), `.vscodeignore excludes ${excluded}`);
 }
-for (const included of ['!package.json', '!CHANGELOG.md', '!SUPPORT.md', '!assets/icon.png', '!out/display/*.js', '!out/panel/*.js', '!out/panel/dashboard/*.js', '!out/panel/dashboard/*.js.map', '!out/providers/*.js', '!out/quota/*.js', '!out/snapshot/*.js', '!media/**']) {
+for (const included of ['!package.json', '!CHANGELOG.md', '!SUPPORT.md', '!assets/icon.png', '!data/model-pricing-estimates.csv', '!out/display/*.js', '!out/panel/*.js', '!out/panel/dashboard/*.js', '!out/panel/dashboard/*.js.map', '!out/providers/*.js', '!out/quota/*.js', '!out/snapshot/*.js', '!media/**']) {
   assert.ok(vscodeIgnore.includes(included), `.vscodeignore includes ${included}`);
 }
+
+assert.ok(fs.existsSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv')), 'model pricing CSV exists for packaging');
 
 const forbiddenBrandTokens = [
   ['Agent', 'Bridge'].join(''),
