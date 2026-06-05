@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/promptfuel-readme-banner.png" alt="PromptFuel — local-first usage dashboard and quota monitor for AI coding tools">
+</p>
+
 # PromptFuel
 
 Track AI coding assistant usage history and live quota status from the VS Code status bar.
