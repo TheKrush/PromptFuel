@@ -13,6 +13,7 @@ import type {
 import { SNAPSHOT_SCHEMA_V1 } from './types';
 import { hasTokenData } from './tokenMath';
 import { writeSnapshotHistoryArchives } from './historyArchive';
+import { cleanupSnapshotFiles, cleanupTempSnapshotFile } from './cleanupSnapshotFiles';
 
 export interface SnapshotWriterConfig {
   enabled: boolean;
@@ -294,8 +295,13 @@ export async function writeMachineSnapshotToPath(
 
   const tmpPath = filePath + '.tmp.' + process.pid + '.' + Date.now();
   const json = JSON.stringify(snapshot, null, 2) + '\n';
-  await fs.writeFile(tmpPath, json, 'utf-8');
-  await fs.rename(tmpPath, filePath);
+  try {
+    await fs.writeFile(tmpPath, json, 'utf-8');
+    await fs.rename(tmpPath, filePath);
+  } catch (error) {
+    await cleanupTempSnapshotFile(tmpPath);
+    throw error;
+  }
 }
 
 export async function writeMachineSnapshotIfEnabled(
@@ -314,12 +320,14 @@ export async function writeMachineSnapshotIfEnabled(
   const snapshotDir = path.join(stateDirectory, 'snapshots');
   const fileName = `${machineLabel}-latest.json`;
 
+  await cleanupSnapshotFiles(snapshotDir);
   await writeMachineSnapshotToPath(path.join(snapshotDir, fileName), snapshot);
   await writeSnapshotHistoryArchives(snapshotDir, snapshot, machineLabel);
 
   if (config.path) {
     const syncDir = path.resolve(config.path);
     await fs.mkdir(syncDir, { recursive: true });
+    await cleanupSnapshotFiles(syncDir);
     await writeMachineSnapshotToPath(path.join(syncDir, fileName), snapshot);
     await writeSnapshotHistoryArchives(syncDir, snapshot, machineLabel);
   }

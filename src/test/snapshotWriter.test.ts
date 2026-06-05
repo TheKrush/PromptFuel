@@ -10,6 +10,7 @@ import {
   writeMachineSnapshotIfEnabled,
   isMachineSnapshotPayload
 } from '../snapshot/writeMachineSnapshot';
+import { cleanupSnapshotFiles } from '../snapshot/cleanupSnapshotFiles';
 import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V1 } from '../snapshot/types';
 
 let tmpDir: string;
@@ -98,6 +99,22 @@ function assertArchiveSchemaCanonical(archive: any): void {
   for (const field of ['todaySummary', 'modelContribution', 'resetAtEpochSeconds', 'windowResetMeta', 'providerUsage', 'fiveHourUsedPercent', 'sevenDayUsedPercent', 'lastUpdatedEpochMs']) {
     assert.ok(!json.includes(`"${field}"`), `${field} must not appear in archive`);
   }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeFileWithMtime(filePath: string, content: string, mtimeMs: number): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, content, 'utf-8');
+  const time = new Date(mtimeMs);
+  await fs.utimes(filePath, time, time);
 }
 
 describe('snapshotWriter', () => {
@@ -301,6 +318,71 @@ describe('snapshotWriter', () => {
     });
   });
 
+  describe('cleanupSnapshotFiles', () => {
+    it('deletes stale snapshot temp files and preserves fresh temp and JSON files', async () => {
+      const now = Date.UTC(2026, 5, 4, 12, 0, 0);
+      const root = path.join(tmpDir, 'cleanup-temp');
+      const oldTemp = path.join(root, 'desktop-latest.json.tmp.123.1');
+      const freshTemp = path.join(root, 'desktop-latest.json.tmp.123.2');
+      const realJson = path.join(root, 'desktop-latest.json');
+      const unrelatedTemp = path.join(root, 'notes.txt.tmp.123');
+
+      await writeFileWithMtime(oldTemp, '{}', now - 25 * 60 * 60 * 1000);
+      await writeFileWithMtime(freshTemp, '{}', now - 23 * 60 * 60 * 1000);
+      await writeFileWithMtime(realJson, '{}', now - 30 * 24 * 60 * 60 * 1000);
+      await writeFileWithMtime(unrelatedTemp, '{}', now - 30 * 24 * 60 * 60 * 1000);
+
+      const result = await cleanupSnapshotFiles(root, { nowEpochMs: now });
+
+      assert.ok(result.deleted.includes(oldTemp));
+      assert.equal(await pathExists(oldTemp), false);
+      assert.equal(await pathExists(freshTemp), true);
+      assert.equal(await pathExists(realJson), true);
+      assert.equal(await pathExists(unrelatedTemp), true);
+    });
+
+    it('deletes stale snapshot backup files and preserves fresh backups', async () => {
+      const now = Date.UTC(2026, 5, 4, 12, 0, 0);
+      const root = path.join(tmpDir, 'cleanup-backup');
+      const oldBackup = path.join(root, 'desktop-latest.json.bak');
+      const freshBackup = path.join(root, '2026-05.json.bak');
+
+      await writeFileWithMtime(oldBackup, '{}', now - 8 * 24 * 60 * 60 * 1000);
+      await writeFileWithMtime(freshBackup, '{}', now - 6 * 24 * 60 * 60 * 1000);
+
+      const result = await cleanupSnapshotFiles(root, { nowEpochMs: now });
+
+      assert.ok(result.deleted.includes(oldBackup));
+      assert.equal(await pathExists(oldBackup), false);
+      assert.equal(await pathExists(freshBackup), true);
+    });
+
+    it('cleans known archive subfolders without deleting archive JSON files', async () => {
+      const now = Date.UTC(2026, 5, 4, 12, 0, 0);
+      const root = path.join(tmpDir, 'cleanup-archive');
+      const machineArchiveDir = path.join(root, 'archive', 'desktop');
+      const yearArchiveDir = path.join(machineArchiveDir, '2026');
+      const archiveTemp = path.join(machineArchiveDir, '2026-05.json.tmp.123.1');
+      const nestedArchiveTemp = path.join(yearArchiveDir, '2026-06.json.tmp.123.2');
+      const archiveJson = path.join(machineArchiveDir, '2026-05.json');
+      const nestedArchiveJson = path.join(yearArchiveDir, '2026-06.json');
+
+      await writeFileWithMtime(archiveTemp, '{}', now - 25 * 60 * 60 * 1000);
+      await writeFileWithMtime(nestedArchiveTemp, '{}', now - 25 * 60 * 60 * 1000);
+      await writeFileWithMtime(archiveJson, '{}', now - 30 * 24 * 60 * 60 * 1000);
+      await writeFileWithMtime(nestedArchiveJson, '{}', now - 30 * 24 * 60 * 60 * 1000);
+
+      const result = await cleanupSnapshotFiles(root, { nowEpochMs: now });
+
+      assert.ok(result.deleted.includes(archiveTemp));
+      assert.ok(result.deleted.includes(nestedArchiveTemp));
+      assert.equal(await pathExists(archiveTemp), false);
+      assert.equal(await pathExists(nestedArchiveTemp), false);
+      assert.equal(await pathExists(archiveJson), true);
+      assert.equal(await pathExists(nestedArchiveJson), true);
+    });
+  });
+
   describe('writeMachineSnapshotIfEnabled', () => {
     it('does not write when disabled', async () => {
       const stateDir = path.join(tmpDir, 'disabled-test');
@@ -328,6 +410,28 @@ describe('snapshotWriter', () => {
       const syncContent = JSON.parse(await fs.readFile(syncPath, 'utf-8'));
       assert.equal(localContent.machineLabel, 'desktop');
       assert.equal(syncContent.machineLabel, 'desktop');
+    });
+
+    it('cleans stale temp files in state and sync snapshot roots before writing', async () => {
+      const now = Date.now();
+      const stateDir = path.join(tmpDir, 'writer-cleanup-state');
+      const syncDir = path.join(tmpDir, 'writer-cleanup-sync');
+      const localStaleTemp = path.join(stateDir, 'snapshots', 'desktop-latest.json.tmp.123.1');
+      const syncStaleTemp = path.join(syncDir, 'desktop-latest.json.tmp.123.2');
+
+      await writeFileWithMtime(localStaleTemp, '{}', now - 25 * 60 * 60 * 1000);
+      await writeFileWithMtime(syncStaleTemp, '{}', now - 25 * 60 * 60 * 1000);
+
+      await writeMachineSnapshotIfEnabled(
+        { enabled: true, machineLabel: 'desktop', path: syncDir },
+        stateDir,
+        [mockState()]
+      );
+
+      assert.equal(await pathExists(localStaleTemp), false);
+      assert.equal(await pathExists(syncStaleTemp), false);
+      assert.equal(await pathExists(path.join(stateDir, 'snapshots', 'desktop-latest.json')), true);
+      assert.equal(await pathExists(path.join(syncDir, 'desktop-latest.json')), true);
     });
 
     it('writes canonical monthly archive files under state and sync roots', async () => {

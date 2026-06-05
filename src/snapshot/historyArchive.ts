@@ -13,6 +13,7 @@ import {
   type SnapshotProviderName
 } from './types';
 import { cloneSnapshotHistoryBucket, mergeHistoryBucketsByDate } from './historyBucketMerge';
+import { cleanupTempSnapshotFile } from './cleanupSnapshotFiles';
 
 const ARCHIVE_ROOT_FIELDS = [
   'schemaVersion',
@@ -258,8 +259,13 @@ async function writeArchiveToPath(
 ): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const tmpPath = filePath + '.tmp.' + process.pid + '.' + Date.now();
-  await fs.writeFile(tmpPath, JSON.stringify(archive, null, 2) + '\n', 'utf-8');
-  await fs.rename(tmpPath, filePath);
+  try {
+    await fs.writeFile(tmpPath, JSON.stringify(archive, null, 2) + '\n', 'utf-8');
+    await fs.rename(tmpPath, filePath);
+  } catch (error) {
+    await cleanupTempSnapshotFile(tmpPath);
+    throw error;
+  }
 }
 
 export async function writeSnapshotHistoryArchives(
