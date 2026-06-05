@@ -70,6 +70,14 @@ Set `promptFuel.snapshot.path` to a local or shared folder that contains compati
 
 Enable `promptFuel.snapshot.enabled` to write this machine's sanitized snapshot under PromptFuel's internal storage. If `promptFuel.snapshot.path` is set, the same sanitized latest snapshot and archive data are also copied to that folder. Set `promptFuel.snapshot.machineLabel` to a safe label such as `desktop`, `laptop`, `workstation`, or `build-agent`; this label is included in the snapshot payload and can appear in supported dashboard/status surfaces.
 
+### Easiest Remote Machine Setup
+
+The easiest way to see remote-machine usage is to point every machine at the same shared snapshot folder with `promptFuel.snapshot.path`.
+
+This folder can be any user-owned sync location, such as OneDrive, Google Drive, Dropbox, Syncthing, a network share, or another folder you already sync between machines. PromptFuel does not provide or require a hosted sync service.
+
+On each machine, enable `promptFuel.snapshot.enabled`, set a safe `promptFuel.snapshot.machineLabel`, and set `promptFuel.snapshot.path` to that shared folder. Each machine writes its sanitized latest snapshot there, and the other machines discover it automatically.
+
 Snapshots are aggregate-only JSON files. They may contain provider quota windows, safe daily history buckets, and model breakdowns for `claude` and/or `codex`; they must not include prompts, responses, transcripts, raw provider payloads, secrets, auth tokens, local paths, usernames, or source filenames.
 
 Minimal machine snapshot example:
