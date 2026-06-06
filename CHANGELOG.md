@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+Getting package.json / package-lock.json correctly aligned.
+
 ## 1.0.2
 
 Fixes Codex 5h quota showing 0% remaining after the first message in a fresh window.
