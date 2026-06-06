@@ -314,8 +314,14 @@ export function parseCodexWindow(window: Record<string, unknown> | undefined, ex
     return undefined;
   }
 
+  // used_percent and usedPercentage are 0–100 values; only utilization is a 0–1 fraction
+  const rawPercent = toNumber(window.used_percent) ?? toNumber(window.usedPercentage);
+  const usedPercentage = rawPercent !== undefined
+    ? Math.max(0, Math.min(100, rawPercent))
+    : normalizePercent(toNumber(window.utilization));
+
   return parsedWindow(
-    normalizePercent(toNumber(window.used_percent) ?? toNumber(window.usedPercentage) ?? toNumber(window.utilization)),
+    usedPercentage,
     parseResetEpochSeconds(window.reset_at) ?? parseResetEpochSeconds(window.resets_at) ?? parseResetEpochSeconds(window.resetsAtEpochSeconds)
   );
 }

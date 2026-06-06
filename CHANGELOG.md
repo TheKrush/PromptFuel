@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+Fixes Codex 5h quota showing 0% remaining after the first message in a fresh window.
+
+**Included in this release:**
+
+- Fixed a misidentification of Codex's `used_percent` field as a 0–1 fraction. The Codex API returns `used_percent` as a 0–100 value, but the parser was applying a fraction-conversion heuristic (`× 100`) to any value ≤ 1. Sending a single message into a fresh 5h window produces a `used_percent` near `1` (≈1% used), which the heuristic inflated to 100% used → 0% remaining. The fix clamps `used_percent` and `usedPercentage` directly to [0, 100] without scaling; the `utilization` field (a genuine 0–1 fraction) continues to be scaled. Applied to both the live authenticated-quota path and the local Codex session-log scanner.
+
 ## 1.0.1
 
 Fixes a false-critical quota display when the server's reset time has already passed and a live refresh fails.

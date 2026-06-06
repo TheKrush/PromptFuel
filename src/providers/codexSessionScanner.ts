@@ -302,7 +302,9 @@ function mergeRateLimits(state: MutableCodexState, rateLimits: CodexRateLimit): 
 }
 
 function parseRateLimitWindow(window: CodexRateLimitWindow): { limit?: LimitWindow } {
-  const usedPercentage = normalizePercent(toNumber(window.used_percent) ?? toNumber(window.usedPercentage));
+  // used_percent and usedPercentage are 0–100 values, not fractions
+  const rawPercent = toNumber(window.used_percent) ?? toNumber(window.usedPercentage);
+  const usedPercentage = rawPercent !== undefined ? Math.max(0, Math.min(100, rawPercent)) : undefined;
   const reset = parseResetEpochSeconds(window.resets_at) ?? parseResetEpochSeconds(window.resetsAtEpochSeconds);
 
   if (usedPercentage === undefined && reset === undefined) {

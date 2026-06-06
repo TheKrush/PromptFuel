@@ -57,11 +57,33 @@ describe('authenticated quota parsing', () => {
   it('parses Codex windows and rejects mismatched window sizes', () => {
     assert.equal(parseCodexWindow(undefined, FIVE_HOUR_S), undefined);
     assert.equal(parseCodexWindow({}, FIVE_HOUR_S), undefined);
-    assert.deepEqual(parseCodexWindow({ limit_window_seconds: FIVE_HOUR_S, used_percent: 0.5, reset_at: S_EPOCH }, FIVE_HOUR_S), { usedPercentage: 50, resetsAtEpochSeconds: S_EPOCH });
+    assert.deepEqual(parseCodexWindow({ limit_window_seconds: FIVE_HOUR_S, used_percent: 0.5, reset_at: S_EPOCH }, FIVE_HOUR_S), { usedPercentage: 0.5, resetsAtEpochSeconds: S_EPOCH });
     assert.deepEqual(parseCodexWindow({ window_minutes: 300, usedPercentage: 42, resets_at: S_EPOCH }, FIVE_HOUR_S), { usedPercentage: 42, resetsAtEpochSeconds: S_EPOCH });
     assert.deepEqual(parseCodexWindow({ limit_window_seconds: SEVEN_DAY_S, utilization: 0.75, resetsAtEpochSeconds: S_EPOCH }, SEVEN_DAY_S), { usedPercentage: 75, resetsAtEpochSeconds: S_EPOCH });
     assert.equal(parseCodexWindow({ limit_window_seconds: SEVEN_DAY_S, used_percent: 0.5, reset_at: S_EPOCH }, FIVE_HOUR_S), undefined);
     assert.equal(parseCodexWindow({ window_minutes: 100, used_percent: 0.5, reset_at: S_EPOCH }, FIVE_HOUR_S), undefined);
-    assert.deepEqual(parseCodexWindow({ used_percent: 0.25, reset_at: S_EPOCH }, FIVE_HOUR_S), { usedPercentage: 25, resetsAtEpochSeconds: S_EPOCH });
+    assert.deepEqual(parseCodexWindow({ used_percent: 0.25, reset_at: S_EPOCH }, FIVE_HOUR_S), { usedPercentage: 0.25, resetsAtEpochSeconds: S_EPOCH });
+  });
+
+  it('does not amplify Codex used_percent values that are already 0-100', () => {
+    // Real-world calibration: a single message in a fresh 5h window produces used_percent ≈ 1.
+    // It must remain 1% used (99% left), not be inflated to 100% used (0% left).
+    assert.deepEqual(
+      parseCodexWindow({ used_percent: 1, reset_at: S_EPOCH }, FIVE_HOUR_S),
+      { usedPercentage: 1, resetsAtEpochSeconds: S_EPOCH }
+    );
+    assert.deepEqual(
+      parseCodexWindow({ used_percent: 99, reset_at: S_EPOCH }, FIVE_HOUR_S),
+      { usedPercentage: 99, resetsAtEpochSeconds: S_EPOCH }
+    );
+    assert.deepEqual(
+      parseCodexWindow({ used_percent: 0, reset_at: S_EPOCH }, FIVE_HOUR_S),
+      { usedPercentage: 0, resetsAtEpochSeconds: S_EPOCH }
+    );
+    // utilization is a genuine 0-1 fraction and should still be scaled
+    assert.deepEqual(
+      parseCodexWindow({ utilization: 1, reset_at: S_EPOCH }, FIVE_HOUR_S),
+      { usedPercentage: 100, resetsAtEpochSeconds: S_EPOCH }
+    );
   });
 });
