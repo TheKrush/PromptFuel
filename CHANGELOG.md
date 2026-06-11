@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.5
+
+Improves history refresh performance, hardens quota source tracking, expands CI validation, and adds README privacy disclosure.
+
+**Included in this release:**
+
+- Improved dashboard/history refresh performance by replacing repeated large Claude/Codex JSONL rescans with incremental per-file history aggregation.
+- Changed Codex correlated history scanning to stream session files line-by-line instead of loading entire files into memory.
+- Hardened quota source handling by carrying explicit `sourceKind` metadata instead of relying on display-label substring inference.
+- Expanded CI compile validation to run the full smoke suite through `smoke:ci`.
+- Added README disclosure for the Claude/Codex credential files PromptFuel reads, the provider usage endpoints contacted, sanitized quota-cache behavior, and the unofficial nature of those endpoints.
+- Added incremental history cache tests for cold cache, warm cache, changed files, deleted files, day rollover, out-of-range records, and Codex variants.
+- Added quota sourceKind regression tests to ensure display-label wording changes do not alter merge behavior.
+
 ## 1.0.4
 
 Adds Claude Fable 5 to PromptFuel's API-equivalent pricing estimates.
