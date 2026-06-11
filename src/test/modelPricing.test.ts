@@ -12,8 +12,8 @@ const CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_5m_per
 function sampleCsv(): string {
   return [
     CSV_HEADER,
-    'claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-11,Claude Fable 5',
-    'claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-11,OpenRouter-style alias',
+    'claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,Claude Fable 5',
+    'claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,OpenRouter-style alias',
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
     'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
