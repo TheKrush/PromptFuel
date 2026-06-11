@@ -34,7 +34,7 @@ export type ConfiguredModelCostEstimate =
 export const CLAUDE_SOURCES = {
   url: 'https://platform.claude.com/docs/en/about-claude/pricing',
   label: 'Anthropic Claude API Pricing (official)',
-  verified: '2026-06-11'
+  verified: '2026-06-10'
 } as const;
 
 // Fallback rate used when model name does not match any known Claude entry
