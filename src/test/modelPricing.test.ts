@@ -12,6 +12,8 @@ const CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_5m_per
 function sampleCsv(): string {
   return [
     CSV_HEADER,
+    'claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-11,Claude Fable 5',
+    'claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-11,OpenRouter-style alias',
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
     'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
@@ -22,7 +24,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 4);
+    assert.equal(rows.length, 6);
   });
 
   it('parses numeric values correctly', () => {
@@ -42,9 +44,9 @@ describe('model pricing CSV parser', () => {
   it('parses provider and model strings', () => {
     const rows = parseModelPricingCsv(sampleCsv());
     assert.equal(rows[0].provider, 'claude');
-    assert.equal(rows[0].model, 'claude-sonnet-4-6');
+    assert.equal(rows[0].model, 'claude-fable-5');
     assert.equal(rows[0].currency, 'USD');
-    assert.equal(rows[0].effectiveDate, '2026-06-04');
+    assert.equal(rows[0].effectiveDate, '2026-06-11');
   });
 
   it('returns empty array for empty content', () => {
@@ -86,6 +88,11 @@ describe('blank optional numeric fields', () => {
     assert.equal(sonnet.cacheWrite5mPer1m, 3.75);
     assert.equal(sonnet.cacheWrite1hPer1m, 6);
     assert.equal(sonnet.cacheReadPer1m, 0.30);
+
+    const fable = rows.find(r => r.model === 'claude-fable-5')!;
+    assert.equal(fable.cacheWrite5mPer1m, 12.50);
+    assert.equal(fable.cacheWrite1hPer1m, 20);
+    assert.equal(fable.cacheReadPer1m, 1);
   });
 
   it('parses explicit zero cache values correctly', () => {
@@ -104,7 +111,7 @@ describe('buildPricingTable', () => {
     assert.equal(table.size, 2);
     assert.ok(table.has('claude'));
     assert.ok(table.has('codex'));
-    assert.equal(table.get('claude')!.size, 2);
+    assert.equal(table.get('claude')!.size, 4);
     assert.equal(table.get('codex')!.size, 2);
   });
 });
@@ -129,6 +136,21 @@ describe('findModelPricingInTable', () => {
     assert.ok(result);
     assert.equal(result.matchedKey, 'claude-sonnet-4-6');
     assert.equal(result.row.inputPer1m, 3);
+  });
+
+  it('finds Claude Fable 5 direct and OpenRouter-style aliases', () => {
+    const direct = findModelPricingInTable(table, 'claude', 'claude-fable-5');
+    assert.ok(direct);
+    assert.equal(direct.matchedKey, 'claude-fable-5');
+    assert.equal(direct.row.inputPer1m, 10);
+    assert.equal(direct.row.outputPer1m, 50);
+
+    const alias = findModelPricingInTable(table, 'claude', 'anthropic/claude-fable-5');
+    assert.ok(alias);
+    assert.equal(alias.matchedKey, 'anthropic/claude-fable-5');
+    assert.equal(alias.row.cacheWrite5mPer1m, 12.50);
+    assert.equal(alias.row.cacheWrite1hPer1m, 20);
+    assert.equal(alias.row.cacheReadPer1m, 1);
   });
 
   it('finds model with longest key match on partial prefix', () => {

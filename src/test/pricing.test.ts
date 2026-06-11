@@ -40,6 +40,18 @@ describe('pricing estimates', () => {
     assert.equal(opus48Fast.isFallback, false);
   });
 
+  it('estimates Claude Fable 5 costs including cache read and write rates', () => {
+    const fable = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['claude-fable-5']);
+    assertApprox(fable.costUsd, 0.253);
+    assert.equal(fable.matchedModel, 'claude-fable-5');
+    assert.equal(fable.isFallback, false);
+
+    const openRouterAlias = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['anthropic/claude-fable-5']);
+    assertApprox(openRouterAlias.costUsd, 0.253);
+    assert.equal(openRouterAlias.matchedModel, 'anthropic/claude-fable-5');
+    assert.equal(openRouterAlias.isFallback, false);
+  });
+
   it('falls back for unknown or missing Claude models', () => {
     const unknown = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-unknown-model']);
     assertApprox(unknown.costUsd, 0.105);

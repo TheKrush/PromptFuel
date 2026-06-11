@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4
+
+Adds Claude Fable 5 to PromptFuel's API-equivalent pricing estimates.
+
+**Included in this release:**
+
+- Added first-party Anthropic `claude-fable-5` pricing at $10 input / $50 output per MTok, with $12.50 5-minute cache write, $20 1-hour cache write, and $1 cache hit / refresh per MTok.
+- Added `anthropic/claude-fable-5` as an OpenRouter-style pricing alias that maps to the same Claude Fable 5 rates.
+
 ## 1.0.3
 
 Getting package.json / package-lock.json correctly aligned.

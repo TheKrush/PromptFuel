@@ -1,4 +1,6 @@
 provider,model,input_per_1m,output_per_1m,cache_write_5m_per_1m,cache_write_1h_per_1m,cache_read_per_1m,currency,effective_date,notes
+claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,
+claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,OpenRouter-style alias for Claude Fable 5
 claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,
 claude,claude-opus-4-7,5,25,6.25,10,0.50,USD,2026-06-04,
 claude,claude-opus-4-6,5,25,6.25,10,0.50,USD,2026-06-04,
