@@ -11,12 +11,14 @@ export async function readClaudeBridgeState(stateDirectory: string): Promise<Pro
     return {
       ...parsed,
       provider: 'claude',
+      sourceKind: 'statusLine',
       source: 'local statusLine/hook state',
       stale: isStale(parsed.lastUpdatedEpochMs)
     };
   } catch (error) {
     return {
       provider: 'claude',
+      sourceKind: 'statusLine',
       source: 'local statusLine/hook state',
       stale: true,
       error: error instanceof Error ? error.message : String(error)

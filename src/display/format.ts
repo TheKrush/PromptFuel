@@ -759,7 +759,7 @@ function formatFiveHourBlockedNote(states: ProviderUsageState[], _options: Forma
 
 function formatSourceSummary(states: ProviderUsageState[]): string {
   const normalized = unique(
-    states.flatMap(state => quotaSourceLabels(state)).map(source => normalizeSourceSummary(source))
+    states.flatMap(state => quotaSourceLabels(state)).map(entry => normalizeSourceSummary(entry))
   );
   if (normalized.length === 0) {
     return 'unknown';
@@ -1036,8 +1036,20 @@ function formatClockTime(epochMs: number): string {
     : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function normalizeSourceSummary(source: string | undefined): string {
-  const value = (source ?? '').toLowerCase();
+function normalizeSourceSummary({ label, kind }: { label: string; kind?: QuotaSourceKind }): string {
+  if (kind) {
+    switch (kind) {
+      case 'authenticated': return 'live authenticated refresh';
+      case 'statusLine':
+      case 'hook': return 'local bridge snapshot';
+      case 'localSession': return 'local session snapshot';
+      case 'cache': return 'cached quota snapshot';
+      case 'stale': return 'stale local snapshot';
+      default: return escapeMarkdownHtml(label || 'unknown');
+    }
+  }
+  // Legacy fallback: substring inference on label string
+  const value = (label ?? '').toLowerCase();
   if (!value) {
     return 'unknown';
   }
@@ -1056,13 +1068,21 @@ function normalizeSourceSummary(source: string | undefined): string {
   if (value.includes('local')) {
     return 'local state';
   }
-  return escapeMarkdownHtml(source ?? 'unknown');
+  return escapeMarkdownHtml(label ?? 'unknown');
 }
 
-function quotaSourceLabels(state: ProviderUsageState): string[] {
-  const labels = [state.sevenDay?.sourceLabel, state.fiveHour?.sourceLabel]
-    .filter((value): value is string => Boolean(value));
-  return labels.length > 0 ? unique(labels) : [state.source ?? 'unknown'];
+function quotaSourceLabels(state: ProviderUsageState): { label: string; kind?: QuotaSourceKind }[] {
+  const windows = [state.sevenDay, state.fiveHour]
+    .filter((w): w is LimitWindow & { sourceLabel: string } => Boolean(w?.sourceLabel));
+  if (windows.length > 0) {
+    const seen = new Set<string>();
+    return windows.filter(w => {
+      if (seen.has(w.sourceLabel)) return false;
+      seen.add(w.sourceLabel);
+      return true;
+    }).map(w => ({ label: w.sourceLabel, kind: w.sourceKind }));
+  }
+  return [{ label: state.source ?? 'unknown', kind: state.sourceKind }];
 }
 
 function formatIgnoredQuotaSource(states: ProviderUsageState[]): string | undefined {
@@ -1090,22 +1110,21 @@ function joinStatusParts(parts: Array<string | undefined>): string {
 }
 
 function formatSourceInline(state: ProviderUsageState): string {
+  const kind = state.sourceKind;
+  if (kind) {
+    if (kind === 'authenticated') return '@live';
+    if (kind === 'localSession') return '@session';
+    if (kind === 'statusLine' || kind === 'hook') return '@bridge';
+    if (kind === 'cache' || kind === 'stale') return '@cache';
+    return '';
+  }
+  // Legacy fallback: substring inference on state.source
   const source = (state.source ?? '').toLowerCase();
-  if (source.includes('authenticated')) {
-    return '@live';
-  }
-  if (source.includes('session')) {
-    return '@session';
-  }
-  if (source.includes('bridge')) {
-    return '@bridge';
-  }
-  if (source.includes('cache')) {
-    return '@cache';
-  }
-  if (source.includes('local')) {
-    return '@device';
-  }
+  if (source.includes('authenticated')) return '@live';
+  if (source.includes('session')) return '@session';
+  if (source.includes('bridge')) return '@bridge';
+  if (source.includes('cache')) return '@cache';
+  if (source.includes('local')) return '@device';
   return '';
 }
 

@@ -368,6 +368,20 @@ function expiredWindowIgnored(window: LimitWindow): string | undefined {
 }
 
 function inferSourceKind(state: ProviderUsageState): QuotaSourceKind {
+  if (state.sourceKind) {
+    const kind = state.sourceKind;
+    if (kind === 'authenticated') {
+      if (state.authenticatedStatus === 'success' && !state.stale) {
+        return 'authenticated';
+      }
+      return state.stale ? 'cache' : 'authenticated';
+    }
+    if (state.stale && kind !== 'cache' && kind !== 'stale') {
+      return 'stale';
+    }
+    return kind;
+  }
+  // Legacy fallback: substring inference for states without an explicit sourceKind
   const source = (state.source ?? '').toLowerCase();
   if (state.authenticatedStatus === 'success' && !state.stale) {
     return 'authenticated';

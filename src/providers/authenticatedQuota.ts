@@ -161,6 +161,7 @@ function success(
       fiveHour,
       sevenDay,
       sevenDayOpus,
+      sourceKind: 'authenticated',
       source: 'live authenticated refresh',
       lastUpdatedEpochMs: now,
       lastAuthenticatedRefreshEpochMs: now,
@@ -178,6 +179,7 @@ function httpFailure(provider: ProviderName, response: HttpJsonResult): Authenti
     retryAfterSeconds: response.retryAfterSeconds,
     state: {
       provider,
+      sourceKind: 'cache',
       source: 'authenticated quota provider',
       lastAuthenticatedRefreshEpochMs: Date.now(),
       authenticatedStatus: response.statusCode === undefined
@@ -203,6 +205,7 @@ function authFailure(
     success: false,
     state: {
       provider,
+      sourceKind: 'cache',
       source: 'authenticated quota provider',
       lastAuthenticatedRefreshEpochMs: Date.now(),
       authenticatedStatus: status,
@@ -339,6 +342,7 @@ function sanitizeAuthenticatedState(state: ProviderUsageState): ProviderUsageSta
     fiveHour: state.fiveHour,
     sevenDay: state.sevenDay,
     sevenDayOpus: state.sevenDayOpus,
+    sourceKind: state.sourceKind,
     source: state.source,
     lastUpdatedEpochMs: state.lastUpdatedEpochMs,
     lastAuthenticatedRefreshEpochMs: state.lastAuthenticatedRefreshEpochMs,

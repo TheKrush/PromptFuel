@@ -35,6 +35,7 @@ export interface ProviderUsageState {
   model?: string;
   sessionId?: string;
   workspace?: string;
+  sourceKind?: QuotaSourceKind;
   source?: string;
   lastUpdatedEpochMs?: number;
   lastLocalUpdateEpochMs?: number;

@@ -549,3 +549,101 @@ describe('quota fallback regression coverage', () => {
     assert.equal(fiveHour?.available, false);
   });
 });
+
+describe('F6: explicit sourceKind — label-independence of merge results', () => {
+  it('merge authority is unchanged when source display label is replaced with an arbitrary string', () => {
+    const standardLabel = mergeLocalAndAuthenticated({
+      provider: 'claude',
+      fiveHour: { usedPercentage: 80, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'localSession',
+      source: `claude local session snapshot`,
+      lastUpdatedEpochMs: now - 10_000,
+      lastLocalUpdateEpochMs: now - 10_000
+    }, undefined);
+
+    const arbitraryLabel = mergeLocalAndAuthenticated({
+      provider: 'claude',
+      fiveHour: { usedPercentage: 80, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'localSession',
+      source: 'this label does not contain any matching keywords',
+      lastUpdatedEpochMs: now - 10_000,
+      lastLocalUpdateEpochMs: now - 10_000
+    }, undefined);
+
+    assert.equal(standardLabel.fiveHour?.sourceKind, 'localSession');
+    assert.equal(arbitraryLabel.fiveHour?.sourceKind, 'localSession');
+  });
+
+  it('authenticated sourceKind yields authenticated window regardless of source string', () => {
+    const standard = mergeAuthenticatedQuotaSuccess(undefined, {
+      provider: 'claude',
+      fiveHour: { usedPercentage: 10, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'authenticated',
+      source: 'live authenticated refresh',
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'success',
+      stale: false
+    });
+
+    const renamedLabel = mergeAuthenticatedQuotaSuccess(undefined, {
+      provider: 'claude',
+      fiveHour: { usedPercentage: 10, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'authenticated',
+      source: 'custom display label for this source',
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'success',
+      stale: false
+    });
+
+    assert.equal(standard.fiveHour?.sourceKind, 'authenticated');
+    assert.equal(renamedLabel.fiveHour?.sourceKind, 'authenticated');
+  });
+
+  it('stale authenticated state produces cache windows regardless of source string', () => {
+    const withKind = mergeAuthenticatedFailure(
+      liveState('claude', {
+        lastUpdatedEpochMs: now - 10_000,
+        lastAuthenticatedRefreshEpochMs: now - 10_000
+      }),
+      {
+        provider: 'claude',
+        sourceKind: 'cache',
+        source: 'renamed failure label',
+        lastAuthenticatedRefreshEpochMs: now + 1_000,
+        authenticatedStatus: 'http_error',
+        authenticatedHttpStatus: 500,
+        authenticatedError: 'HTTP 500',
+        stale: true
+      },
+      backoffUntil
+    );
+
+    assert.equal(withKind.fiveHour?.sourceKind, 'cache');
+    assert.equal(withKind.sevenDay?.sourceKind, 'cache');
+  });
+
+  it('statusLine sourceKind produces statusLine window regardless of source string', () => {
+    const standard = mergeLocalAndAuthenticated({
+      provider: 'claude',
+      fiveHour: { usedPercentage: 5, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'statusLine',
+      source: 'Claude statusLine quota',
+      lastUpdatedEpochMs: now,
+      lastLocalUpdateEpochMs: now
+    }, undefined);
+
+    const renamedSource = mergeLocalAndAuthenticated({
+      provider: 'claude',
+      fiveHour: { usedPercentage: 5, resetsAtEpochSeconds: fiveHourReset },
+      sourceKind: 'statusLine',
+      source: 'arbitrary label with no keywords',
+      lastUpdatedEpochMs: now,
+      lastLocalUpdateEpochMs: now
+    }, undefined);
+
+    assert.equal(standard.fiveHour?.sourceKind, 'statusLine');
+    assert.equal(renamedSource.fiveHour?.sourceKind, 'statusLine');
+  });
+});

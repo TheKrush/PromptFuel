@@ -62,6 +62,7 @@ async function readCodexCompletedTurnsBridgeState(stateDirectory: string): Promi
 
     return {
       provider: 'codex',
+      sourceKind: 'localSession',
       source: 'Codex completed-turn bridge status',
       lastUpdatedEpochMs: parsed.lastUpdatedEpochMs,
       stale: isStale(parsed.lastUpdatedEpochMs),
@@ -87,6 +88,7 @@ async function readLegacyCodexBridgeState(stateDirectory: string): Promise<Provi
     return {
       ...parsed,
       provider: 'codex',
+      sourceKind: 'localSession',
       source: 'local Codex bridge state',
       stale: isStale(parsed.lastUpdatedEpochMs)
     };
