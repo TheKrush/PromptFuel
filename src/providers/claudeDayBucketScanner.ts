@@ -591,3 +591,134 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Incremental per-file scan API (used by historyCache.ts)
+// ---------------------------------------------------------------------------
+
+export interface ClaudeJsonlFileInfo {
+  file: string;
+  mtimeMs: number;
+  size: number;
+}
+
+export interface ClaudeDayModelContribution {
+  assistantMessages: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+export interface ClaudeDayContribution {
+  assistantMessages: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  modelBreakdown: Map<string, ClaudeDayModelContribution>;
+}
+
+export interface ClaudeFileContribution {
+  days: Map<string, ClaudeDayContribution>;
+  recordsRead: number;
+  recordsMatched: number;
+}
+
+export async function listClaudeJsonlFiles(root: string): Promise<ClaudeJsonlFileInfo[]> {
+  const found: ClaudeJsonlFileInfo[] = [];
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > 4) { return; }
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) { continue; }
+      try {
+        const stat = await fsp.stat(full);
+        found.push({ file: full, mtimeMs: stat.mtimeMs, size: stat.size });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  await walk(root, 0);
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+export async function scanClaudeFileContribution(
+  file: string,
+  startMs: number,
+  endMs: number
+): Promise<ClaudeFileContribution> {
+  const contribution: ClaudeFileContribution = {
+    days: new Map(),
+    recordsRead: 0,
+    recordsMatched: 0
+  };
+
+  const reader = readline.createInterface({
+    input: fs.createReadStream(file, { encoding: 'utf8' }),
+    crlfDelay: Infinity
+  });
+
+  for await (const line of reader) {
+    if (!line.trim()) { continue; }
+    contribution.recordsRead++;
+
+    let record: ClaudeJsonlRecord;
+    try {
+      record = JSON.parse(line) as ClaudeJsonlRecord;
+    } catch {
+      continue;
+    }
+
+    const sample = readClaudeHistoryUsageSample(record, startMs, endMs);
+    if (!sample) { continue; }
+
+    const dateKey = formatLocalDateKey(new Date(sample.timestampMs));
+    let day = contribution.days.get(dateKey);
+    if (!day) {
+      day = {
+        assistantMessages: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        modelBreakdown: new Map()
+      };
+      contribution.days.set(dateKey, day);
+    }
+
+    day.assistantMessages++;
+    day.inputTokens += sample.inputTokens;
+    day.outputTokens += sample.outputTokens;
+    day.cacheCreationInputTokens += sample.cacheCreationInputTokens;
+    day.cacheReadInputTokens += sample.cacheReadInputTokens;
+
+    let modelDay = day.modelBreakdown.get(sample.model);
+    if (!modelDay) {
+      modelDay = { assistantMessages: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 };
+      day.modelBreakdown.set(sample.model, modelDay);
+    }
+    modelDay.assistantMessages++;
+    modelDay.inputTokens += sample.inputTokens;
+    modelDay.outputTokens += sample.outputTokens;
+    modelDay.cacheCreationInputTokens += sample.cacheCreationInputTokens;
+    modelDay.cacheReadInputTokens += sample.cacheReadInputTokens;
+
+    contribution.recordsMatched++;
+  }
+
+  return contribution;
+}

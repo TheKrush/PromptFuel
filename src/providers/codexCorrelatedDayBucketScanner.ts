@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 
 export interface CodexCorrelatedDayBucket {
   available: boolean;
@@ -238,11 +239,10 @@ async function scanCodexSessionFile(
   rangeEndMs: number,
   acc: HistoryAccumulator
 ): Promise<void> {
-  const content = await fsp.readFile(file, 'utf8');
-  const lines = content.trim().split(/\r?\n/);
-  if (lines.length === 0) {
-    return;
-  }
+  const rl = readline.createInterface({
+    input: fs.createReadStream(file, { encoding: 'utf8' }),
+    crlfDelay: Infinity
+  });
 
   const knownModels = new Map<string, string>();
   let latestModel = '';
@@ -250,7 +250,7 @@ async function scanCodexSessionFile(
   let currentTurn: TurnState | null = null;
   let lastSeenTotal: CodexTotalUsage | null = null;
 
-  for (const line of lines) {
+  for await (const line of rl) {
     if (!line.trim()) {
       continue;
     }
@@ -753,4 +753,245 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Incremental per-file scan API (used by historyCache.ts)
+// ---------------------------------------------------------------------------
+
+export interface CodexJsonlFileInfo {
+  file: string;
+  mtimeMs: number;
+  size: number;
+}
+
+export interface CodexDayModelContribution {
+  correlatedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+}
+
+export interface CodexDayContribution {
+  correlatedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  modelBreakdown: Map<string, CodexDayModelContribution>;
+}
+
+export interface CodexFileContribution {
+  days: Map<string, CodexDayContribution>;
+  recordsRead: number;
+  recordsMatched: number;
+  skippedMissingTokenData: number;
+  skippedMissingModel: number;
+  skippedMissingBaseline: number;
+  skippedNegativeDelta: number;
+  skippedTaskStartedWithoutTurnId: number;
+  skippedTokenCountOutsideTurn: number;
+  skippedCloseWithoutTurn: number;
+  skippedCompletionTimestampMissing: number;
+}
+
+export async function listCodexJsonlFiles(root: string): Promise<CodexJsonlFileInfo[]> {
+  const found: CodexJsonlFileInfo[] = [];
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > 8) { return; }
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) { continue; }
+      try {
+        const stat = await fsp.stat(full);
+        found.push({ file: full, mtimeMs: stat.mtimeMs, size: stat.size });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  await walk(root, 0);
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+export async function scanCodexFileContribution(
+  file: string,
+  startMs: number,
+  endMs: number
+): Promise<CodexFileContribution> {
+  const contribution: CodexFileContribution = {
+    days: new Map(),
+    recordsRead: 0,
+    recordsMatched: 0,
+    skippedMissingTokenData: 0,
+    skippedMissingModel: 0,
+    skippedMissingBaseline: 0,
+    skippedNegativeDelta: 0,
+    skippedTaskStartedWithoutTurnId: 0,
+    skippedTokenCountOutsideTurn: 0,
+    skippedCloseWithoutTurn: 0,
+    skippedCompletionTimestampMissing: 0
+  };
+
+  const rl = readline.createInterface({
+    input: fs.createReadStream(file, { encoding: 'utf8' }),
+    crlfDelay: Infinity
+  });
+
+  const knownModels = new Map<string, string>();
+  let latestModel = '';
+  let latestTurnId = '';
+  let currentTurn: TurnState | null = null;
+  let lastSeenTotal: CodexTotalUsage | null = null;
+
+  for await (const line of rl) {
+    if (!line.trim()) { continue; }
+
+    contribution.recordsRead++;
+
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const type = asString(record.type);
+    const payload = asRecord(record.payload);
+    if (!payload) { continue; }
+
+    const payloadType = asString(payload.type);
+
+    if (type === 'turn_context') {
+      const tid = asString(payload.turn_id);
+      if (tid) { latestTurnId = tid; }
+      const resolved = resolveModel(payload);
+      if (resolved) {
+        latestModel = resolved;
+        if (tid) { knownModels.set(tid, resolved); }
+      }
+      if (currentTurn && !currentTurn.model && resolved) { currentTurn.model = resolved; }
+    }
+
+    if (type === 'event_msg' && payloadType === 'task_started') {
+      let turnId = asString(payload.turn_id);
+      if (!turnId) {
+        turnId = latestTurnId;
+        if (!turnId) {
+          contribution.skippedTaskStartedWithoutTurnId++;
+          currentTurn = null;
+          continue;
+        }
+      }
+      if (currentTurn) { contribution.skippedMissingBaseline++; }
+      const model = knownModels.get(turnId) || latestModel;
+      currentTurn = {
+        firstTotal: null,
+        lastTotal: null,
+        baselineTotal: lastSeenTotal ? { ...lastSeenTotal } : null,
+        model: model || '',
+        hasTokenData: false
+      };
+      continue;
+    }
+
+    if (type === 'event_msg' && payloadType === 'token_count') {
+      const totalUsage = asRecord(payload.info) as Record<string, unknown> | undefined;
+      if (!totalUsage) { continue; }
+      const total = totalUsage.total_token_usage as CodexTotalUsage | undefined;
+      if (!total) { continue; }
+      lastSeenTotal = total;
+      if (!currentTurn) { contribution.skippedTokenCountOutsideTurn++; continue; }
+      currentTurn.hasTokenData = true;
+      if (!currentTurn.firstTotal) { currentTurn.firstTotal = total; }
+      currentTurn.lastTotal = total;
+      continue;
+    }
+
+    if (type === 'event_msg' && (payloadType === 'task_complete' || payloadType === 'turn_aborted')) {
+      if (!currentTurn) { contribution.skippedCloseWithoutTurn++; continue; }
+
+      const completedAtMs = resolveCompletedAt(record);
+      if (completedAtMs === 0 || completedAtMs < startMs || completedAtMs >= endMs) {
+        if (completedAtMs === 0) { contribution.skippedCompletionTimestampMissing++; }
+        currentTurn = null;
+        continue;
+      }
+
+      if (!currentTurn.hasTokenData) { contribution.skippedMissingTokenData++; currentTurn = null; continue; }
+
+      if (!currentTurn.model) { currentTurn.model = latestModel; }
+      if (!currentTurn.model) { contribution.skippedMissingModel++; currentTurn = null; continue; }
+
+      const baseline = currentTurn.baselineTotal ?? currentTurn.firstTotal;
+      if (!baseline || !currentTurn.lastTotal) { contribution.skippedMissingBaseline++; currentTurn = null; continue; }
+
+      const rawInput = rawDelta(currentTurn.lastTotal.input_tokens, baseline.input_tokens);
+      const rawOutput = rawDelta(currentTurn.lastTotal.output_tokens, baseline.output_tokens);
+      const rawTotal = rawDelta(currentTurn.lastTotal.total_tokens, baseline.total_tokens);
+
+      if (rawTotal < 0 || rawInput < 0 || rawOutput < 0) {
+        contribution.skippedNegativeDelta++;
+        currentTurn = null;
+        continue;
+      }
+
+      const deltaCached = clampOptional(currentTurn.lastTotal.cached_input_tokens, baseline.cached_input_tokens);
+      const deltaReasoning = clampOptional(currentTurn.lastTotal.reasoning_output_tokens, baseline.reasoning_output_tokens);
+
+      const dateKey = formatLocalDateKey(new Date(completedAtMs));
+      let day = contribution.days.get(dateKey);
+      if (!day) {
+        day = {
+          correlatedTurns: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0,
+          modelBreakdown: new Map()
+        };
+        contribution.days.set(dateKey, day);
+      }
+
+      day.correlatedTurns++;
+      day.inputTokens += rawInput;
+      day.outputTokens += rawOutput;
+      day.cacheCreationInputTokens += deltaCached;
+      day.reasoningOutputTokens += deltaReasoning;
+      day.totalTokens += rawTotal;
+
+      let modelDay = day.modelBreakdown.get(currentTurn.model);
+      if (!modelDay) {
+        modelDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
+        day.modelBreakdown.set(currentTurn.model, modelDay);
+      }
+      modelDay.correlatedTurns++;
+      modelDay.inputTokens += rawInput;
+      modelDay.outputTokens += rawOutput;
+      modelDay.cacheCreationInputTokens += deltaCached;
+      modelDay.reasoningOutputTokens += deltaReasoning;
+      modelDay.totalTokens += rawTotal;
+
+      contribution.recordsMatched++;
+      currentTurn = null;
+    }
+  }
+
+  return contribution;
 }

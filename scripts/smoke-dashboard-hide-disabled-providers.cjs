@@ -354,7 +354,7 @@ function main() {
     assert.match(extensionSource, /getUsageDashboardModel: \(\) => \{[\s\S]*buildUsageDashboardModel\([\s\S]*enabledProviders:/, 'panel-open dashboard model uses configured provider filtering');
     assert.match(refreshControllerSource, /const effectiveProviders = cfg\.enabledProviders;/, 'refresh path derives effective providers from config');
     assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('claude'\)\) \{[\s\S]*readClaudeTodayUsageBucket/, 'excluded Claude provider does not refresh dashboard history inputs');
-    assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('codex'\)\) \{[\s\S]*readCodexCorrelatedHistory/, 'excluded Codex provider does not refresh dashboard history inputs');
+    assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('codex'\)\) \{[\s\S]*readCodexHistoryIncremental/, 'excluded Codex provider does not refresh dashboard history inputs');
 
     const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
     const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');

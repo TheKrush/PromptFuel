@@ -1,5 +1,4 @@
 import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
 import { getConfig } from './config';
 import { formatStatus } from './display/format';
 import { buildStatusHoverModelBreakdown, type HistoryModelUsage, STATUS_HOVER_MODEL_ESTIMATE_WINDOW_DAYS } from './display/modelBreakdown';
@@ -15,14 +14,12 @@ import {
   type ClaudeHistoryModelUsage,
   type ClaudeTodayUsageBucket,
   type ClaudeUsageHistory,
-  readClaudeRecentUsageHistory,
   readClaudeTodayUsageBucket
 } from './providers/claudeDayBucketScanner';
 import {
   type CodexCorrelatedDayBucket,
   type CodexCorrelatedHistory,
   type CodexCorrelatedHistoryModelUsage,
-  readCodexCorrelatedHistory,
   readCodexCorrelatedTodayBucket
 } from './providers/codexCorrelatedDayBucketScanner';
 import { readCodexUsageState } from './providers/codexSessionScanner';
@@ -46,6 +43,14 @@ import { type ProviderName, type ProviderUsageState } from './types';
 import { RESET_EXPIRY_GRACE_MS } from './usageTime';
 import { buildRemoteStatusBarItems } from './statusBar';
 import { cancelDebouncedRefresh, markSnapshotSelfWriteTargets } from './watchers';
+import {
+  makeClaudeHistoryCache,
+  makeCodexHistoryCache,
+  readClaudeHistoryIncremental,
+  readCodexHistoryIncremental,
+  type ClaudeHistoryCache,
+  type CodexHistoryCache
+} from './providers/historyCache';
 
 export interface RefreshOptions {
   allowAuthenticated?: boolean;
@@ -77,22 +82,8 @@ const latest = {
   remoteUsage: undefined as RemoteUsageProjection | undefined
 };
 
-const historyScanCache = {
-  claude: undefined as {
-    dirPath: string;
-    dateKey: string;
-    fingerprint: string;
-    today: ClaudeTodayUsageBucket;
-    history: ClaudeUsageHistory;
-  } | undefined,
-  codex: undefined as {
-    dirPath: string;
-    dateKey: string;
-    fingerprint: string;
-    today: CodexCorrelatedDayBucket;
-    history: CodexCorrelatedHistory;
-  } | undefined
-};
+const claudeHistoryCache: ClaudeHistoryCache = makeClaudeHistoryCache();
+const codexHistoryCache: CodexHistoryCache = makeCodexHistoryCache();
 
 const refreshState = {
   inFlight: undefined as Promise<void> | undefined,
@@ -126,44 +117,7 @@ function logSwallowedError(context: string, err: unknown): void {
   logPromptFuel(`${context} failed`, err);
 }
 
-function getLocalDateKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
-async function computeDirectoryDigest(dir: string, ext: string): Promise<string> {
-  const parts: string[] = [];
-
-  async function walk(d: string, depth: number): Promise<void> {
-    if (depth > 8) { return; }
-
-    let entries;
-    try {
-      entries = await fs.readdir(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        await walk(full, depth + 1);
-        continue;
-      }
-      if (!entry.isFile() || !entry.name.endsWith(ext)) { continue; }
-      try {
-        const stat = await fs.stat(full);
-        parts.push(`${full}:${stat.mtimeMs}:${stat.size}`);
-      } catch {
-        // skip files that disappear during scan
-      }
-    }
-  }
-
-  await walk(dir, 0);
-  parts.sort();
-  return parts.join('|');
-}
 
 function toModelContribution(m: ClaudeHistoryModelUsage): ModelContributionInput;
 function toModelContribution(m: CodexCorrelatedHistoryModelUsage): ModelContributionInput;
@@ -480,16 +434,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
 
   if (effectiveProviders.includes('claude')) {
     const dirPath = cfg.claudeProjectsPath;
-    const dateKey = getLocalDateKey();
-    const fp = await computeDirectoryDigest(dirPath, '.jsonl');
-    if (historyScanCache.claude && historyScanCache.claude.dirPath === dirPath && historyScanCache.claude.dateKey === dateKey && historyScanCache.claude.fingerprint === fp) {
-      latest.claudeTodayUsage = historyScanCache.claude.today;
-      latest.claudeUsageHistory = historyScanCache.claude.history;
-    } else {
-      latest.claudeTodayUsage = await readClaudeTodayUsageBucket(dirPath);
-      latest.claudeUsageHistory = await readClaudeRecentUsageHistory(dirPath, 365);
-      historyScanCache.claude = { dirPath, dateKey, fingerprint: fp, today: latest.claudeTodayUsage, history: latest.claudeUsageHistory };
-    }
+    latest.claudeTodayUsage = await readClaudeTodayUsageBucket(dirPath);
+    latest.claudeUsageHistory = await readClaudeHistoryIncremental(dirPath, 365, claudeHistoryCache);
   } else {
     latest.claudeTodayUsage = undefined;
     latest.claudeUsageHistory = undefined;
@@ -497,16 +443,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
 
   if (effectiveProviders.includes('codex')) {
     const dirPath = cfg.codexSessionsPath;
-    const dateKey = getLocalDateKey();
-    const fp = await computeDirectoryDigest(dirPath, '.jsonl');
-    if (historyScanCache.codex && historyScanCache.codex.dirPath === dirPath && historyScanCache.codex.dateKey === dateKey && historyScanCache.codex.fingerprint === fp) {
-      latest.codexCorrelatedHistory = historyScanCache.codex.history;
-      latest.codexCorrelatedTodayUsage = historyScanCache.codex.today;
-    } else {
-      latest.codexCorrelatedHistory = await readCodexCorrelatedHistory(dirPath, 365);
-      latest.codexCorrelatedTodayUsage = await readCodexCorrelatedTodayBucket(dirPath);
-      historyScanCache.codex = { dirPath, dateKey, fingerprint: fp, history: latest.codexCorrelatedHistory, today: latest.codexCorrelatedTodayUsage };
-    }
+    latest.codexCorrelatedHistory = await readCodexHistoryIncremental(dirPath, 365, codexHistoryCache);
+    latest.codexCorrelatedTodayUsage = await readCodexCorrelatedTodayBucket(dirPath);
   } else {
     latest.codexCorrelatedHistory = undefined;
     latest.codexCorrelatedTodayUsage = undefined;
