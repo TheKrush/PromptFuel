@@ -32,6 +32,6 @@ jobs:
         shell: bash
         run: npm run test:unit
 
-      - name: 🏪 Dashboard smoke
+      - name: 🏪 Smoke suite
         shell: bash
-        run: npm run smoke:dashboard
+        run: npm run smoke:ci
