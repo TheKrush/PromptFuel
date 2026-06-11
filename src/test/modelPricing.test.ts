@@ -46,7 +46,7 @@ describe('model pricing CSV parser', () => {
     assert.equal(rows[0].provider, 'claude');
     assert.equal(rows[0].model, 'claude-fable-5');
     assert.equal(rows[0].currency, 'USD');
-    assert.equal(rows[0].effectiveDate, '2026-06-11');
+    assert.equal(rows[0].effectiveDate, '2026-06-10');
   });
 
   it('returns empty array for empty content', () => {
