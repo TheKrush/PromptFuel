@@ -53,6 +53,24 @@ Break down usage by provider and model, with token share, estimated API-equivale
 - Live quota reads use existing provider OAuth state when available; PromptFuel does not provide its own auth UI.
 - You can inspect PromptFuel's extension storage via **PromptFuel: Open Data Folder**.
 
+### What PromptFuel reads and contacts
+
+When live quota is enabled for a provider, PromptFuel reads that provider's existing auth file to obtain a bearer token, then contacts that provider's usage endpoint. No additional sign-in is required and PromptFuel does not store credentials.
+
+#### Claude
+
+- Reads: `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json` when that environment variable is set)
+- Contacts: `api.anthropic.com/api/oauth/usage`
+
+#### Codex
+
+- Reads: `~/.codex/auth.json`
+- Contacts: `chatgpt.com/backend-api/wham/usage`
+
+PromptFuel sends each provider's own bearer token only to that provider's endpoint — no credentials are forwarded to any third party. The token is not persisted; only sanitized quota fields (window usage counts and reset times) are written to the extension's local cache.
+
+These are unofficial, undocumented usage endpoints. They are not part of any public API contract and may change, be rate-limited, or become unavailable without notice. PromptFuel treats a failed quota read as a non-error and falls back to cached or local-history values.
+
 ## Commands
 
 | Command | Title |
