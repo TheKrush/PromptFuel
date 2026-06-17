@@ -2,7 +2,7 @@
   "name": "prompt-fuel",
   "displayName": "PromptFuel",
   "description": "Track AI coding assistant usage history and live quota status from the VS Code status bar.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "thekrush",
   "author": "TheKrush",
   "license": "MIT",
