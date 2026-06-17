@@ -172,9 +172,12 @@ export function configureWatchers(_context: vscode.ExtensionContext, deps: Watch
   const intervalMs = Math.max(1, cfg.refreshIntervalMinutes) * 60 * 1000;
   refreshTimer = setInterval(() => deps.onRefresh(), intervalMs);
 
+  // Watch the external bridge state files specifically. A `*.json` wildcard here would also
+  // match authenticated-quota-cache.json, which this extension rewrites on every refresh —
+  // that self-write would retrigger the watcher and spin refreshes in a ~1s loop.
   watchPathPattern(cfg.stateDirectory, 'claude.json', 'state claude');
   watchPathPattern(cfg.stateDirectory, 'codex.json', 'state codex');
-  watchPathPattern(cfg.stateDirectory, '*.json', 'state json');
+  watchPathPattern(cfg.stateDirectory, 'codex-completed-turns.json', 'state codex completed turns');
   if (cfg.snapshot.path) {
     watchPathPattern(cfg.snapshot.path, '*-latest.json', 'snapshot latest');
     watchPathPattern(path.join(cfg.snapshot.path, 'archive'), '**/*.json', 'snapshot archive');
