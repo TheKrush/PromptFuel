@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.6
+
+Fixes the usage dashboard refreshing about once per second when idle.
+
+**Included in this release:**
+
+- Fixed the usage dashboard and status bar refreshing in a continuous ~1s loop regardless of activity. The state-directory file watcher matched `*.json`, which also caught `authenticated-quota-cache.json` — a file the extension rewrites on every refresh. That self-write retriggered the watcher, which scheduled another refresh, which rewrote the cache again, spinning indefinitely. The watcher now targets the external bridge state files explicitly (`claude.json`, `codex.json`, `codex-completed-turns.json`) and no longer reacts to the extension's own cache writes. Periodic refresh (`promptFuel.refreshIntervalMinutes`, default 5) and live updates from real provider/session file changes are unaffected.
+
 ## 1.0.5
 
 Improves history refresh performance, hardens quota source tracking, expands CI validation, and adds README privacy disclosure.
