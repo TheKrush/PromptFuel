@@ -38,6 +38,7 @@ import {
   type ReadSnapshotResult
 } from './snapshot/readMachineSnapshots';
 import { aggregateSnapshotBucketModels, buildRemoteUsageProjection, type RemoteUsageProjection } from './snapshot/remoteUsageProjection';
+import { filterSelfSnapshots, filterSelfSourceIds, supplementLocalHistoryWithSelfArchives } from './snapshot/selfArchiveSupplement';
 import { writeMachineSnapshotIfEnabled, type ModelContributionInput, type ProviderHistoryInput } from './snapshot/writeMachineSnapshot';
 import { type ProviderName, type ProviderUsageState } from './types';
 import { RESET_EXPIRY_GRACE_MS } from './usageTime';
@@ -394,21 +395,22 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     readEnabled: Boolean(cfg.snapshot.path),
     readPath: cfg.snapshot.path
   }).catch((): ReadSnapshotResult => ({ snapshots: [], errors: [] }));
-  latest.remoteProviderGroups = buildRemoteProvidersFromSnapshots(readResult.snapshots);
+  const remoteSnapshots = filterSelfSnapshots(readResult.snapshots, cfg.snapshot.machineLabel);
+  latest.remoteProviderGroups = buildRemoteProvidersFromSnapshots(remoteSnapshots);
 
   const aliasMap = cfg.snapshot.remoteMachineLabels ?? {};
-  const selectedRemoteSourceSet = new Set(cfg.snapshot.remoteSources ?? []);
-  const selectedStatusBarSourceSet = new Set(cfg.snapshot.statusBarSources ?? []);
+  const selectedRemoteSourceSet = new Set(filterSelfSourceIds(cfg.snapshot.remoteSources ?? [], cfg.snapshot.machineLabel));
+  const selectedStatusBarSourceSet = new Set(filterSelfSourceIds(cfg.snapshot.statusBarSources ?? [], cfg.snapshot.machineLabel));
   const selectedHistorySourceSet = new Set([
     ...selectedRemoteSourceSet,
     ...selectedStatusBarSourceSet
   ]);
   const sanitizedHistorySources = [
     ...(readResult.archiveSources ?? []),
-    ...buildSanitizedHistorySources(readResult.snapshots)
+    ...buildSanitizedHistorySources(remoteSnapshots)
   ];
   const selectedDashboardRemoteProviders = buildSelectedRemoteSourceProviders(
-    readResult.snapshots,
+    remoteSnapshots,
     selectedRemoteSourceSet,
     aliasMap
   );
@@ -425,8 +427,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   );
 
   const remoteStatusBarItems = buildRemoteStatusBarItems(
-    readResult.snapshots,
-    cfg.snapshot.statusBarSources ?? [],
+    remoteSnapshots,
+    Array.from(selectedStatusBarSourceSet),
     aliasMap,
     cfg.displayMode,
     cfg.normalizedSources
@@ -449,6 +451,15 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     latest.codexCorrelatedHistory = undefined;
     latest.codexCorrelatedTodayUsage = undefined;
   }
+
+  const supplementedHistory = supplementLocalHistoryWithSelfArchives({
+    machineLabel: cfg.snapshot.machineLabel,
+    archiveSources: readResult.archiveSources ?? [],
+    claudeUsageHistory: effectiveProviders.includes('claude') ? latest.claudeUsageHistory : undefined,
+    codexCorrelatedHistory: effectiveProviders.includes('codex') ? latest.codexCorrelatedHistory : undefined
+  });
+  latest.claudeUsageHistory = supplementedHistory.claudeUsageHistory;
+  latest.codexCorrelatedHistory = supplementedHistory.codexCorrelatedHistory;
 
   // Panel-owned refreshes keep the loading/result/final-model sequence in sync.
   // The panel calls refreshNow directly, so the shared refresh path should not also broadcast

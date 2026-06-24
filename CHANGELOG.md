@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.7
+
+Fixes self-archive history being omitted from the dashboard history charts.
+
+**Included in this release:**
+
+- Restored local machine archive history to the dashboard's provider history lane. When `promptFuel.snapshot.path` points at a shared snapshot folder and `promptFuel.snapshot.machineLabel` matches archived monthly files for the current machine, PromptFuel now supplements local Claude/Codex history from those archives without requiring a visible self remote source such as `PHOENIX/claude`.
+- Preserved selected remote snapshot behavior for other machines, such as `WATCHER/codex`, while filtering self snapshot IDs out of visible remote/status-bar surfaces.
+- Added regression coverage for self-archive fill, same-day dedupe, local-history precedence, empty marker buckets, selected remote sources, disabled remote sources, and 1Y weekly chart bins.
+
 ## 1.0.6
 
 Fixes the usage dashboard refreshing about once per second when idle.
