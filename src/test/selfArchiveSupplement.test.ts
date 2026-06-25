@@ -205,6 +205,32 @@ describe('self archive history supplement', () => {
     assert.equal(result.claudeUsageHistory?.days[0].totalTokens, 1000);
   });
 
+  it('does not create disabled local provider lanes from self archives', () => {
+    const claudeDisabled = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [
+        source('PHOENIX', 'claude', [bucket('2026-04-23', 1000)]),
+        source('PHOENIX', 'codex', [bucket('2026-04-23', 2000, 'codex')])
+      ],
+      codexCorrelatedHistory: codexHistory([])
+    });
+    assert.equal(claudeDisabled.claudeUsageHistory, undefined);
+    assert.equal(claudeDisabled.codexCorrelatedHistory?.days.length, 1);
+    assert.equal(claudeDisabled.codexCorrelatedHistory?.days[0].totalTokens, 2000);
+
+    const codexDisabled = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [
+        source('PHOENIX', 'claude', [bucket('2026-04-24', 3000)]),
+        source('PHOENIX', 'codex', [bucket('2026-04-24', 4000, 'codex')])
+      ],
+      claudeUsageHistory: claudeHistory([])
+    });
+    assert.equal(codexDisabled.codexCorrelatedHistory, undefined);
+    assert.equal(codexDisabled.claudeUsageHistory?.days.length, 1);
+    assert.equal(codexDisabled.claudeUsageHistory?.days[0].totalTokens, 3000);
+  });
+
   it('does not double count when local and self archive share the same provider/date', () => {
     const result = supplementLocalHistoryWithSelfArchives({
       machineLabel: 'PHOENIX',
@@ -253,6 +279,16 @@ describe('self archive history supplement', () => {
       filterSelfSnapshots([snapshot('PHOENIX'), snapshot('WATCHER')], 'PHOENIX').map(item => item.snapshot.machineLabel),
       ['WATCHER']
     );
+  });
+
+  it('does not filter visible remote sources when machine label is empty or missing', () => {
+    const sourceIds = ['PHOENIX/claude', 'WATCHER/codex', 'PHOENIX/codex'];
+    const snapshots = [snapshot('PHOENIX'), snapshot('WATCHER')];
+
+    assert.deepEqual(filterSelfSourceIds(sourceIds, ''), sourceIds);
+    assert.deepEqual(filterSelfSourceIds(sourceIds, undefined), sourceIds);
+    assert.deepEqual(filterSelfSnapshots(snapshots, '').map(item => item.snapshot.machineLabel), ['PHOENIX', 'WATCHER']);
+    assert.deepEqual(filterSelfSnapshots(snapshots, undefined).map(item => item.snapshot.machineLabel), ['PHOENIX', 'WATCHER']);
   });
 
   it('ignores empty Codex marker buckets', () => {

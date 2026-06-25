@@ -11,7 +11,7 @@ export interface LocalHistorySupplementResult {
 }
 
 interface SupplementOptions {
-  machineLabel: string;
+  machineLabel?: string;
   archiveSources: SanitizedHistorySource[];
   claudeUsageHistory?: ClaudeUsageHistory;
   codexCorrelatedHistory?: CodexCorrelatedHistory;
@@ -19,7 +19,7 @@ interface SupplementOptions {
 
 export function filterSelfSourceIds(
   sourceIds: ReadonlyArray<string>,
-  machineLabel: string
+  machineLabel?: string
 ): string[] {
   if (!machineLabel) {
     return [...sourceIds];
@@ -30,7 +30,7 @@ export function filterSelfSourceIds(
 
 export function filterSelfSnapshots(
   snapshots: ReadonlyArray<ValidatedSnapshot>,
-  machineLabel: string
+  machineLabel?: string
 ): ValidatedSnapshot[] {
   if (!machineLabel) {
     return [...snapshots];
@@ -41,6 +41,13 @@ export function filterSelfSnapshots(
 export function supplementLocalHistoryWithSelfArchives(
   options: SupplementOptions
 ): LocalHistorySupplementResult {
+  if (!options.machineLabel) {
+    return {
+      claudeUsageHistory: options.claudeUsageHistory,
+      codexCorrelatedHistory: options.codexCorrelatedHistory
+    };
+  }
+
   const selfArchiveSources = options.archiveSources.filter(source =>
     source.machineLabel === options.machineLabel &&
     !source.stale &&
@@ -55,14 +62,18 @@ export function supplementLocalHistoryWithSelfArchives(
   }
 
   return {
-    claudeUsageHistory: supplementClaudeHistory(
-      options.claudeUsageHistory,
-      collectSelfArchiveBuckets(selfArchiveSources, 'claude')
-    ),
-    codexCorrelatedHistory: supplementCodexHistory(
-      options.codexCorrelatedHistory,
-      collectSelfArchiveBuckets(selfArchiveSources, 'codex')
-    )
+    claudeUsageHistory: options.claudeUsageHistory
+      ? supplementClaudeHistory(
+        options.claudeUsageHistory,
+        collectSelfArchiveBuckets(selfArchiveSources, 'claude')
+      )
+      : undefined,
+    codexCorrelatedHistory: options.codexCorrelatedHistory
+      ? supplementCodexHistory(
+        options.codexCorrelatedHistory,
+        collectSelfArchiveBuckets(selfArchiveSources, 'codex')
+      )
+      : undefined
   };
 }
 
