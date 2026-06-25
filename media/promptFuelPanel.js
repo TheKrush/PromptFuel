@@ -11,6 +11,8 @@
   var historyTooltipPayloads = {};
   var historyTooltipIdCounter = 0;
   var modelTooltipIdCounter = 0;
+  var modelColorAssignments = {};
+  var modelColorAssignmentCounter = 0;
   var HISTORY_TOOLTIP_MODEL_LIMIT = 12;
   var historyTooltipEl = null;
   var historyTooltipAnchor = null;
@@ -112,8 +114,12 @@
       return;
     }
 
+    var detailsChanged = details !== lastUsageDetails;
     lastUsageDetails = details;
     resetHistoryTooltipPayloads();
+    if (detailsChanged) {
+      resetModelColorAssignments();
+    }
     hideHistoryTooltip();
 
     el.innerHTML =
@@ -529,8 +535,8 @@
       ? point.binStartDateKey + ' to ' + point.binEndDateKey
       : point.dateKey || point.label || 'Unknown date';
     var total = Number(point.totalTokens || 0);
-    var hasModelStack = buildHistoryModelStackSegments(point, chart).length > 0;
-    var colorForModel = historyModelColorResolver(chart);
+    var hasModelStack = buildHistoryModelStackSegments(point, chart, provider).length > 0;
+    var colorForModel = historyModelColorResolver(chart, provider);
     var topModels = (point.models || [])
       .slice()
       .sort(function(a, b) { return Number(b.totalTokens || 0) - Number(a.totalTokens || 0); })
@@ -585,6 +591,11 @@
     modelTooltipIdCounter = 0;
   }
 
+  function resetModelColorAssignments() {
+    modelColorAssignments = {};
+    modelColorAssignmentCounter = 0;
+  }
+
   function registerHistoryTooltipPayload(payload) {
     historyTooltipIdCounter += 1;
     var id = 'history-tip-' + historyTooltipIdCounter;
@@ -616,6 +627,7 @@
     var label = segment.label || segment.model || 'Model';
     var costLabel = formatModelDistributionCost(segment);
     var rateLabel = formatModelDistributionRate(segment);
+    var colorProvider = inferProviderKey(providerLabel);
     var payload = {
       label: label,
       model: segment.model || label,
@@ -627,7 +639,7 @@
       rateLabel: rateLabel,
       activityLabel: activityLabel,
       activity: Number(segment.assistantMessages || 0),
-      color: modelSeriesColor(index)
+      color: modelColorFor(segment, colorProvider)
     };
     payload.ariaLabel = buildModelDistributionAriaLabel(payload);
     return payload;
@@ -708,7 +720,7 @@
   }
 
   function renderHistoryBarFill(point, height, chart, provider) {
-    var modelSegments = buildHistoryModelStackSegments(point, chart);
+    var modelSegments = buildHistoryModelStackSegments(point, chart, provider);
     if (modelSegments.length) {
       return renderHistoryModelStackFill(modelSegments, point, height, provider);
     }
@@ -718,9 +730,9 @@
     return '<div class="usage-history-bar-fill" style="height:' + height + '%"></div>';
   }
 
-  function hasHistoryModelStacks(chart) {
+  function hasHistoryModelStacks(chart, provider) {
     return Boolean(chart && chart.available && (chart.points || []).some(function(point) {
-      return buildHistoryModelStackSegments(point, chart).length > 0;
+      return buildHistoryModelStackSegments(point, chart, provider).length > 0;
     }));
   }
 
@@ -737,7 +749,7 @@
     return '<div class="usage-history-bar-fill stacked" style="height:' + height + '%">' + segmentHtml + '</div>';
   }
 
-  function buildHistoryModelStackSegments(point, chart) {
+  function buildHistoryModelStackSegments(point, chart, provider) {
     var total = Number(point && point.totalTokens || 0);
     var models = (point && point.models || []).filter(function(model) {
       return model && Number(model.totalTokens || 0) > 0;
@@ -747,13 +759,13 @@
     var modelTotal = models.reduce(function(sum, model) { return sum + Number(model.totalTokens || 0); }, 0);
     if (Math.abs(modelTotal - total) > Math.max(1, total * 0.01)) { return []; }
 
-    var palette = historyModelPalette(chart);
+    var palette = historyModelPalette(chart, provider);
     var segmentsByKey = {};
     models.forEach(function(model) {
-      var key = historyModelKey(model);
+      var key = historyModelKey(model, providerFromChartContext(chart, provider));
       var paletteEntry = palette.byModel[key] || palette.other;
       if (!paletteEntry) { return; }
-      var segmentKey = paletteEntry.model;
+      var segmentKey = paletteEntry.key || paletteEntry.model;
       if (!segmentsByKey[segmentKey]) {
         segmentsByKey[segmentKey] = {
           label: paletteEntry.label,
@@ -772,30 +784,34 @@
       .sort(function(a, b) { return a.index - b.index; });
   }
 
-  function historyModelColorResolver(chart) {
-    var palette = historyModelPalette(chart);
+  function historyModelColorResolver(chart, provider) {
+    var palette = historyModelPalette(chart, provider);
+    var fallbackProvider = providerFromChartContext(chart, provider);
     return function(model, fallbackIndex) {
-      var entry = palette.byModel[historyModelKey(model)] || palette.other;
-      return entry ? entry.color : modelSeriesColor(fallbackIndex || 0);
+      var entry = palette.byModel[historyModelKey(model, fallbackProvider)] || palette.other;
+      return entry ? entry.color : modelColorFor(model, fallbackProvider);
     };
   }
 
-  function historyModelPalette(chart) {
+  function historyModelPalette(chart, provider) {
     var points = chart && chart.points ? chart.points : [];
     var aggregate = chart && chart.source && chart.source.confidence === 'mixedDayBucket'
       ? aggregateCombinedModelDistribution(points)
       : aggregateModelDistribution(points);
     var byModel = {};
     var other;
+    var fallbackProvider = providerFromChartContext(chart, provider);
 
     aggregate.forEach(function(entry, index) {
+      var key = historyModelKey(entry, fallbackProvider);
       var paletteEntry = {
         label: entry.label || entry.model || 'Model',
         model: entry.model || entry.label || 'Model',
+        key: key,
         index: index,
-        color: modelSeriesColor(index)
+        color: modelColorFor(entry, fallbackProvider)
       };
-      byModel[historyModelKey(entry)] = paletteEntry;
+      byModel[key] = paletteEntry;
       if (paletteEntry.model === 'Other' || paletteEntry.label === 'Other') {
         other = paletteEntry;
       }
@@ -804,9 +820,8 @@
     return { byModel: byModel, other: other };
   }
 
-  function historyModelKey(model) {
-    var provider = model && model.provider ? model.provider + ':' : '';
-    return provider + String(model && (model.model || model.label) || 'unknown');
+  function historyModelKey(model, fallbackProvider) {
+    return modelColorKey(model, fallbackProvider);
   }
 
   function renderCombinedHistoryBarFill(point, height) {
@@ -907,8 +922,8 @@
       var percent = Math.max(0, Number(segment.percent || 0));
       var dashLength = Math.max(0, percent * circumference);
       var gapLength = Math.max(0, circumference - dashLength);
-      var color = modelSeriesColor(index);
       var payload = buildModelDistributionTooltipPayload(distribution, segment, index);
+      var color = payload.color;
       var tooltipId = registerModelTooltipPayload(payload);
 
       var circle = '<circle class="usage-model-donut-segment" ' +
@@ -940,8 +955,8 @@
       '<span>Rate / 1M</span>' +
     '</div>';
     var rows = (distribution.segments || []).map(function(segment, index) {
-      var color = modelSeriesColor(index);
       var payload = buildModelDistributionTooltipPayload(distribution, segment, index);
+      var color = payload.color;
       var tooltipId = registerModelTooltipPayload(payload);
       var providerLabel = modelDistributionProviderLabel(distribution, segment) || '—';
       return '<div class="usage-model-row" tabindex="0" data-model-tip-id="' + escAttr(tooltipId) + '" aria-label="' + escAttr(payload.ariaLabel) + '">' +
@@ -954,6 +969,60 @@
       '</div>';
     }).join('');
     return '<div class="usage-model-legend" role="table" aria-label="Model distribution details">' + header + rows + '</div>';
+  }
+
+  function modelColorFor(model, fallbackProvider) {
+    var key = modelColorKey(model, fallbackProvider);
+    if (!modelColorAssignments[key]) {
+      modelColorAssignments[key] = modelSeriesColor(modelColorAssignmentCounter);
+      modelColorAssignmentCounter += 1;
+    }
+    return modelColorAssignments[key];
+  }
+
+  function modelColorKey(model, fallbackProvider) {
+    var provider = modelColorProvider(model, fallbackProvider);
+    var name = modelColorName(model);
+    return provider + '\0' + name;
+  }
+
+  function modelColorProvider(model, fallbackProvider) {
+    var provider = normalizeModelColorPart(model && model.provider);
+    if (!provider && fallbackProvider !== 'combined') {
+      provider = normalizeModelColorPart(fallbackProvider);
+    }
+    if (!provider) {
+      provider = inferProviderKey(model && (model.providerLabel || model.label || model.model));
+    }
+    return provider;
+  }
+
+  function modelColorName(model) {
+    var raw = model && (model.model || model.pricingModel || model.label) || 'unknown';
+    var name = String(raw).replace(/^(claude|codex)\s*[-:]\s*/i, '');
+    return normalizeModelColorPart(name) || 'unknown';
+  }
+
+  function normalizeModelColorPart(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function providerFromChartContext(chart, provider) {
+    var normalizedProvider = normalizeModelColorPart(provider);
+    if (normalizedProvider === 'claude' || normalizedProvider === 'codex') {
+      return normalizedProvider;
+    }
+    if (chart && chart.providerLabel) {
+      return inferProviderKey(chart.providerLabel);
+    }
+    return '';
+  }
+
+  function inferProviderKey(value) {
+    var text = normalizeModelColorPart(value);
+    if (text.indexOf('codex') >= 0) { return 'codex'; }
+    if (text.indexOf('claude') >= 0) { return 'claude'; }
+    return '';
   }
 
   function modelSeriesColor(index) {

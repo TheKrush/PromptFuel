@@ -12,7 +12,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderClaudeModelDistribution: renderClaudeModelDistribution, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
+    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderClaudeModelDistribution: renderClaudeModelDistribution, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, resetModelColorAssignments: resetModelColorAssignments, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
   );
   const fakeElement = {
     value: '',
@@ -241,6 +241,66 @@ function main() {
   assert.equal(combinedPayloads['model-tip-2'].providerLabel, 'Codex', 'combined payload infers Codex provider attribution');
   assert.equal(combinedPayloads['model-tip-2'].activityLabel, 'Correlated turns', 'combined Codex payload labels activity as correlated turns');
 
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  sandbox.__chartTooltipTest.resetModelColorAssignments();
+  const rankSwapChart = {
+    available: true,
+    title: 'Token trend',
+    providerLabel: 'Claude',
+    rangeLabel: '1M / 30d',
+    ranges: [{ key: '1M', label: '1M', available: true, active: true }],
+    maxTotalTokens: 1000,
+    source: { confidence: 'trustedCompletedTurnUsage', label: 'Claude assistant-message JSONL history buckets' },
+    points: [{
+      dateKey: '2026-06-23',
+      label: '06-23',
+      totalTokens: 1000,
+      inputTokens: 600,
+      outputTokens: 400,
+      cacheTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      assistantMessages: 5,
+      sourcePointCount: 1,
+      models: [
+        { label: 'opus-4.7', model: 'claude-opus-4-7', provider: 'claude', providerLabel: 'Claude', totalTokens: 600, assistantMessages: 3 },
+        { label: 'fable-5', model: 'claude-fable-5', provider: 'claude', providerLabel: 'Claude', totalTokens: 400, assistantMessages: 2 }
+      ]
+    }]
+  };
+  const rankSwapHistoryHtml = sandbox.__chartTooltipTest.renderHistoryChart(rankSwapChart, 'claude', '1M', rankSwapChart.source);
+  const rankSwapHistoryPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-1'];
+  const trendOpus = rankSwapHistoryPayload.topModels.find(model => model.label === 'opus-4.7');
+  const trendFable = rankSwapHistoryPayload.topModels.find(model => model.label === 'fable-5');
+  const rankSwapBarColors = historyBarSegmentColors(rankSwapHistoryHtml);
+  assert.equal(rankSwapBarColors[0], trendOpus.color, 'rank-swap trend Opus bar uses the Opus identity color');
+  assert.equal(rankSwapBarColors[1], trendFable.color, 'rank-swap trend Fable bar uses the Fable identity color');
+
+  const rankSwapDistribution = {
+    available: true,
+    title: 'Model distribution',
+    providerLabel: 'Claude',
+    rangeLabel: '1M / 30d',
+    totalTokens: 1700,
+    source: { confidence: 'trustedCompletedTurnUsage', label: 'Claude assistant-message JSONL history buckets' },
+    segments: [
+      { label: 'fable-5', model: 'claude-fable-5', provider: 'claude', providerLabel: 'Claude', totalTokens: 900, assistantMessages: 4, percent: 900 / 1700, percentLabel: '53%' },
+      { label: 'opus-4.7', model: 'claude-opus-4-7', provider: 'claude', providerLabel: 'Claude', totalTokens: 800, assistantMessages: 3, percent: 800 / 1700, percentLabel: '47%' }
+    ]
+  };
+  const rankSwapDistributionHtml = sandbox.__chartTooltipTest.renderClaudeModelDistribution(rankSwapDistribution, rankSwapDistribution.source);
+  const rankSwapPayloads = Object.values(sandbox.__chartTooltipTest.getPayloads());
+  const distributionFable = rankSwapPayloads.find(payload => payload.kind === 'modelDistribution' && payload.model === 'claude-fable-5');
+  const distributionOpus = rankSwapPayloads.find(payload => payload.kind === 'modelDistribution' && payload.model === 'claude-opus-4-7');
+  const rankSwapDonutColors = modelDistributionDonutColors(rankSwapDistributionHtml);
+  const rankSwapSwatchColors = modelDistributionSwatchColors(rankSwapDistributionHtml);
+  assert.equal(distributionFable.color, trendFable.color, 'rank-swap Fable tooltip keeps the trend-assigned model color');
+  assert.equal(distributionOpus.color, trendOpus.color, 'rank-swap Opus tooltip keeps the trend-assigned model color');
+  assert.equal(rankSwapDonutColors[0], trendFable.color, 'rank-swap distribution Fable donut segment keeps the Fable color despite being first');
+  assert.equal(rankSwapDonutColors[1], trendOpus.color, 'rank-swap distribution Opus donut segment keeps the Opus color despite being second');
+  assert.equal(rankSwapSwatchColors[0], trendFable.color, 'rank-swap distribution Fable legend swatch keeps the Fable color despite being first');
+  assert.equal(rankSwapSwatchColors[1], trendOpus.color, 'rank-swap distribution Opus legend swatch keeps the Opus color despite being second');
+
   const positionSource = sandbox.__chartTooltipTest.positionHistoryTooltipSource;
   assert.match(positionSource, /getBoundingClientRect/, 'tooltip positions from bar geometry');
   assert.match(positionSource, /anchorRect\.left \+ \(anchorRect\.width - tipRect\.width\) \/ 2/, 'tooltip anchors near the bar center');
@@ -277,6 +337,21 @@ function main() {
   assert.match(styles, /\.ab-tip-provider-row\.codex[\s\S]*repeating-linear-gradient/, 'Codex provider attribution keeps hatch treatment');
 
   console.log('PASS: chart tooltip smoke tests passed.');
+}
+
+function historyBarSegmentColors(html) {
+  return Array.from(String(html || '').matchAll(/usage-history-bar-segment[^"]*" style="[^"]*background-color:([^";]+)[^"]*"/g))
+    .map(match => match[1]);
+}
+
+function modelDistributionDonutColors(html) {
+  return Array.from(String(html || '').matchAll(/usage-model-donut-segment"[^>]*data-model-tip-id="model-tip-\d+"[^>]*stroke="([^"]+)"/g))
+    .map(match => match[1]);
+}
+
+function modelDistributionSwatchColors(html) {
+  return Array.from(String(html || '').matchAll(/usage-model-swatch" style="background:([^"]+)"/g))
+    .map(match => match[1]);
 }
 
 main();
