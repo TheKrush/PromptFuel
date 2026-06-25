@@ -917,8 +917,8 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 .ab-tip{
   position:fixed;
   z-index:50;
-  width:min(280px,calc(100vw - 16px));
-  max-width:280px;
+  width:min(320px,calc(100vw - 16px));
+  max-width:320px;
   padding:9px 10px;
   border:1px solid var(--vscode-panel-border,var(--ab-keyline));
   border-radius:6px;
@@ -930,10 +930,8 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   line-height:1.35
 }
 .ab-tip-head{
-  display:flex;
-  justify-content:space-between;
-  gap:8px;
-  align-items:flex-start;
+  display:grid;
+  gap:2px;
   border-bottom:1px solid rgba(127,127,127,.18);
   padding-bottom:6px;
   margin-bottom:7px
@@ -941,16 +939,16 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 .ab-tip-title{
   min-width:0;
   font-weight:650;
+  font-size:12px;
   color:var(--vscode-foreground);
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap
+  overflow-wrap:break-word;
+  white-space:normal
 }
 .ab-tip-source{
-  flex:0 1 auto;
   color:var(--vscode-descriptionForeground);
-  text-align:right;
-  max-width:128px
+  font-size:10px;
+  text-align:left;
+  overflow-wrap:break-word
 }
 .ab-tip-stats{
   display:grid;

@@ -63,6 +63,8 @@ function main() {
       dateKey: '2026-05-17',
       label: 'May 17',
       totalTokens: 3000,
+      binStartDateKey: '2026-05-28',
+      binEndDateKey: '2026-06-24',
       inputTokens: 1600,
       outputTokens: 1400,
       cacheTokens: 120,
@@ -93,10 +95,10 @@ function main() {
   const payloads = sandbox.__chartTooltipTest.getPayloads();
   const payload = payloads['history-tip-1'];
   assert.equal(payload.provider, 'combined', 'payload records combined mode');
-  assert.equal(payload.binLabel, '2026-05-17', 'payload includes a date/bin header');
+  assert.equal(payload.binLabel, '2026-05-28 to 2026-06-24', 'payload includes the full date-range header');
   assert.equal(payload.totalTokens, 3000, 'payload includes total tokens');
   assert.equal(payload.activity, 5, 'payload includes message/turn count');
-  assert.equal(payload.sourceText, 'Claude trusted usage + Codex correlated usage', 'combined payload uses safe provider trust wording');
+  assert.equal(payload.sourceText, 'Claude trusted usage + Codex correlated usage', 'combined payload keeps source wording');
   assert.deepEqual(payload.providerRows.map(row => row.label), ['Claude', 'Codex'], 'combined payload includes provider attribution');
   assert.deepEqual(payload.providerRows.map(row => row.tokens), [2000, 1000], 'combined payload includes provider token totals');
   assert.equal(payload.showProviderSwatches, false, 'combined model-stacked tooltip omits provider swatches while preserving provider totals');
@@ -108,6 +110,22 @@ function main() {
   assert.doesNotMatch(combinedHtml, /usage-history-bar-segment codex model/, 'combined stacked fills do not use aggregate Codex provider classes');
   assert.match(payload.topModels[0].label, /^Claude/, 'combined tooltip model labels keep provider attribution');
   assert.match(payload.topModels[1].label, /Codex$/, 'combined tooltip model labels keep Codex attribution');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const combinedYearChart = {
+    ...combinedChart,
+    rangeLabel: '1Y / weekly bins',
+    ranges: [{ key: '1Y', label: '1Y', available: true, active: true }],
+    points: [{
+      ...combinedChart.points[0],
+      binStartDateKey: '2025-12-29',
+      binEndDateKey: '2026-01-04'
+    }]
+  };
+  sandbox.__chartTooltipTest.renderHistoryChart(combinedYearChart, 'combined', '1Y', combinedYearChart.source);
+  const yearPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-1'];
+  assert.equal(yearPayload.binLabel, '2025-12-29 to 2026-01-04', '1Y combined tooltip preserves the full weekly date range');
+  assert.equal(yearPayload.sourceText, 'Claude trusted usage + Codex correlated usage', '1Y combined tooltip keeps source wording');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const fallbackCombinedChart = {
@@ -158,6 +176,8 @@ function main() {
   const partialAttributionHtml = sandbox.__chartTooltipTest.renderHistoryChart(partialAttributionChart, 'claude', '1W', partialAttributionChart.source);
   assert.match(partialAttributionHtml, /class="usage-history-bar-fill" style="height:100%"/, 'partial model attribution falls back to total bar height');
   assert.doesNotMatch(partialAttributionHtml, /usage-history-bar-fill stacked/, 'partial model attribution does not render misleading partial stacks');
+  const providerPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-2'];
+  assert.equal(providerPayload.sourceText, 'Claude trusted usage', 'provider chart tooltip keeps source wording');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const splitDistribution = {
@@ -240,8 +260,17 @@ function main() {
   assert.match(renderTooltipSource, /ab-tip-model-row[\s\S]*ab-tip-swatch/, 'Top Models rows keep model swatches');
 
   const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
+  const tipHeadBlock = styles.match(/\.ab-tip-head\{[^}]*\}/)?.[0] || '';
+  const tipTitleBlock = styles.match(/\.ab-tip-title\{[^}]*\}/)?.[0] || '';
+  const tipSourceBlock = styles.match(/\.ab-tip-source\{[^}]*\}/)?.[0] || '';
   assert.match(styles, /\.ab-tip\{[\s\S]*position:fixed/, 'single tooltip style is fixed-position for webview edge handling');
   assert.match(styles, /\.ab-tip\{[\s\S]*pointer-events:none/, 'tooltip does not cause hover jitter');
+  assert.match(tipHeadBlock, /display:grid/, 'tooltip header stacks title and source vertically');
+  assert.doesNotMatch(tipHeadBlock, /justify-content:space-between/, 'tooltip header does not squeeze title and source horizontally');
+  assert.match(tipTitleBlock, /white-space:normal/, 'tooltip title can wrap instead of truncating date ranges');
+  assert.doesNotMatch(tipTitleBlock, /overflow:hidden/, 'tooltip title does not clip date ranges');
+  assert.doesNotMatch(tipTitleBlock, /text-overflow:ellipsis/, 'tooltip title does not ellipsize date ranges');
+  assert.match(tipSourceBlock, /text-align:left/, 'tooltip source renders as a subtitle under the title');
   assert.match(styles, /\.usage-history-bar:focus-visible/, 'focus-visible styling exists for chart bars');
   assert.match(styles, /\.usage-model-donut-segment:focus-visible/, 'focus-visible styling exists for model donut segments');
   assert.match(styles, /\.usage-model-row:focus-visible/, 'focus-visible styling exists for model legend rows');

@@ -1060,11 +1060,13 @@
     var title = document.createElement('div');
     title.className = 'ab-tip-title';
     title.textContent = payload.binLabel || 'Usage bin';
-    var source = document.createElement('div');
-    source.className = 'ab-tip-source';
-    source.textContent = payload.sourceText || 'Usage history';
     header.appendChild(title);
-    header.appendChild(source);
+    if (payload.sourceText) {
+      var source = document.createElement('div');
+      source.className = 'ab-tip-source';
+      source.textContent = payload.sourceText;
+      header.appendChild(source);
+    }
     tip.appendChild(header);
 
     var stats = document.createElement('div');

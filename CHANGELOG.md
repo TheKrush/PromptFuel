@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.8
+
+Improves usage chart tooltip readability.
+
+**Included in this release:**
+
+- Changed chart tooltip headers to show the date range as the primary header with the source/provenance text stacked underneath as a smaller subtitle, so long ranges such as `YYYY-MM-DD to YYYY-MM-DD` remain readable.
+- Kept existing usage details in the tooltip, including total tokens, messages/turns, provider breakdowns, and top model rows.
+- Added tooltip smoke coverage for full 1M and 1Y range labels, stacked header styling, and provider-tab source text.
+
 ## 1.0.7
 
 Fixes self-archive history being omitted from the dashboard history charts.
