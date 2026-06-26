@@ -11,6 +11,8 @@
   var historyTooltipPayloads = {};
   var historyTooltipIdCounter = 0;
   var modelTooltipIdCounter = 0;
+  var sourceTooltipIdCounter = 0;
+  var usageTooltipIdCounter = 0;
   var modelColorAssignments = {};
   var modelColorAssignmentCounter = 0;
   var HISTORY_TOOLTIP_MODEL_LIMIT = 12;
@@ -331,8 +333,8 @@
       return '';
     }
     return '<div class="usage-history-legend" aria-label="Combined history legend">' +
-      '<span><span class="usage-history-legend-swatch claude" title="Claude trusted completed-turn data"></span>Claude</span>' +
-      '<span><span class="usage-history-legend-swatch codex" title="Codex correlated data; hatched"></span>Codex</span>' +
+      '<span><span class="usage-history-legend-swatch claude"' + renderUsageNoteTooltipAttributes('Claude', 'Trusted completed-turn data') + '></span>Claude</span>' +
+      '<span><span class="usage-history-legend-swatch codex"' + renderUsageNoteTooltipAttributes('Codex', 'Correlated day-bucket data; hatched') + '></span>Codex</span>' +
     '</div>';
   }
 
@@ -357,13 +359,13 @@
     if (!card) { return ''; }
     var unavailableClass = card.available ? '' : ' unavailable';
     var tooltip = card.detailTooltip || (card.source && (card.source.detail || card.source.unavailableReason)) || '';
-    var titleAttr = tooltip ? ' title="' + escAttr(tooltip) + '"' : '';
+    var tooltipAttrs = renderUsageNoteTooltipAttributes(card.label || 'API estimate', tooltip);
     var detail = card.detail || '';
     var detailLines = renderMetricDetailLines(card);
     var visibleDetail = detailLines || (detail && detail.indexOf('not actual billing') < 0 ? esc(detail) : '');
     var parts = [esc(card.label || 'API estimate') + ': <span class="usage-api-estimate-value">' + esc(card.value || 'Unavailable') + '</span>'];
     if (visibleDetail) { parts.push(visibleDetail); }
-    return '<div class="usage-api-estimate-strip' + unavailableClass + '"' + titleAttr + '>' +
+    return '<div class="usage-api-estimate-strip' + unavailableClass + '"' + tooltipAttrs + '>' +
       parts.join(detailLines ? '<br>' : ' · ') +
     '</div>';
   }
@@ -484,10 +486,10 @@
     var active = range && range.key === activeRangeKey;
     var unavailable = !range || !range.available;
     var cls = 'usage-history-range' + (active ? ' active' : '') + (unavailable ? ' unavailable' : '');
-    var title = unavailable ? ' title="Unavailable in this slice"' : '';
+    var tooltipAttrs = unavailable ? renderUsageNoteTooltipAttributes(range && range.label ? range.label : 'Range', 'Unavailable in this slice') : '';
     var dataRange = range && range.key ? ' data-usage-history-range="' + esc(range.key) + '"' : '';
     var dataProvider = provider ? ' data-history-provider="' + esc(provider) + '"' : '';
-    return '<span class="' + cls + '"' + dataRange + dataProvider + title + '>' + esc(range && range.label ? range.label : 'Range') + '</span>';
+    return '<span class="' + cls + '"' + dataRange + dataProvider + tooltipAttrs + '>' + esc(range && range.label ? range.label : 'Range') + '</span>';
   }
 
   function buildHistoryPointTooltip(point) {
@@ -589,6 +591,8 @@
     historyTooltipPayloads = {};
     historyTooltipIdCounter = 0;
     modelTooltipIdCounter = 0;
+    sourceTooltipIdCounter = 0;
+    usageTooltipIdCounter = 0;
   }
 
   function resetModelColorAssignments() {
@@ -607,6 +611,22 @@
     modelTooltipIdCounter += 1;
     var id = 'model-tip-' + modelTooltipIdCounter;
     payload.kind = 'modelDistribution';
+    historyTooltipPayloads[id] = payload;
+    return id;
+  }
+
+  function registerSourceTooltipPayload(payload) {
+    sourceTooltipIdCounter += 1;
+    var id = 'source-tip-' + sourceTooltipIdCounter;
+    payload.kind = 'sourceChip';
+    historyTooltipPayloads[id] = payload;
+    return id;
+  }
+
+  function registerUsageTooltipPayload(payload) {
+    usageTooltipIdCounter += 1;
+    var id = 'usage-tip-' + usageTooltipIdCounter;
+    payload.kind = 'usageNote';
     historyTooltipPayloads[id] = payload;
     return id;
   }
@@ -855,15 +875,23 @@
     if (!source) { return ''; }
     var cfg = SOURCE_CHIP_CONFIG[source.confidence];
     if (!cfg) { return ''; }
-    var parts = [source.label];
+    var parts = [];
+    if (source.label) { parts.push(source.label); }
     if (source.detail) { parts.push(source.detail); }
     if (source.unavailableReason) { parts.push(source.unavailableReason); }
     var chipMode = mode === 'compact' || mode === 'glyph' ? mode : 'full';
     var label = chipMode === 'full' ? cfg.fullLabel : cfg.compactLabel;
-    var title = parts.join(' - ');
-    var aria = cfg.fullLabel + (title ? ': ' + title : '');
+    var details = parts.join(' - ');
+    var aria = cfg.fullLabel + (details ? ': ' + details : '');
+    var tooltipId = registerSourceTooltipPayload({
+      title: cfg.fullLabel,
+      subtitle: source.label || '',
+      detail: source.detail || '',
+      unavailableReason: source.unavailableReason || '',
+      ariaLabel: aria
+    });
     var labelHtml = chipMode === 'glyph' ? '' : '<span class="source-chip-label">' + esc(label) + '</span>';
-    return '<span class="source-chip ' + cfg.cls + ' ' + chipMode + '" title="' + esc(title) + '" aria-label="' + esc(aria) + '">' +
+    return '<span class="source-chip ' + cfg.cls + ' ' + chipMode + '" tabindex="0" data-source-tip-id="' + escAttr(tooltipId) + '" aria-label="' + escAttr(aria) + '">' +
       '<span class="source-chip-mark"></span>' +
       labelHtml +
     '</span>';
@@ -872,6 +900,18 @@
   function renderMetricSourceChip(source, parentSource) {
     if (!source) { return ''; }
     return renderSourceChip(source, 'glyph');
+  }
+
+  function renderUsageNoteTooltipAttributes(title, body) {
+    if (!body) { return ''; }
+    var cleanTitle = title || 'Usage detail';
+    var cleanBody = String(body);
+    var id = registerUsageTooltipPayload({
+      title: cleanTitle,
+      body: cleanBody,
+      ariaLabel: cleanTitle + ': ' + cleanBody
+    });
+    return ' tabindex="0" data-usage-tip-id="' + escAttr(id) + '" aria-label="' + escAttr(cleanTitle + ': ' + cleanBody) + '"';
   }
 
   function renderClaudeModelDistribution(distribution, parentSource) {
@@ -1078,12 +1118,21 @@
 
   function closestHistoryTooltipTarget(target) {
     while (target && target !== document) {
-      if (target.getAttribute && (target.getAttribute('data-history-tip-id') || target.getAttribute('data-model-tip-id'))) {
+      if (tooltipPayloadIdFromTarget(target)) {
         return target;
       }
       target = target.parentElement;
     }
     return null;
+  }
+
+  function tooltipPayloadIdFromTarget(target) {
+    if (!target || !target.getAttribute) { return ''; }
+    return target.getAttribute('data-history-tip-id') ||
+      target.getAttribute('data-model-tip-id') ||
+      target.getAttribute('data-source-tip-id') ||
+      target.getAttribute('data-usage-tip-id') ||
+      '';
   }
 
   function ensureHistoryTooltip() {
@@ -1097,10 +1146,13 @@
   }
 
   function showHistoryTooltip(anchor) {
-    var id = anchor && anchor.getAttribute ? (anchor.getAttribute('data-history-tip-id') || anchor.getAttribute('data-model-tip-id')) : '';
+    var id = tooltipPayloadIdFromTarget(anchor);
     var payload = id ? historyTooltipPayloads[id] : null;
     if (!payload) { hideHistoryTooltip(); return; }
     var tip = ensureHistoryTooltip();
+    if (historyTooltipAnchor && historyTooltipAnchor !== anchor && historyTooltipAnchor.removeAttribute) {
+      historyTooltipAnchor.removeAttribute('aria-describedby');
+    }
     historyTooltipAnchor = anchor;
     anchor.setAttribute('aria-describedby', tip.id);
     renderHistoryTooltipContent(tip, payload);
@@ -1121,6 +1173,14 @@
 
     if (payload.kind === 'modelDistribution') {
       renderModelDistributionTooltipContent(tip, payload);
+      return;
+    }
+    if (payload.kind === 'sourceChip') {
+      renderSourceTooltipContent(tip, payload);
+      return;
+    }
+    if (payload.kind === 'usageNote') {
+      renderUsageNoteTooltipContent(tip, payload);
       return;
     }
 
@@ -1192,6 +1252,51 @@
       modelList.appendChild(empty);
     }
     tip.appendChild(modelList);
+  }
+
+  function renderSourceTooltipContent(tip, payload) {
+    var header = document.createElement('div');
+    header.className = 'ab-tip-head';
+    var title = document.createElement('div');
+    title.className = 'ab-tip-title';
+    title.textContent = payload.title || 'Usage source';
+    header.appendChild(title);
+    if (payload.subtitle) {
+      var subtitle = document.createElement('div');
+      subtitle.className = 'ab-tip-source';
+      subtitle.textContent = payload.subtitle;
+      header.appendChild(subtitle);
+    }
+    tip.appendChild(header);
+
+    var notes = [payload.detail, payload.unavailableReason].filter(Boolean);
+    if (notes.length) {
+      var list = document.createElement('div');
+      list.className = 'ab-tip-list';
+      appendHistoryTooltipListTitle(list, 'Details');
+      notes.forEach(function(text) {
+        var item = document.createElement('div');
+        item.className = 'ab-tip-note';
+        item.textContent = text;
+        list.appendChild(item);
+      });
+      tip.appendChild(list);
+    }
+  }
+
+  function renderUsageNoteTooltipContent(tip, payload) {
+    var header = document.createElement('div');
+    header.className = 'ab-tip-head';
+    var title = document.createElement('div');
+    title.className = 'ab-tip-title';
+    title.textContent = payload.title || 'Usage detail';
+    header.appendChild(title);
+    tip.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'ab-tip-note';
+    body.textContent = payload.body || '';
+    tip.appendChild(body);
   }
 
   function renderModelDistributionTooltipContent(tip, payload) {
@@ -2197,11 +2302,11 @@
   function renderUsageMetricCard(card, parentSource) {
     var unavailableClass = card && card.available ? '' : ' unavailable';
     var chip = renderMetricSourceChip(card && card.source, parentSource);
-    var detailTitle = card && card.detailTooltip ? ' title="' + esc(card.detailTooltip) + '"' : '';
+    var detailTooltipAttrs = card && card.detailTooltip ? renderUsageNoteTooltipAttributes(card.label || 'Metric detail', card.detailTooltip) : '';
     return '<section class="usage-metric-card' + unavailableClass + '">' +
       '<div class="usage-metric-label"><span class="usage-metric-label-text">' + esc(card.label || 'Metric') + '</span>' + chip + '</div>' +
       '<div class="usage-metric-value">' + esc(card.value || 'Unavailable') + '</div>' +
-      '<div class="usage-metric-detail"' + detailTitle + '>' + renderMetricDetail(card) + '</div>' +
+      '<div class="usage-metric-detail"' + detailTooltipAttrs + '>' + renderMetricDetail(card) + '</div>' +
     '</section>';
   }
 

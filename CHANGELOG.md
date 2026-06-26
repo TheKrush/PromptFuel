@@ -10,6 +10,7 @@ Improves usage chart tooltip readability.
 - Kept existing usage details in the tooltip, including total tokens, messages/turns, provider breakdowns, and top model rows.
 - Added tooltip smoke coverage for full 1M and 1Y range labels, stacked header styling, and provider-tab source text.
 - Fixed Usage dashboard model colors so token trend stacks, Model Distribution donut segments, legend rows, and tooltip payloads resolve colors by provider + model identity instead of each surface's local sort order.
+- Replaced native Usage source/detail title tooltips with the dashboard's custom dark tooltip shell so provenance chips and related notes position above the target and stay clamped inside the webview.
 
 ## 1.0.7
 

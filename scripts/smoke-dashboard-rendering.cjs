@@ -567,7 +567,9 @@ function main() {
     detailTooltip: 'Estimated <combined> "cost"; not actual billing',
     available: true
   });
-  assert.match(escapedApiHtml, /title="Estimated &lt;combined&gt; &quot;cost&quot;; not actual billing"/, 'API-equivalent tooltip is escaped as an attribute');
+  assert.match(escapedApiHtml, /data-usage-tip-id="usage-tip-\d+"/, 'API-equivalent tooltip uses the custom tooltip payload lane');
+  assert.match(escapedApiHtml, /aria-label="1D API-equivalent: Estimated &lt;combined&gt; &quot;cost&quot;; not actual billing"/, 'API-equivalent tooltip note is escaped as an ARIA fallback');
+  assert.doesNotMatch(escapedApiHtml, /title="/, 'API-equivalent tooltip does not rely on native title placement');
   assert.match(escapedApiHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API-equivalent detailLines are escaped and br-joined');
   assert.doesNotMatch(visibleTextFromHtml(escapedApiHtml), /Claude \$57\.34 \| Codex \$114/, 'API-equivalent detailLines suppress fallback detail text');
 

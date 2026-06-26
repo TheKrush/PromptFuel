@@ -344,7 +344,16 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   white-space:nowrap;
   vertical-align:middle;
   line-height:1.4;
-  max-width:100%
+  max-width:100%;
+  cursor:help
+}
+.source-chip:focus-visible,
+.usage-history-legend-swatch:focus-visible,
+.usage-history-range:focus-visible,
+.usage-api-estimate-strip:focus-visible,
+.usage-metric-detail:focus-visible{
+  outline:1px solid var(--vscode-focusBorder);
+  outline-offset:2px
 }
 .source-chip.glyph{
   padding:2px;
@@ -964,8 +973,13 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 }
 .ab-tip-stat span,
 .ab-tip-list-title,
-.ab-tip-empty{
+.ab-tip-empty,
+.ab-tip-note{
   color:var(--vscode-descriptionForeground)
+}
+.ab-tip-note{
+  overflow-wrap:break-word;
+  white-space:normal
 }
 .ab-tip-stat strong{
   color:var(--vscode-foreground);

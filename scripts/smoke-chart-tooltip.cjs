@@ -12,7 +12,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderClaudeModelDistribution: renderClaudeModelDistribution, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, resetModelColorAssignments: resetModelColorAssignments, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
+    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderClaudeModelDistribution: renderClaudeModelDistribution, renderApiEstimateStrip: renderApiEstimateStrip, renderUsageMetricCard: renderUsageMetricCard, renderHistoryRange: renderHistoryRange, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, resetModelColorAssignments: resetModelColorAssignments, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), tooltipPayloadIdFromTargetSource: String(tooltipPayloadIdFromTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
   );
   const fakeElement = {
     value: '',
@@ -86,19 +86,26 @@ function main() {
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const combinedHtml = sandbox.__chartTooltipTest.renderHistoryChart(combinedChart, 'combined', '1M', combinedChart.source);
   assert.match(combinedHtml, /data-history-tip-id="history-tip-1"/, 'history bars carry a bespoke tooltip payload id');
+  assert.match(combinedHtml, /class="source-chip mixed glyph"[^>]*data-source-tip-id="source-tip-1"/, 'history chart source chips carry bespoke tooltip payload ids');
+  assert.match(combinedHtml, /class="source-chip mixed glyph"[^>]*tabindex="0"/, 'history chart source chips are keyboard focusable');
   assert.match(combinedHtml, /tabindex="0"/, 'history bars are keyboard focusable');
   assert.match(combinedHtml, /aria-label="/, 'history bars keep an ARIA fallback');
   assert.doesNotMatch(combinedHtml, /usage-history-bar[^>]*title="/, 'history bars do not rely on native title tooltip UX');
+  assert.doesNotMatch(combinedHtml, /source-chip[^>]*title="/, 'source chips do not rely on native title tooltip UX');
   assert.doesNotMatch(combinedHtml, /<img src=x onerror=alert\(1\)>/, 'unsafe model text is not emitted as raw HTML');
   assert.match(combinedHtml, /&lt;img src=x onerror=alert\(1\)&gt;Codex/, 'unsafe model text is escaped in ARIA fallback');
 
   const payloads = sandbox.__chartTooltipTest.getPayloads();
   const payload = payloads['history-tip-1'];
+  const sourcePayload = payloads['source-tip-1'];
   assert.equal(payload.provider, 'combined', 'payload records combined mode');
   assert.equal(payload.binLabel, '2026-05-28 to 2026-06-24', 'payload includes the full date-range header');
   assert.equal(payload.totalTokens, 3000, 'payload includes total tokens');
   assert.equal(payload.activity, 5, 'payload includes message/turn count');
   assert.equal(payload.sourceText, 'Claude trusted usage + Codex correlated usage', 'combined payload keeps source wording');
+  assert.equal(sourcePayload.kind, 'sourceChip', 'source chip payload is routed through the custom tooltip shell');
+  assert.equal(sourcePayload.title, 'Mixed', 'source chip payload uses the compact source type as the tooltip title');
+  assert.equal(sourcePayload.subtitle, 'Mixed Claude trusted and Codex correlated history', 'source chip payload keeps the provenance label as a subtitle');
   assert.deepEqual(payload.providerRows.map(row => row.label), ['Claude', 'Codex'], 'combined payload includes provider attribution');
   assert.deepEqual(payload.providerRows.map(row => row.tokens), [2000, 1000], 'combined payload includes provider token totals');
   assert.equal(payload.showProviderSwatches, false, 'combined model-stacked tooltip omits provider swatches while preserving provider totals');
@@ -139,6 +146,54 @@ function main() {
   const fallbackPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-1'];
   assert.equal(fallbackPayload.showProviderSwatches, true, 'combined provider-bar fallback keeps provider swatches');
   assert.deepEqual(fallbackPayload.providerRows.map(row => row.label), ['Claude', 'Codex'], 'combined provider-bar fallback keeps provider totals');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const legendHtml = sandbox.__chartTooltipTest.renderCombinedHistoryLegend(fallbackCombinedChart);
+  assert.match(legendHtml, /usage-history-legend-swatch claude" tabindex="0" data-usage-tip-id="usage-tip-1"/, 'provider legend swatches use custom tooltip payload ids');
+  assert.match(legendHtml, /usage-history-legend-swatch codex" tabindex="0" data-usage-tip-id="usage-tip-2"/, 'provider legend codex swatch uses custom tooltip payload ids');
+  assert.doesNotMatch(legendHtml, /usage-history-legend-swatch[^>]*title="/, 'provider legend swatches avoid native title tooltip UX');
+  const legendPayload = sandbox.__chartTooltipTest.getPayloads()['usage-tip-1'];
+  assert.equal(legendPayload.kind, 'usageNote', 'legend swatch payload uses the custom usage note renderer');
+  assert.equal(legendPayload.title, 'Claude', 'legend swatch payload keeps the provider title');
+  assert.equal(legendPayload.body, 'Trusted completed-turn data', 'legend swatch payload keeps the provenance note');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const unavailableRangeHtml = sandbox.__chartTooltipTest.renderHistoryRange({ key: '1Y', label: '1Y', available: false }, '1M', 'combined');
+  assert.match(unavailableRangeHtml, /data-usage-tip-id="usage-tip-1"/, 'unavailable range pills use custom tooltip payload ids');
+  assert.doesNotMatch(unavailableRangeHtml, /title="/, 'unavailable range pills avoid native title tooltip UX');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['usage-tip-1'].body, 'Unavailable in this slice', 'unavailable range payload keeps the unavailable reason');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const apiTooltipHtml = sandbox.__chartTooltipTest.renderApiEstimateStrip({
+    label: '1D API-equivalent',
+    value: '$171',
+    detailLines: ['Claude: <b>$57.34</b>', 'Codex: $114 & fees'],
+    detailTooltip: 'Estimated <combined> "cost"; not actual billing',
+    available: true
+  });
+  assert.match(apiTooltipHtml, /class="usage-api-estimate-strip" tabindex="0" data-usage-tip-id="usage-tip-1"/, 'API estimate strips use custom tooltip payload ids');
+  assert.doesNotMatch(apiTooltipHtml, /title="/, 'API estimate strips avoid native title tooltip UX');
+  assert.match(apiTooltipHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API estimate strip still escapes visible detailLines');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['usage-tip-1'].body, 'Estimated <combined> "cost"; not actual billing', 'API estimate payload keeps the full note text');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const metricTooltipHtml = sandbox.__chartTooltipTest.renderUsageMetricCard({
+    label: '1D tokens',
+    value: '94.8M',
+    detail: 'Claude 56.2K',
+    detailTooltip: 'Mixed Claude trusted and Codex correlated history',
+    source: {
+      confidence: 'mixedDayBucket',
+      label: 'Mixed Claude trusted and Codex correlated history',
+      detail: 'Claude uses trusted completed-turn buckets; Codex remains correlated day-bucket data.'
+    },
+    available: true
+  });
+  assert.match(metricTooltipHtml, /source-chip mixed glyph" tabindex="0" data-source-tip-id="source-tip-1"/, 'metric source chips use custom tooltip payload ids');
+  assert.match(metricTooltipHtml, /usage-metric-detail" tabindex="0" data-usage-tip-id="usage-tip-1"/, 'metric detail notes use custom tooltip payload ids');
+  assert.doesNotMatch(metricTooltipHtml, /source-chip[^>]*title="/, 'metric source chips avoid native title tooltip UX');
+  assert.doesNotMatch(metricTooltipHtml, /usage-metric-detail[^>]*title="/, 'metric details avoid native title tooltip UX');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'].detail, 'Claude uses trusted completed-turn buckets; Codex remains correlated day-bucket data.', 'metric source tooltip keeps the long provenance detail');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const unattributedChart = {
@@ -313,9 +368,15 @@ function main() {
   assert.match(bindSource, /focusin/, 'tooltip opens on keyboard focus');
   assert.match(bindSource, /Escape/, 'tooltip supports keyboard dismissal');
   const closestSource = sandbox.__chartTooltipTest.closestHistoryTooltipTargetSource;
-  assert.match(closestSource, /data-model-tip-id/, 'tooltip target lookup recognizes model distribution targets');
+  assert.match(closestSource, /tooltipPayloadIdFromTarget/, 'tooltip target lookup uses the shared target-id helper');
+  const targetIdSource = sandbox.__chartTooltipTest.tooltipPayloadIdFromTargetSource;
+  assert.match(targetIdSource, /data-model-tip-id/, 'tooltip target lookup recognizes model distribution targets');
+  assert.match(targetIdSource, /data-source-tip-id/, 'tooltip target lookup recognizes source chip targets');
+  assert.match(targetIdSource, /data-usage-tip-id/, 'tooltip target lookup recognizes usage note targets');
   const renderTooltipSource = sandbox.__chartTooltipTest.renderHistoryTooltipContentSource;
   assert.match(renderTooltipSource, /renderModelDistributionTooltipContent/, 'single tooltip shell dispatches model distribution payloads');
+  assert.match(renderTooltipSource, /renderSourceTooltipContent/, 'single tooltip shell dispatches source chip payloads');
+  assert.match(renderTooltipSource, /renderUsageNoteTooltipContent/, 'single tooltip shell dispatches usage note payloads');
   assert.match(renderTooltipSource, /showProviderSwatches === false/, 'history tooltip can suppress provider swatches for model-stacked combined bins');
   assert.match(renderTooltipSource, /ab-tip-model-row[\s\S]*ab-tip-swatch/, 'Top Models rows keep model swatches');
 
@@ -334,6 +395,9 @@ function main() {
   assert.match(styles, /\.usage-history-bar:focus-visible/, 'focus-visible styling exists for chart bars');
   assert.match(styles, /\.usage-model-donut-segment:focus-visible/, 'focus-visible styling exists for model donut segments');
   assert.match(styles, /\.usage-model-row:focus-visible/, 'focus-visible styling exists for model legend rows');
+  assert.match(styles, /\.source-chip:focus-visible/, 'focus-visible styling exists for source chips');
+  assert.match(styles, /\.usage-api-estimate-strip:focus-visible/, 'focus-visible styling exists for usage note tooltip targets');
+  assert.match(styles, /\.ab-tip-note\{[\s\S]*overflow-wrap:break-word/, 'custom usage note tooltip bodies wrap long text');
   assert.match(styles, /\.ab-tip-provider-row\.codex[\s\S]*repeating-linear-gradient/, 'Codex provider attribution keeps hatch treatment');
 
   console.log('PASS: chart tooltip smoke tests passed.');
