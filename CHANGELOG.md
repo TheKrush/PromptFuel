@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.9
+
+Adds a range-aware Weekday distribution chart to the usage history dashboard.
+
+**Included in this release:**
+
+- Added a Weekday distribution chart to the history panel for each tab (Overview, Claude, Codex). The chart shows total token activity grouped by weekday for the currently selected range: 1D, 1W, 1M, 1Y, or ALL.
+- Weekday bars stack by model/provider using the same color palette and tooltip system as the Token trend chart. Hovering a bar shows the weekday, range, total tokens, share percentage, message count, active days, and top model breakdown.
+- Added `promptFuel.weekStartsOn` setting (enum: `sunday`, `monday`, `saturday`; default `sunday`). Changing this rotates the display order of weekday bars only; all totals and percentages are unaffected.
+- Reordered the history panel so selected-range summary cards appear immediately after Token trend and before the Model distribution and Weekday distribution charts, improving the flow from time trend to totals to composition.
+
 ## 1.0.8
 
 Improves usage chart tooltip readability.

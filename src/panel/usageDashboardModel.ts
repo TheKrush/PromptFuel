@@ -37,6 +37,7 @@ export interface UsageDashboardModel {
   remoteProviders?: GroupedRemoteProvider[];
   tabs: UsageDashboardTab[];
   selectedTab: string;
+  weekStartsOn: number;  // 0=Sun..6=Sat, display ordering only
 }
 
 export interface GroupedRemoteProvider {
@@ -306,6 +307,7 @@ export interface BuildUsageDashboardModelOptions {
   aliasMap?: Record<string, string>;
   normalizedSources?: Record<string, SourceConfigEntry>;
   scopedToProvider?: ProviderName;
+  weekStartsOn?: number;  // 0=Sun..6=Sat, display ordering only
 }
 
 export function buildUsageDashboardModel(options: BuildUsageDashboardModelOptions): UsageDashboardModel {
@@ -321,7 +323,8 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     remoteUsage,
     aliasMap,
     normalizedSources,
-    scopedToProvider
+    scopedToProvider,
+    weekStartsOn
   } = options;
   const ep = enabledProviders ? new Set(enabledProviders) : new Set(states.map(s => s.provider));
   const hasRemoteClaude = Boolean(
@@ -385,7 +388,8 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     })(),
     ...(filteredRemoteGroups && filteredRemoteGroups.length > 0 ? { remoteProviders: filteredRemoteGroups } : {}),
     tabs,
-    selectedTab: scopedToProvider ?? 'overview'
+    selectedTab: scopedToProvider ?? 'overview',
+    weekStartsOn: weekStartsOn ?? 0
   };
 
   return annotateSourceConfidence(model, claudeTodayUsage, codexTodayUsage, remoteUsage);

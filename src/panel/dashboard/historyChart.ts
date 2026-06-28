@@ -102,6 +102,7 @@ export function buildClaudeHistoryChart(
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
     rangeViews: buildUsageHistoryRangeViews(points),
+
     source
   };
 }
@@ -177,6 +178,7 @@ export function buildCodexHistoryChart(
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
     rangeViews: buildUsageHistoryRangeViews(points),
+
     source
   };
 }
@@ -245,6 +247,7 @@ export function buildCombinedHistoryChart(
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
     rangeViews: buildUsageHistoryRangeViews(points),
+
     ariaLabel: 'Combined token trend chart. Claude segments are solid; Codex segments are hatched correlated data.',
     source
   };

@@ -48,7 +48,8 @@ const expectedSettingKeys = [
   'promptFuel.statusBarDensity',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
-  'promptFuel.snapshot.path'
+  'promptFuel.snapshot.path',
+  'promptFuel.weekStartsOn'
 ];
 const removedSettingKeys = [
   'promptFuel.stateDirectory',
@@ -78,6 +79,10 @@ for (const key of expectedSettingKeys) {
 assert.equal(settings['promptFuel.statusBarDensity']?.type, 'string', 'statusBarDensity is a string setting');
 assert.deepEqual(settings['promptFuel.statusBarDensity']?.enum, ['standard', 'compact'], 'statusBarDensity supports standard and compact');
 assert.equal(settings['promptFuel.statusBarDensity']?.default, 'standard', 'statusBarDensity defaults to standard');
+assert.equal(settings['promptFuel.weekStartsOn']?.type, 'string', 'weekStartsOn is a string setting');
+assert.deepEqual(settings['promptFuel.weekStartsOn']?.enum, ['sunday', 'monday', 'saturday'], 'weekStartsOn supports sunday, monday, saturday');
+assert.equal(settings['promptFuel.weekStartsOn']?.default, 'sunday', 'weekStartsOn defaults to sunday');
+assert.match(String(settings['promptFuel.weekStartsOn']?.description || ''), /display order only/i, 'weekStartsOn description stays display-order only');
 for (const key of removedSettingKeys) {
   assert.equal(settingKeys.includes(key), false, `removed public setting is absent: ${key}`);
 }

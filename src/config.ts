@@ -22,6 +22,7 @@ export interface PromptFuelConfig {
   statusMode: 'remaining' | 'used';
   freshResetToleranceSeconds: number;
   snapshot: SnapshotConfig;
+  weekStartsOn: number;  // 0=Sun..6=Sat, display ordering only
 }
 
 export interface AuthenticatedQuotaConfig {
@@ -82,8 +83,15 @@ export function getConfig(): PromptFuelConfig {
       remoteSources: snapshotSources.remoteSources,
       statusBarSources: snapshotSources.statusBarSources,
       remoteMachineLabels: snapshotSources.remoteMachineLabels
-    }
+    },
+    weekStartsOn: weekStartsOnToIndex(cfg.get<string>('weekStartsOn') ?? 'sunday')
   };
+}
+
+function weekStartsOnToIndex(value: string): number {
+  if (value === 'monday') { return 1; }
+  if (value === 'saturday') { return 6; }
+  return 0;  // default: sunday
 }
 
 export function defaultStateDirectory(): string {

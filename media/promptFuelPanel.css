@@ -741,6 +741,11 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   flex-wrap:wrap;
   line-height:1.35
 }
+.usage-history-chart-title > span:first-child{
+  display:inline-flex;
+  align-items:center;
+  align-self:stretch
+}
 .usage-history-section-head{
   display:flex;
   justify-content:space-between;
@@ -1065,14 +1070,6 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   align-items:flex-start;
   margin-bottom:10px
 }
-.usage-model-distribution-title{
-  font-weight:650;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  flex-wrap:wrap;
-  line-height:1.35
-}
 .usage-model-distribution-meta{
   margin-top:3px;
   color:var(--vscode-descriptionForeground);
@@ -1195,6 +1192,20 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   color:var(--vscode-descriptionForeground);
   font-family:var(--vscode-editor-font-family,monospace);
   font-variant-numeric:tabular-nums
+}
+.usage-weekday-breakdown .usage-history-bars{
+  height:80px
+}
+.usage-weekday-axis{
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  text-align:center
+}
+.usage-weekday-axis span{
+  text-align:center;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
 }
 .usage-metric-grid{
   display:grid;

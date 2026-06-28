@@ -12,33 +12,15 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderClaudeModelDistribution: renderClaudeModelDistribution, renderApiEstimateStrip: renderApiEstimateStrip, renderUsageMetricCard: renderUsageMetricCard, renderHistoryRange: renderHistoryRange, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, resetModelColorAssignments: resetModelColorAssignments, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), tooltipPayloadIdFromTargetSource: String(tooltipPayloadIdFromTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
+    'globalThis.__chartTooltipTest = { renderHistoryChart: renderHistoryChart, renderWeekdayActivityBreakdown: renderWeekdayActivityBreakdown, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderClaudeModelDistribution: renderClaudeModelDistribution, renderApiEstimateStrip: renderApiEstimateStrip, renderUsageMetricCard: renderUsageMetricCard, renderHistoryRange: renderHistoryRange, renderHistoryTooltipContent: renderHistoryTooltipContent, resetHistoryTooltipPayloads: resetHistoryTooltipPayloads, resetModelColorAssignments: resetModelColorAssignments, setLastUsageDashboardModel: function(model) { lastUsageDashboardModel = model; }, getPayloads: function() { return historyTooltipPayloads; }, positionHistoryTooltipSource: String(positionHistoryTooltip), bindHistoryTooltipControlsSource: String(bindHistoryTooltipControls), closestHistoryTooltipTargetSource: String(closestHistoryTooltipTarget), tooltipPayloadIdFromTargetSource: String(tooltipPayloadIdFromTarget), renderHistoryTooltipContentSource: String(renderHistoryTooltipContent) }; })();'
   );
-  const fakeElement = {
-    value: '',
-    className: '',
-    disabled: false,
-    textContent: '',
-    innerHTML: '',
-    firstChild: null,
-    style: {},
-    addEventListener: () => undefined,
-    appendChild: () => undefined,
-    removeChild: () => undefined,
-    setAttribute: () => undefined,
-    removeAttribute: () => undefined,
-    getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
-    classList: {
-      add: () => undefined,
-      remove: () => undefined
-    }
-  };
+  const fakeElement = createFakeElement();
   const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: () => undefined }),
     document: {
       body: { appendChild: () => undefined },
       documentElement: { clientWidth: 320, clientHeight: 240 },
-      createElement: () => ({ ...fakeElement }),
+      createElement: tagName => createFakeElement(tagName),
       getElementById: () => fakeElement,
       querySelector: () => fakeElement,
       querySelectorAll: () => []
@@ -117,6 +99,105 @@ function main() {
   assert.doesNotMatch(combinedHtml, /usage-history-bar-segment codex model/, 'combined stacked fills do not use aggregate Codex provider classes');
   assert.match(payload.topModels[0].label, /^Claude/, 'combined tooltip model labels keep provider attribution');
   assert.match(payload.topModels[1].label, /Codex$/, 'combined tooltip model labels keep Codex attribution');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const weekdayHtml = sandbox.__chartTooltipTest.renderWeekdayActivityBreakdown(
+    {
+      available: true,
+      entries: [
+        {
+          label: 'Sun',
+          longLabel: 'Sunday',
+          totalTokens: 3000,
+          percentLabel: '100%',
+          assistantMessages: 5,
+          activeDays: 1,
+          models: [
+            { label: 'Claude - Sonnet 4', model: 'claude-sonnet-4-20250514', provider: 'claude', totalTokens: 2000 },
+            { label: 'Codex - GPT-5', model: 'gpt-5-codex', provider: 'codex', totalTokens: 1000 }
+          ]
+        },
+        { label: 'Mon', longLabel: 'Monday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Tue', longLabel: 'Tuesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Wed', longLabel: 'Wednesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Thu', longLabel: 'Thursday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Fri', longLabel: 'Friday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Sat', longLabel: 'Saturday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] }
+      ]
+    },
+    '1M',
+    'Combined',
+    '1M / daily bins',
+    { confidence: 'mixedDayBucket', label: 'Mixed Claude trusted and Codex correlated history' }
+  );
+  assert.match(weekdayHtml, /Weekday distribution<\/span><span class="source-chip mixed glyph" tabindex="0" data-source-tip-id="source-tip-1"/, "weekday distribution heading uses the shared source chip tooltip path");
+  assert.doesNotMatch(weekdayHtml, /source-chip[^>]*title="/, "weekday distribution heading avoids native title tooltip UX");
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'].subtitle, 'Mixed Claude trusted and Codex correlated history', 'weekday distribution heading keeps the shared mixed-source tooltip metadata');
+  const weekdayPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-1'];
+  assert.equal(weekdayPayload.dayLabel, 'Sunday', 'weekday tooltip payload keeps the weekday name');
+  assert.equal(weekdayPayload.rangeKey, '1M', 'weekday tooltip payload keeps the active range key');
+  assert.equal(weekdayPayload.totalTokens, 3000, 'weekday tooltip payload keeps the total tokens');
+  assert.equal(weekdayPayload.percentLabel, '100%', 'weekday tooltip payload keeps the share label');
+  assert.equal(weekdayPayload.activeDays, 1, 'weekday tooltip payload keeps the active day count');
+  assert.equal(weekdayPayload.activity, 5, 'weekday tooltip payload keeps the messages/turns count');
+  assert.equal(weekdayPayload.topModels.length, 2, 'weekday tooltip payload keeps top model rows');
+  const weekdayTooltip = createFakeElement();
+  sandbox.__chartTooltipTest.renderHistoryTooltipContent(weekdayTooltip, weekdayPayload);
+  const weekdayTooltipText = elementText(weekdayTooltip).replace(/\s+/g, ' ');
+  assert.match(weekdayTooltipText, /Sunday/, 'weekday tooltip content includes the weekday name');
+  assert.match(weekdayTooltipText, /1M/, 'weekday tooltip content includes the active range');
+  assert.match(weekdayTooltipText, /Total tokens/, 'weekday tooltip content includes total tokens');
+  assert.match(weekdayTooltipText, /Share/, 'weekday tooltip content includes the share stat');
+  assert.match(weekdayTooltipText, /Active days/, 'weekday tooltip content includes active days');
+  assert.match(weekdayTooltipText, /Messages \/ turns/, 'weekday tooltip content includes messages/turns');
+  assert.match(weekdayTooltipText, /Top models/, 'weekday tooltip content includes the top model section');
+  assert.match(weekdayTooltipText, /Claude - Sonnet 4/, 'weekday tooltip content includes the leading model row');
+  assert.match(weekdayTooltipText, /Codex - GPT-5/, 'weekday tooltip content includes the secondary model row');
+  sandbox.__chartTooltipTest.setLastUsageDashboardModel({ weekStartsOn: 1 });
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const rotatedWeekdayHtml = sandbox.__chartTooltipTest.renderWeekdayActivityBreakdown(
+    {
+      available: true,
+      entries: [
+        { label: 'Sun', longLabel: 'Sunday', totalTokens: 1000, percentLabel: '25%', assistantMessages: 1, activeDays: 1, models: [{ label: 'Sonnet 4', model: 'claude-sonnet-4-20250514', provider: 'claude', totalTokens: 1000 }] },
+        { label: 'Mon', longLabel: 'Monday', totalTokens: 3000, percentLabel: '75%', assistantMessages: 3, activeDays: 2, models: [{ label: 'Opus 4', model: 'claude-opus-4-20250514', provider: 'claude', totalTokens: 3000 }] },
+        { label: 'Tue', longLabel: 'Tuesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Wed', longLabel: 'Wednesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Thu', longLabel: 'Thursday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Fri', longLabel: 'Friday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Sat', longLabel: 'Saturday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] }
+      ]
+    },
+    '1M',
+    'Claude',
+    '1M / daily bins',
+    { confidence: 'trustedCompletedTurnUsage', label: 'Claude assistant-message JSONL history buckets' }
+  );
+  assert.match(rotatedWeekdayHtml, /usage-weekday-axis"><span>Mon<\/span><span>Tue<\/span><span>Wed<\/span><span>Thu<\/span><span>Fri<\/span><span>Sat<\/span><span>Sun<\/span>/, 'weekStartsOn only rotates weekday display order');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['history-tip-1'].dayLabel, 'Monday', 'weekStartsOn rotation keeps Monday data attached to the first displayed bar');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['history-tip-1'].totalTokens, 3000, 'weekStartsOn rotation does not rebin weekday totals');
+  sandbox.__chartTooltipTest.setLastUsageDashboardModel({ weekStartsOn: 0 });
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const partialWeekdayHtml = sandbox.__chartTooltipTest.renderWeekdayActivityBreakdown(
+    {
+      available: true,
+      entries: [
+        { label: 'Sun', longLabel: 'Sunday', totalTokens: 1000, percentLabel: '100%', assistantMessages: 2, activeDays: 1, models: [{ label: 'Sonnet 4', model: 'claude-sonnet-4-20250514', provider: 'claude', totalTokens: 600 }] },
+        { label: 'Mon', longLabel: 'Monday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Tue', longLabel: 'Tuesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Wed', longLabel: 'Wednesday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Thu', longLabel: 'Thursday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Fri', longLabel: 'Friday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] },
+        { label: 'Sat', longLabel: 'Saturday', totalTokens: 0, percentLabel: '0%', assistantMessages: 0, activeDays: 0, models: [] }
+      ]
+    },
+    '1W',
+    'Claude',
+    '1W / daily bins',
+    { confidence: 'trustedCompletedTurnUsage', label: 'Claude assistant-message JSONL history buckets' }
+  );
+  assert.match(partialWeekdayHtml, /class="usage-history-bar-fill" style="height:100%"/, 'weekday partial model attribution falls back to total bar height');
+  assert.doesNotMatch(partialWeekdayHtml, /usage-history-bar-fill stacked/, 'weekday partial model attribution does not render misleading partial stacks');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const combinedYearChart = {
@@ -248,6 +329,8 @@ function main() {
     ]
   };
   const splitDistributionHtml = sandbox.__chartTooltipTest.renderClaudeModelDistribution(splitDistribution, splitDistribution.source);
+  assert.match(splitDistributionHtml, /<div class="usage-history-chart-title"><span>Model distribution<\/span><span class="source-chip trusted glyph"/, 'model distribution heading uses the shared chart title source chip path');
+  assert.doesNotMatch(splitDistributionHtml, /usage-model-distribution-title/, 'model distribution does not use a separate title alignment class');
   assert.match(splitDistributionHtml, /class="usage-model-donut"[^>]*>/, 'split model donut renders without a native wrapper title');
   assert.doesNotMatch(splitDistributionHtml, /class="usage-model-donut"[^>]*title="/, 'model donut wrapper does not rely on native title tooltip UX');
   assert.match(splitDistributionHtml, /class="usage-model-donut-segment"[^>]*data-model-tip-id="model-tip-1"/, 'donut segments carry bespoke model tooltip payload ids');
@@ -378,7 +461,7 @@ function main() {
   assert.match(renderTooltipSource, /renderSourceTooltipContent/, 'single tooltip shell dispatches source chip payloads');
   assert.match(renderTooltipSource, /renderUsageNoteTooltipContent/, 'single tooltip shell dispatches usage note payloads');
   assert.match(renderTooltipSource, /showProviderSwatches === false/, 'history tooltip can suppress provider swatches for model-stacked combined bins');
-  assert.match(renderTooltipSource, /ab-tip-model-row[\s\S]*ab-tip-swatch/, 'Top Models rows keep model swatches');
+  assert.match(renderTooltipSource, /appendHistoryTooltipModelList/, 'history tooltip routes Top Models rows through the shared model-list helper');
 
   const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
   const tipHeadBlock = styles.match(/\.ab-tip-head\{[^}]*\}/)?.[0] || '';
@@ -401,6 +484,71 @@ function main() {
   assert.match(styles, /\.ab-tip-provider-row\.codex[\s\S]*repeating-linear-gradient/, 'Codex provider attribution keeps hatch treatment');
 
   console.log('PASS: chart tooltip smoke tests passed.');
+}
+
+function createFakeElement(tagName = 'div') {
+  const element = {
+    tagName: String(tagName || 'div').toUpperCase(),
+    value: '',
+    className: '',
+    disabled: false,
+    innerHTML: '',
+    firstChild: null,
+    style: {},
+    childNodes: [],
+    attributes: {},
+    _textContent: '',
+    addEventListener: () => undefined,
+    appendChild(child) {
+      this.childNodes.push(child);
+      this.firstChild = this.childNodes[0] || null;
+      return child;
+    },
+    removeChild(child) {
+      const index = this.childNodes.indexOf(child);
+      if (index >= 0) {
+        this.childNodes.splice(index, 1);
+      }
+      this.firstChild = this.childNodes[0] || null;
+      return child;
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    getAttribute(name) {
+      return this.attributes[name];
+    },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    classList: {
+      add: () => undefined,
+      remove: () => undefined
+    }
+  };
+  Object.defineProperty(element, "textContent", {
+    get() {
+      return this._textContent;
+    },
+    set(value) {
+      this._textContent = String(value);
+      this.childNodes = [];
+      this.firstChild = null;
+    }
+  });
+  return element;
+}
+
+function elementText(node) {
+  if (!node) {
+    return '';
+  }
+  const own = node._textContent || '';
+  const children = Array.isArray(node.childNodes)
+    ? node.childNodes.map(child => elementText(child)).join(' ')
+    : '';
+  return [own, children].filter(Boolean).join(' ');
 }
 
 function historyBarSegmentColors(html) {

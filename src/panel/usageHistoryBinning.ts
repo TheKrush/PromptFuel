@@ -1,4 +1,6 @@
 import { displayTotalTokens } from '../snapshot/tokenMath';
+import { buildWeekdayActivityBreakdown } from './dashboard/weekdayActivity';
+import type { WeekdayActivityBreakdown } from './dashboard/weekdayActivity';
 
 export type UsageHistoryRangeKey = '1D' | '1W' | '1M' | '1Y' | 'ALL';
 export type UsageHistoryBinGranularity = 'day' | 'week' | 'month';
@@ -70,6 +72,7 @@ export interface UsageHistoryRangeView {
   activeUnitLabel: string;
   unavailableReason?: string;
   limitation?: string;
+  weekdayBreakdown?: WeekdayActivityBreakdown;
 }
 
 export type UsageHistoryRangeViews = Record<UsageHistoryRangeKey, UsageHistoryRangeView>;
@@ -127,6 +130,15 @@ export function buildUsageHistoryRangeView(
   const maxTotalTokens = binnedPoints.reduce((max, point) => Math.max(max, point.totalTokens), 0);
   const activeBinCount = binnedPoints.filter(point => !point.isEmpty).length;
 
+  const inRangePoints: UsageHistoryPoint[] = [];
+  if (bins.length > 0) {
+    forEachDateInBin({ start: bins[0].start, end: bins[bins.length - 1].end }, date => {
+      const pts = sourceByDate.get(formatLocalDateKey(date));
+      if (pts) { for (const pt of pts) { inRangePoints.push(pt); } }
+    });
+  }
+  const weekdayBreakdown = buildWeekdayActivityBreakdown(inRangePoints);
+
   return {
     key: config.key,
     rangeLabel: config.rangeLabel,
@@ -139,7 +151,8 @@ export function buildUsageHistoryRangeView(
     activeBinCount,
     activeUnitLabel: config.activeUnitLabel,
     unavailableReason: activeBinCount > 0 ? undefined : config.emptyReason,
-    limitation: config.limitation
+    limitation: config.limitation,
+    weekdayBreakdown
   };
 }
 

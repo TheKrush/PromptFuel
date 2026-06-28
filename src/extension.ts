@@ -63,7 +63,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         selectedRemoteProviders: state.selectedRemoteProviders.length > 0 ? state.selectedRemoteProviders : undefined,
         remoteUsage: state.remoteUsage,
         aliasMap: cfg.snapshot.remoteMachineLabels,
-        normalizedSources: cfg.normalizedSources
+        normalizedSources: cfg.normalizedSources,
+        weekStartsOn: cfg.weekStartsOn
       });
     }
   });

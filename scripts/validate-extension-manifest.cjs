@@ -51,7 +51,8 @@ const expectedSettings = [
   'promptFuel.statusBarDensity',
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
-  'promptFuel.snapshot.path'
+  'promptFuel.snapshot.path',
+  'promptFuel.weekStartsOn'
 ];
 const removedSettings = [
   'promptFuel.stateDirectory',
@@ -80,6 +81,13 @@ if (JSON.stringify(densitySetting?.enum ?? []) !== JSON.stringify(['standard', '
   fail('promptFuel.statusBarDensity enum must be standard, compact');
 }
 if (densitySetting?.default !== 'standard') fail('promptFuel.statusBarDensity default must be standard');
+const weekStartsOnSetting = properties['promptFuel.weekStartsOn'];
+if (weekStartsOnSetting?.type !== 'string') fail('promptFuel.weekStartsOn must be a string setting');
+if (JSON.stringify(weekStartsOnSetting?.enum ?? []) !== JSON.stringify(['sunday', 'monday', 'saturday'])) {
+  fail('promptFuel.weekStartsOn enum must be sunday, monday, saturday');
+}
+if (weekStartsOnSetting?.default !== 'sunday') fail('promptFuel.weekStartsOn default must be sunday');
+if (!/display order only/i.test(String(weekStartsOnSetting?.description || ''))) fail('promptFuel.weekStartsOn description must stay display-order only');
 for (const oldKey of removedSettings) {
   if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`removed public setting remains: ${oldKey}`);
 }

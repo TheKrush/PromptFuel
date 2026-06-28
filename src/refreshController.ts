@@ -476,7 +476,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
       selectedRemoteProviders: selectedDashboardRemoteProviders.length > 0 ? selectedDashboardRemoteProviders : undefined,
       remoteUsage: remoteUsage,
       aliasMap: aliasMap,
-      normalizedSources: cfg.normalizedSources
+      normalizedSources: cfg.normalizedSources,
+      weekStartsOn: cfg.weekStartsOn
     });
     postUsageDashboardRefreshIfOpen(usageDashboardModel);
   }

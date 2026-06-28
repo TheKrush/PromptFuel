@@ -180,8 +180,15 @@
     var distributionHtml = aggregate.distribution && aggregate.distribution.available
       ? renderClaudeModelDistribution(aggregate.distribution, aggregate.distribution && aggregate.distribution.source)
       : renderModelDistributionUnavailable(aggregate.distribution, aggregate.label);
+    var weekdayHtml = renderWeekdayActivityBreakdown(
+      aggregate.chart && aggregate.chart.weekdayBreakdown,
+      aggregate.chart && aggregate.chart.key,
+      aggregate.chart && aggregate.chart.providerLabel,
+      aggregate.chart && aggregate.chart.rangeLabel,
+      aggregate.chart && aggregate.chart.source
+    );
     var metricGridHtml = renderMetricGrid(aggregate.cards, aggregate.emptyCardsText, aggregate.source);
-    return todayHtml + chartHtml + distributionHtml + metricGridHtml;
+    return todayHtml + chartHtml + metricGridHtml + distributionHtml + weekdayHtml;
   }
 
   function selectDashboardHistoryAggregate(details, providers) {
@@ -416,6 +423,79 @@
     '</div>';
   }
 
+  function renderWeekdayActivityBreakdown(breakdown, rangeKey, providerLabel, rangeLabel, source) {
+    if (!breakdown || !breakdown.available || !breakdown.entries || !breakdown.entries.length) {
+      return '';
+    }
+    var weekStartsOn = (lastUsageDashboardModel && typeof lastUsageDashboardModel.weekStartsOn === "number")
+      ? lastUsageDashboardModel.weekStartsOn
+      : 0;
+    var providerKey = inferProviderKey(providerLabel);
+    var chartContext = weekdayBreakdownChartContext(breakdown, providerLabel, source);
+    var colorForModel = historyModelColorResolver(chartContext, providerKey);
+    var entries = breakdown.entries;
+    var maxTokens = entries.reduce(function(m, e) { return Math.max(m, e.totalTokens || 0); }, 0);
+
+    var bars = '';
+    var axisLabels = '';
+    for (var i = 0; i < 7; i++) {
+      var entry = entries[(weekStartsOn + i) % 7];
+      if (!entry) { continue; }
+      var empty = entry.totalTokens <= 0;
+      var height = !empty && maxTokens > 0 ? Math.max(2, Math.round((entry.totalTokens / maxTokens) * 100)) : 2;
+
+      var topModels = buildTooltipTopModels(entry.models, entry.totalTokens, colorForModel);
+
+      var ariaText = entry.longLabel + ': ' + formatMetricNumber(entry.totalTokens) + ' tokens (' + (entry.percentLabel || '0%') + ')';
+      if (entry.activeDays > 0) { ariaText += ', ' + entry.activeDays + ' active day' + (entry.activeDays === 1 ? '' : 's'); }
+      var payload = {
+        kind: 'weekdayBar',
+        dayLabel: entry.longLabel,
+        rangeKey: rangeKey || '',
+        totalTokens: entry.totalTokens,
+        percentLabel: entry.percentLabel || '0%',
+        activity: entry.assistantMessages,
+        activeDays: entry.activeDays,
+        topModels: topModels,
+        ariaLabel: ariaText
+      };
+      var tooltipId = registerHistoryTooltipPayload(payload);
+
+      var fillHtml = renderWeekdayBarFill(entry, height, chartContext, providerKey);
+      bars += '<div class="usage-history-bar' + (empty ? ' empty' : '') + '" tabindex="0" data-history-tip-id="' + escAttr(tooltipId) + '" aria-label="' + escAttr(ariaText) + '">' +
+        fillHtml +
+      '</div>';
+      axisLabels += '<span>' + esc(entry.label) + '</span>';
+    }
+
+    return '<div class="usage-history-chart usage-weekday-breakdown">' +
+      '<div class="usage-history-chart-head">' +
+        '<div>' +
+          renderHistoryChartTitle('Weekday distribution', source) +
+          '<div class="usage-history-chart-meta">' + esc(rangeLabel || rangeKey || 'selected range') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="usage-history-bars" style="--history-bin-count:7" role="img" aria-label="Weekday distribution">' + bars + '</div>' +
+      '<div class="usage-history-axis usage-weekday-axis">' + axisLabels + '</div>' +
+    '</div>';
+  }
+
+  function renderWeekdayBarFill(entry, height, chart, providerKey) {
+    var modelSegments = buildHistoryModelStackSegments(entry, chart, providerKey);
+    if (modelSegments.length) {
+      return renderHistoryModelStackFill(modelSegments, entry, height, providerKey);
+    }
+    return '<div class="usage-history-bar-fill" style="height:' + height + '%"></div>';
+  }
+
+  function weekdayBreakdownChartContext(breakdown, providerLabel, source) {
+    return {
+      points: breakdown && breakdown.entries ? breakdown.entries : [],
+      providerLabel: providerLabel || '',
+      source: source || null
+    };
+  }
+
   function usageCardsByKey(cards, keys) {
     if (!cards || !cards.length) {
       return [];
@@ -473,7 +553,7 @@
     return '<div class="usage-history-chart' + unavailableClass + '">' +
       '<div class="usage-history-chart-head">' +
         '<div>' +
-          '<div class="usage-history-chart-title"><span>' + esc(chart.title || 'Token trend') + '</span>' + renderSourceChip(chart.source, 'glyph') + '</div>' +
+          renderHistoryChartTitle(chart.title || 'Token trend', chart.source) +
           '<div class="usage-history-chart-meta">' + esc(metaText) + '</div>' +
         '</div>' +
         '<div class="usage-history-ranges">' + ranges + '</div>' +
@@ -490,6 +570,10 @@
     var dataRange = range && range.key ? ' data-usage-history-range="' + esc(range.key) + '"' : '';
     var dataProvider = provider ? ' data-history-provider="' + esc(provider) + '"' : '';
     return '<span class="' + cls + '"' + dataRange + dataProvider + tooltipAttrs + '>' + esc(range && range.label ? range.label : 'Range') + '</span>';
+  }
+
+  function renderHistoryChartTitle(title, source) {
+    return '<div class="usage-history-chart-title"><span>' + esc(title) + '</span>' + renderSourceChip(source, 'glyph') + '</div>';
   }
 
   function buildHistoryPointTooltip(point) {
@@ -539,20 +623,7 @@
     var total = Number(point.totalTokens || 0);
     var hasModelStack = buildHistoryModelStackSegments(point, chart, provider).length > 0;
     var colorForModel = historyModelColorResolver(chart, provider);
-    var topModels = (point.models || [])
-      .slice()
-      .sort(function(a, b) { return Number(b.totalTokens || 0) - Number(a.totalTokens || 0); })
-      .slice(0, HISTORY_TOOLTIP_MODEL_LIMIT)
-      .map(function(model, index) {
-        var modelTokens = Number(model.totalTokens || 0);
-        return {
-          label: model.label || model.model || 'Model',
-          tokens: modelTokens,
-          percentLabel: total > 0 ? formatPercentLabel(modelTokens / total) : '0%',
-          messages: Number(model.assistantMessages || 0),
-          color: colorForModel(model, index)
-        };
-      });
+    var topModels = buildTooltipTopModels(point.models, total, colorForModel);
     var providerRows = (point.providerSegments || [])
       .filter(function(segment) { return segment && Number(segment.totalTokens || 0) > 0; })
       .map(function(segment) {
@@ -578,6 +649,24 @@
       topModels: topModels,
       ariaLabel: buildHistoryPointTooltip(point).replace(/\s+/g, ' ')
     };
+  }
+
+  function buildTooltipTopModels(models, total, colorForModel) {
+    return (models || [])
+      .filter(function(model) { return model && Number(model.totalTokens || 0) > 0; })
+      .slice()
+      .sort(function(a, b) { return Number(b.totalTokens || 0) - Number(a.totalTokens || 0); })
+      .slice(0, HISTORY_TOOLTIP_MODEL_LIMIT)
+      .map(function(model, index) {
+        var modelTokens = Number(model.totalTokens || 0);
+        return {
+          label: model.label || model.model || 'Model',
+          tokens: modelTokens,
+          percentLabel: total > 0 ? formatPercentLabel(modelTokens / total) : '0%',
+          messages: Number(model.assistantMessages || 0),
+          color: colorForModel(model, index)
+        };
+      });
   }
 
   function buildHistoryTooltipSourceText(provider, source) {
@@ -929,7 +1018,7 @@
     return '<div class="usage-model-distribution">' +
       '<div class="usage-model-distribution-head">' +
         '<div>' +
-          '<div class="usage-model-distribution-title"><span>' + esc(distribution.title || 'Model distribution') + '</span>' + renderSourceChip(distribution.source, 'glyph') + '</div>' +
+          renderHistoryChartTitle(distribution.title || 'Model distribution', distribution.source) +
           '<div class="usage-model-distribution-meta">' + esc(metaText) + '</div>' +
         '</div>' +
       '</div>' +
@@ -1183,26 +1272,16 @@
       renderUsageNoteTooltipContent(tip, payload);
       return;
     }
-
-    var header = document.createElement('div');
-    header.className = 'ab-tip-head';
-    var title = document.createElement('div');
-    title.className = 'ab-tip-title';
-    title.textContent = payload.binLabel || 'Usage bin';
-    header.appendChild(title);
-    if (payload.sourceText) {
-      var source = document.createElement('div');
-      source.className = 'ab-tip-source';
-      source.textContent = payload.sourceText;
-      header.appendChild(source);
+    if (payload.kind === 'weekdayBar') {
+      renderWeekdayBarTooltipContent(tip, payload);
+      return;
     }
-    tip.appendChild(header);
 
-    var stats = document.createElement('div');
-    stats.className = 'ab-tip-stats';
-    appendHistoryTooltipStat(stats, 'Total tokens', formatMetricNumber(payload.totalTokens));
-    appendHistoryTooltipStat(stats, payload.activityLabel || 'Activity', formatMetricNumber(payload.activity));
-    tip.appendChild(stats);
+    appendHistoryTooltipHeader(tip, payload.binLabel || 'Usage bin', payload.sourceText);
+    appendHistoryTooltipStats(tip, [
+      { label: 'Total tokens', value: formatMetricNumber(payload.totalTokens) },
+      { label: payload.activityLabel || 'Activity', value: formatMetricNumber(payload.activity) }
+    ]);
 
     if (payload.provider === 'combined' && payload.providerRows && payload.providerRows.length) {
       var providerList = document.createElement('div');
@@ -1223,35 +1302,7 @@
       tip.appendChild(providerList);
     }
 
-    var modelList = document.createElement('div');
-    modelList.className = 'ab-tip-list';
-    appendHistoryTooltipListTitle(modelList, 'Top models');
-    if (payload.topModels && payload.topModels.length) {
-      payload.topModels.forEach(function(row) {
-        var item = document.createElement('div');
-        item.className = 'ab-tip-model-row';
-        var labelWrap = document.createElement('span');
-        labelWrap.className = 'ab-tip-model-label';
-        var swatch = document.createElement('span');
-        swatch.className = 'ab-tip-swatch';
-        swatch.style.background = row.color;
-        var lbl = document.createElement('span');
-        lbl.textContent = row.label;
-        labelWrap.appendChild(swatch);
-        labelWrap.appendChild(lbl);
-        var value = document.createElement('span');
-        value.textContent = formatMetricNumber(row.tokens) + ' - ' + row.percentLabel;
-        item.appendChild(labelWrap);
-        item.appendChild(value);
-        modelList.appendChild(item);
-      });
-    } else {
-      var empty = document.createElement('div');
-      empty.className = 'ab-tip-empty';
-      empty.textContent = 'No model activity in this bin';
-      modelList.appendChild(empty);
-    }
-    tip.appendChild(modelList);
+    appendHistoryTooltipModelList(tip, 'Top models', payload.topModels, 'No model activity in this bin');
   }
 
   function renderSourceTooltipContent(tip, payload) {
@@ -1299,47 +1350,94 @@
     tip.appendChild(body);
   }
 
+  function renderWeekdayBarTooltipContent(tip, payload) {
+    appendHistoryTooltipHeader(tip, payload.dayLabel || 'Weekday', payload.rangeKey);
+    var rows = [
+      { label: 'Total tokens', value: formatMetricNumber(payload.totalTokens) },
+      { label: 'Share', value: payload.percentLabel || '0%' }
+    ];
+    if (payload.activeDays > 0) {
+      rows.push({ label: 'Active days', value: String(payload.activeDays) });
+    }
+    if (payload.activity > 0) {
+      rows.push({ label: 'Messages / turns', value: formatMetricNumber(payload.activity) });
+    }
+    appendHistoryTooltipStats(tip, rows);
+    appendHistoryTooltipModelList(tip, 'Top models', payload.topModels, 'No model activity for this weekday');
+  }
+
   function renderModelDistributionTooltipContent(tip, payload) {
+    appendHistoryTooltipHeader(tip, payload.label || 'Model', [payload.providerLabel || 'Model distribution', payload.rangeLabel].filter(Boolean).join(' - '));
+    appendHistoryTooltipStats(tip, [
+      { label: 'Total tokens', value: formatMetricNumber(payload.totalTokens) },
+      { label: 'Share', value: payload.percentLabel || '0%' },
+      { label: 'Est. API cost', value: payload.costLabel || '?' },
+      { label: 'Rate / 1M', value: payload.rateLabel || '?' },
+      { label: payload.activityLabel || 'Activity', value: formatMetricNumber(payload.activity) }
+    ]);
+    appendHistoryTooltipModelList(tip, 'Series', [{
+      label: payload.providerLabel ? payload.providerLabel + ' - ' + payload.model : payload.model,
+      color: payload.color,
+      valueText: payload.percentLabel || '0%'
+    }], '');
+  }
+
+  function appendHistoryTooltipHeader(tip, titleText, sourceText) {
     var header = document.createElement('div');
     header.className = 'ab-tip-head';
     var title = document.createElement('div');
     title.className = 'ab-tip-title';
-    title.textContent = payload.label || 'Model';
-    var source = document.createElement('div');
-    source.className = 'ab-tip-source';
-    source.textContent = [payload.providerLabel || 'Model distribution', payload.rangeLabel].filter(Boolean).join(' - ');
+    title.textContent = titleText || 'Usage detail';
     header.appendChild(title);
-    header.appendChild(source);
+    if (sourceText) {
+      var source = document.createElement('div');
+      source.className = 'ab-tip-source';
+      source.textContent = sourceText;
+      header.appendChild(source);
+    }
     tip.appendChild(header);
+  }
 
+  function appendHistoryTooltipStats(tip, rows) {
+    if (!rows || !rows.length) { return; }
     var stats = document.createElement('div');
     stats.className = 'ab-tip-stats';
-    appendHistoryTooltipStat(stats, 'Total tokens', formatMetricNumber(payload.totalTokens));
-    appendHistoryTooltipStat(stats, 'Share', payload.percentLabel || '0%');
-    appendHistoryTooltipStat(stats, 'Est. API cost', payload.costLabel || '—');
-    appendHistoryTooltipStat(stats, 'Rate / 1M', payload.rateLabel || '—');
-    appendHistoryTooltipStat(stats, payload.activityLabel || 'Activity', formatMetricNumber(payload.activity));
+    rows.forEach(function(row) {
+      if (!row || !row.label) { return; }
+      appendHistoryTooltipStat(stats, row.label, row.value || '');
+    });
     tip.appendChild(stats);
+  }
 
+  function appendHistoryTooltipModelList(tip, titleText, rows, emptyText) {
     var modelList = document.createElement('div');
     modelList.className = 'ab-tip-list';
-    appendHistoryTooltipListTitle(modelList, 'Series');
-    var item = document.createElement('div');
-    item.className = 'ab-tip-model-row';
-    var labelWrap = document.createElement('span');
-    labelWrap.className = 'ab-tip-model-label';
-    var swatch = document.createElement('span');
-    swatch.className = 'ab-tip-swatch';
-    swatch.style.background = payload.color;
-    var lbl = document.createElement('span');
-    lbl.textContent = payload.providerLabel ? payload.providerLabel + ' - ' + payload.model : payload.model;
-    labelWrap.appendChild(swatch);
-    labelWrap.appendChild(lbl);
-    var value = document.createElement('span');
-    value.textContent = payload.percentLabel || '0%';
-    item.appendChild(labelWrap);
-    item.appendChild(value);
-    modelList.appendChild(item);
+    appendHistoryTooltipListTitle(modelList, titleText);
+    if (rows && rows.length) {
+      rows.forEach(function(row) {
+        var item = document.createElement('div');
+        item.className = 'ab-tip-model-row';
+        var labelWrap = document.createElement('span');
+        labelWrap.className = 'ab-tip-model-label';
+        var swatch = document.createElement('span');
+        swatch.className = 'ab-tip-swatch';
+        swatch.style.background = row.color || 'transparent';
+        var lbl = document.createElement('span');
+        lbl.textContent = row.label || 'Model';
+        labelWrap.appendChild(swatch);
+        labelWrap.appendChild(lbl);
+        var value = document.createElement('span');
+        value.textContent = row.valueText || (formatMetricNumber(row.tokens) + ' - ' + (row.percentLabel || '0%'));
+        item.appendChild(labelWrap);
+        item.appendChild(value);
+        modelList.appendChild(item);
+      });
+    } else if (emptyText) {
+      var empty = document.createElement('div');
+      empty.className = 'ab-tip-empty';
+      empty.textContent = emptyText;
+      modelList.appendChild(empty);
+    }
     tip.appendChild(modelList);
   }
 
@@ -1468,7 +1566,8 @@
       activeBinCount: view && view.activeBinCount,
       activeUnitLabel: view && view.activeUnitLabel,
       limitation: limitation,
-      source: chart.source
+      source: chart.source,
+      weekdayBreakdown: view && view.weekdayBreakdown
     };
   }
 
