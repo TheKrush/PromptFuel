@@ -1,4 +1,4 @@
-name: 🎛️ Workflow Controller
+name: Workflow Controller
 
 on:
   push:
@@ -11,10 +11,10 @@ permissions:
 
 jobs:
   # ----------------------------------------
-  # 🔍 Analyze repo / commit to decide what to run
+  # Analyze repo / commit to decide what to run
   # ----------------------------------------
   analyze:
-    name: 🔍 Analyze
+    name: Analyze
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -27,12 +27,12 @@ jobs:
       safety_label:        ${{ steps.check.outputs.safety_label }}
 
     steps:
-      - name: 🧾 Checkout
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
-      - name: 🔍 Analyze commit message, branch, and file changes
+      - name: Analyze commit message, branch, and file changes
         id: check
         shell: bash
         run: |
@@ -55,7 +55,7 @@ jobs:
           fi
 
           # ----------------------------------------
-          # 💾 Safety tag trigger
+          # Safety tag trigger
           #   [safety]              -> label = branch name
           #   [safety:some-label]   -> label = "some-label"
           # ----------------------------------------
@@ -75,7 +75,7 @@ jobs:
           fi
 
           # ----------------------------------------
-          # 🔧 Source file filters
+          # Source file filters
           # ----------------------------------------
           CODE_FILTERS=(
             '^src/'
@@ -114,10 +114,10 @@ jobs:
           [[ -f ".github/workflows/compile.yml" ]]         && echo "has_compile=true"         >> $GITHUB_OUTPUT || echo "has_compile=false"         >> $GITHUB_OUTPUT
           [[ -f ".github/workflows/publish-package.yml" ]] && echo "has_publish_package=true" >> $GITHUB_OUTPUT || echo "has_publish_package=false" >> $GITHUB_OUTPUT
 
-      - name: 🧠 Summary
+      - name: Summary
         run: |
           echo "------------------------------------------"
-          echo "🧠 Workflow Controller Summary"
+          echo "Workflow Controller Summary"
           echo "------------------------------------------"
           echo "Repository:    ${{ github.repository }}"
           echo "Branch:        ${GITHUB_REF##*/}"
@@ -127,10 +127,10 @@ jobs:
           echo "------------------------------------------"
 
   # ----------------------------------------
-  # 💾 Optional safety checkpoint
+  # Optional safety checkpoint
   # ----------------------------------------
   safety-tag:
-    name: 💾 Safety Tag
+    name: Safety Tag
     needs: analyze
     uses: ./.github/workflows/create-safety-tag.yml
     with:
@@ -139,10 +139,10 @@ jobs:
     secrets: inherit
 
   # ----------------------------------------
-  # ⚙️ Compile
+  # Compile
   # ----------------------------------------
   compile:
-    name: ⚙️ Compile
+    name: Compile
     if: ${{ (needs.analyze.outputs.run_compile == 'true' || needs.analyze.outputs.run_publish_package == 'true') &&
             needs.analyze.outputs.has_compile == 'true' }}
     needs: [analyze, safety-tag]
@@ -150,10 +150,10 @@ jobs:
     secrets: inherit
 
   # ----------------------------------------
-  # 📦 Publish Package
+  # Publish Package
   # ----------------------------------------
   publish-package:
-    name: 📦 Publish Package
+    name: Publish Package
     if: ${{ needs.analyze.outputs.run_publish_package == 'true' &&
             needs.analyze.outputs.has_publish_package == 'true' }}
     needs: [analyze, safety-tag, compile]

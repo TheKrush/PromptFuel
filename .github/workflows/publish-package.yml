@@ -1,4 +1,4 @@
-name: 📦 Publish Package
+name: Publish Package
 
 on:
   workflow_call:
@@ -25,48 +25,48 @@ permissions:
 
 jobs:
   # ----------------------------------------
-  # 🚀 Publish Package
+  # Publish Package
   # ----------------------------------------
   publish-package:
-    name: 🚀 Publish Package
+    name: Publish Package
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: ⚙️ Configure Git
+      - name: Configure Git
         shell: bash
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: 🧾 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: ⚙️ Setup Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: 🔢 Determine Version
+      - name: Determine Version
         id: version
         uses: ./.github/actions/bump-version
         with:
           bump: ${{ inputs.bump }}
 
-      - name: 🏗️ Build
+      - name: Build
         uses: ./.github/actions/build-node
 
-      - name: 🧩 Sync Package Version
+      - name: Sync Package Version
         shell: bash
         run: |
           TARGET="${{ steps.version.outputs.version }}"
           CURRENT="$(node -p "require('./package.json').version")"
 
           if [[ "$CURRENT" != "$TARGET" ]]; then
-            echo "📦 Updating package.json: $CURRENT → $TARGET"
+            echo "Updating package.json: $CURRENT -> $TARGET"
             npm version "$TARGET" --no-git-tag-version
             git add package.json package-lock.json
             git commit \
@@ -74,21 +74,21 @@ jobs:
               -m "[skip ci]" \
               -m "Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA} via ${GITHUB_WORKFLOW} (run ${GITHUB_RUN_NUMBER})"
           else
-            echo "✅ Version already at ${TARGET}; skipping commit."
+            echo "Version already at ${TARGET}; skipping commit."
           fi
 
-      - name: 📦 Package VSIX
+      - name: Package VSIX
         shell: bash
         run: npm run package
 
-      - name: 📤 Push version bump
+      - name: Push version bump
         shell: bash
         run: git push origin HEAD:${{ github.ref_name }}
 
-      - name: 🏷️ Tag & Publish Release
+      - name: Tag and Publish Release
         uses: ./.github/actions/publish-github-release
         with:
           version: ${{ steps.version.outputs.version }}
           gh-token: ${{ secrets.GH_TOKEN || github.token }}
           files: prompt-fuel-*.vsix
-          title: "📦 ${{ github.event.repository.name }}"
+          title: "${{ github.event.repository.name }}"

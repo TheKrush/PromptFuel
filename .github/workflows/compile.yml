@@ -1,4 +1,4 @@
-name: ⚙️ Compile
+name: Compile
 
 on:
   workflow_call:
@@ -6,32 +6,32 @@ on:
 
 jobs:
   # ----------------------------------------
-  # 🏗️ Compile, test & smoke
+  # Compile, test & smoke
   # ----------------------------------------
   compile:
-    name: ⚙️ Compile, Test & Smoke
+    name: Compile, Test & Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: 🧾 Checkout
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
           token: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: ⚙️ Setup Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: 🏗️ Build
+      - name: Build
         uses: ./.github/actions/build-node
 
-      - name: 🧪 Unit tests
+      - name: Unit tests
         shell: bash
         run: npm run test:unit
 
-      - name: 🏪 Smoke suite
+      - name: Smoke suite
         shell: bash
         run: npm run smoke:ci

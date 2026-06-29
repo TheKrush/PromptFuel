@@ -1,4 +1,4 @@
-name: 🔢 Bump Version
+name: Bump Version
 description: Determines the next semantic version (major/minor/patch/revision) by inspecting git tags.
 
 inputs:

@@ -1,4 +1,4 @@
-name: 🛟 Create Safety Tag
+name: Create Safety Tag
 description: Create a non-version "safety" tag as a restore point.
 
 inputs:

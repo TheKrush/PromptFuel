@@ -1,4 +1,4 @@
-name: 💾 Create Safety Tag
+name: Create Safety Tag
 
 on:
   workflow_call:
@@ -23,14 +23,14 @@ permissions:
 
 jobs:
   # ----------------------------------------
-  # 💾 Safety Tag
+  # Safety Tag
   # ----------------------------------------
   create-safety-tag:
-    name: 💾 Create Safety Tag
+    name: Create Safety Tag
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧾 Checkout
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           sparse-checkout: |
@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN || github.token }}
 
-      - name: 💾 Create safety tag
+      - name: Create safety tag
         if: ${{ startsWith(github.ref, 'refs/heads/') &&
                 (github.event_name == 'workflow_dispatch' || inputs.run == 'true') }}
         uses: ./.github/actions/create-safety-tag
@@ -46,6 +46,6 @@ jobs:
           prefix: safety
           label: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.label || inputs.label }}
 
-      - name: 🧹 Cleanup Runner
+      - name: Cleanup Runner
         if: always()
         uses: ./.github/actions/cleanup-runner
