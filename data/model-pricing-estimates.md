@@ -4,9 +4,10 @@ This folder contains PromptFuel's local source-of-truth pricing table for API-eq
 
 ## Source Scope
 
-Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10.
+Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30.
 
 - Anthropic Claude model pricing: https://platform.claude.com/docs/en/about-claude/pricing
+- Anthropic Claude Sonnet 5 launch pricing: https://www.anthropic.com/news/claude-sonnet-5
 - Anthropic Claude Opus 4.8 launch and fast-mode pricing: https://www.anthropic.com/news/claude-opus-4-8
 - OpenAI API pricing: https://developers.openai.com/api/docs/pricing
 - OpenAI public API pricing summary: https://openai.com/api/pricing/
@@ -15,6 +16,7 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 ## Modeling Notes
 
 - Claude rows use first-party Claude API global pricing. PromptFuel does not model Anthropic data residency, batch, partner cloud, or private-offer modifiers.
+- `claude-sonnet-5` uses Anthropic's introductory API pricing through 2026-08-31; the future standard pricing that starts on 2026-09-01 is recorded in the CSV notes column instead of as a second scheduled row.
 - `anthropic/claude-fable-5` is included as an OpenRouter-style alias for the first-party `claude-fable-5` API model id.
 - Claude cache-write fields distinguish the official 5-minute and 1-hour prompt cache write prices. PromptFuel's current estimate path uses the 5-minute cache-write field for existing cache-write counters.
 - Claude fast-mode rows are included for matching explicit fast-mode model labels. Fast mode can have additional modifiers; PromptFuel does not model those separately.
