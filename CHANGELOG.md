@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.10
 
 **Compatibility warning: snapshot files written by this version are not readable by older PromptFuel versions.**
 
