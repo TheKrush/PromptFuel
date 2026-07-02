@@ -171,6 +171,7 @@
     "validate": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1 -SkipInstall",
     "validate:install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/dev-validate-install.ps1",
     "validate:manifest": "node scripts/validate-extension-manifest.cjs",
+    "validate:encoding": "node scripts/check-encoding.cjs",
     "smoke": "npm run smoke:ci",
     "smoke:ci": "npm run smoke:surface && npm run smoke:display && npm run smoke:dashboard && npm run smoke:snapshots && npm run smoke:codex",
     "smoke:surface": "node scripts/smoke-extension-surface.cjs",

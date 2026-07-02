@@ -3,7 +3,7 @@ import { ProviderUsageState } from '../types';
 export interface ResetRefreshPlan {
   key: string;
   provider: ProviderUsageState['provider'];
-  windowLabel: '5h' | '7d';
+  windowLabel: string;
   resetEpochSeconds: number;
   scheduledEpochMs: number;
 }
@@ -67,8 +67,13 @@ function collectWindowPlans(
   lastAttemptEpochMsByKey: ReadonlyMap<string, number> | undefined
 ): ResetRefreshPlan[] {
   const windows = [
-    { label: '5h' as const, resetEpochSeconds: state.fiveHour?.resetsAtEpochSeconds },
-    { label: '7d' as const, resetEpochSeconds: state.sevenDay?.resetsAtEpochSeconds }
+    { key: '5h', label: '5h', resetEpochSeconds: state.fiveHour?.resetsAtEpochSeconds },
+    { key: '7d', label: '7d', resetEpochSeconds: state.sevenDay?.resetsAtEpochSeconds },
+    ...(state.meters ?? []).map(meter => ({
+      key: `meter:${meter.id}`,
+      label: meter.label,
+      resetEpochSeconds: meter.window.resetsAtEpochSeconds
+    }))
   ];
 
   const plans: ResetRefreshPlan[] = [];
@@ -78,7 +83,7 @@ function collectWindowPlans(
       continue;
     }
 
-    const key = `${state.provider}:${window.label}:${resetEpochSeconds}`;
+    const key = `${state.provider}:${window.key}:${resetEpochSeconds}`;
     const scheduledEpochMs = getScheduledEpochMs(
       resetEpochSeconds,
       nowEpochMs,

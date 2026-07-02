@@ -23,6 +23,7 @@ const EXPECTED_PROVIDER_FIELDS = [
   'sevenDayUsedPercent',
   'fiveHourResetAtEpochSeconds',
   'sevenDayResetAtEpochSeconds',
+  'meters',
   'lastUpdatedEpochMs',
   'stale',
   'source',
@@ -152,6 +153,31 @@ describe('snapshotWriter', () => {
       }
     });
 
+    it('preserves optional generic meters in provider snapshots', () => {
+      const snap = buildMachineSnapshot(
+        { enabled: true, machineLabel: 'desktop', path: '' },
+        [mockState({
+          meters: [{
+            id: 'fake-scoped-meter',
+            label: 'preview 1d',
+            scope: 'model',
+            windowSeconds: 86_400,
+            window: { usedPercentage: 18, resetsAtEpochSeconds: 1_810_000_000 },
+            temporary: true
+          }]
+        })]
+      );
+
+      const meter = snap.providerUsage?.[0]?.meters?.[0];
+      assert.ok(meter);
+      assert.equal(meter?.id, 'fake-scoped-meter');
+      assert.equal(meter?.label, 'preview 1d');
+      assert.equal(meter?.scope, 'model');
+      assert.equal(meter?.windowSeconds, 86_400);
+      assert.equal(meter?.usedPercent, 18);
+      assert.equal(meter?.resetAtEpochSeconds, 1_810_000_000);
+      assert.equal(meter?.temporary, true);
+    });
     it('emits only the safe machine label', () => {
       const snap = buildMachineSnapshot(
         { enabled: true, machineLabel: 'workstation', path: '' },
@@ -163,7 +189,7 @@ describe('snapshotWriter', () => {
     it('omits providerUsage when no providers have quota data', () => {
       const snap = buildMachineSnapshot(
         { enabled: true, machineLabel: 'desktop', path: '' },
-        [mockState({ fiveHour: undefined, sevenDay: undefined })]
+        [mockState({ fiveHour: undefined, sevenDay: undefined, meters: undefined })]
       );
       assert.equal(snap.providerUsage, undefined);
     });

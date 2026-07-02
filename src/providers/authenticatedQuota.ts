@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as https from 'node:https';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AuthenticatedQuotaStatus, LimitWindow, ProviderName, ProviderUsageState } from '../types';
+import { AuthenticatedQuotaStatus, LimitWindow, ProviderName, ProviderUsageState, UsageMeter, UsageMeterScope } from '../types';
 import { isStale } from '../usageTime';
 import { USER_AGENT } from '../version';
 
@@ -10,6 +10,18 @@ const CACHE_FILE = 'authenticated-quota-cache.json';
 const SOCKET_TIMEOUT_MS = 5000;
 const HARD_DEADLINE_MS = 10000;
 const MAX_RESPONSE_BYTES = 128 * 1024;
+const FIVE_HOUR_SECONDS = 18_000;
+const SEVEN_DAY_SECONDS = 604_800;
+const KNOWN_CLAUDE_PRIMARY_KEYS = new Set(['five_hour', 'seven_day', 'seven_day_opus']);
+const KNOWN_CODEX_PRIMARY_KEYS = new Set(['primary_window', 'primary', 'secondary_window', 'secondary']);
+
+export const CLAUDE_OPUS_USAGE_METER_ID = 'claude-seven-day-opus';
+
+export interface ParsedProviderQuota {
+  fiveHour?: LimitWindow;
+  sevenDay?: LimitWindow;
+  meters?: UsageMeter[];
+}
 
 export interface AuthenticatedQuotaFetchOutcome {
   provider: ProviderName;
@@ -35,6 +47,7 @@ export async function readAuthenticatedQuotaCache(stateDirectory: string): Promi
       if (state.provider === 'claude' || state.provider === 'codex') {
         result[state.provider] = {
           ...state,
+          meters: cachedMetersForState(state),
           stale: isStale(state.lastUpdatedEpochMs ?? state.lastAuthenticatedRefreshEpochMs),
           source: state.source ?? 'stale cached authenticated quota'
         };
@@ -92,15 +105,12 @@ async function fetchClaudeQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
     return httpFailure(provider, response);
   }
 
-  const body = asRecord(response.body);
-  const fiveHour = parseClaudeWindow(asRecord(body?.five_hour));
-  const sevenDay = parseClaudeWindow(asRecord(body?.seven_day));
-  const sevenDayOpus = parseClaudeWindow(asRecord(body?.seven_day_opus));
-  if (!fiveHour && !sevenDay && !sevenDayOpus) {
-    return authFailure(provider, 'parse_error', 'Claude usage response did not include recognizable 5h/7d/opus windows.');
+  const quota = parseClaudeQuotaPayload(asRecord(response.body));
+  if (!quota) {
+    return authFailure(provider, 'parse_error', 'Claude usage response did not include recognizable 5h/7d or generic meter windows.');
   }
 
-  return success(provider, fiveHour, sevenDay, sevenDayOpus, response.statusCode);
+  return success(provider, quota.fiveHour, quota.sevenDay, quota.meters, response.statusCode);
 }
 
 async function fetchCodexQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
@@ -132,24 +142,19 @@ async function fetchCodexQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
     return httpFailure(provider, response);
   }
 
-  const body = asRecord(response.body);
-  const rateLimit = asRecord(body?.rate_limit) ?? asRecord(body?.rate_limits);
-  const primaryWindow = asRecord(rateLimit?.primary_window) ?? asRecord(rateLimit?.primary);
-  const secondaryWindow = asRecord(rateLimit?.secondary_window) ?? asRecord(rateLimit?.secondary);
-  const fiveHour = parseCodexWindow(primaryWindow, 18_000);
-  const sevenDay = parseCodexWindow(secondaryWindow, 604_800);
-  if (!fiveHour && !sevenDay) {
-    return authFailure(provider, 'parse_error', 'Codex usage response did not include recognizable 5h/7d windows.');
+  const quota = parseCodexQuotaPayload(asRecord(response.body));
+  if (!quota) {
+    return authFailure(provider, 'parse_error', 'Codex usage response did not include recognizable 5h/7d or generic meter windows.');
   }
 
-  return success(provider, fiveHour, sevenDay, undefined, response.statusCode);
+  return success(provider, quota.fiveHour, quota.sevenDay, quota.meters, response.statusCode);
 }
 
 function success(
   provider: ProviderName,
   fiveHour: LimitWindow | undefined,
   sevenDay: LimitWindow | undefined,
-  sevenDayOpus: LimitWindow | undefined,
+  meters: UsageMeter[] | undefined,
   statusCode: number | undefined
 ): AuthenticatedQuotaFetchOutcome {
   const now = Date.now();
@@ -160,7 +165,7 @@ function success(
       provider,
       fiveHour,
       sevenDay,
-      sevenDayOpus,
+      meters,
       sourceKind: 'authenticated',
       source: 'live authenticated refresh',
       lastUpdatedEpochMs: now,
@@ -294,6 +299,70 @@ async function readJsonObject(filePath: string): Promise<Record<string, unknown>
   }
 }
 
+export function parseClaudeQuotaPayload(body: Record<string, unknown> | undefined): ParsedProviderQuota | undefined {
+  if (!body) {
+    return undefined;
+  }
+
+  const fiveHour = parseClaudeWindow(asRecord(body.five_hour));
+  const sevenDay = parseClaudeWindow(asRecord(body.seven_day));
+  const meters = collectUsageMeters([
+    buildUsageMeter(
+      CLAUDE_OPUS_USAGE_METER_ID,
+      'opus 7d',
+      'modelFamily',
+      parseClaudeWindow(asRecord(body.seven_day_opus)),
+      { windowSeconds: SEVEN_DAY_SECONDS }
+    ),
+    ...Object.entries(body).map(([key, value]) => {
+      if (KNOWN_CLAUDE_PRIMARY_KEYS.has(key)) {
+        return undefined;
+      }
+      return parseClaudeUsageMeter(key, asRecord(value));
+    })
+  ]);
+
+  if (!hasParsedQuota(fiveHour, sevenDay, meters)) {
+    return undefined;
+  }
+
+  return {
+    fiveHour,
+    sevenDay,
+    ...(meters ? { meters } : {})
+  };
+}
+
+export function parseCodexQuotaPayload(body: Record<string, unknown> | undefined): ParsedProviderQuota | undefined {
+  if (!body) {
+    return undefined;
+  }
+
+  const rateLimit = asRecord(body.rate_limit) ?? asRecord(body.rate_limits);
+  const primaryWindow = asRecord(rateLimit?.primary_window) ?? asRecord(rateLimit?.primary);
+  const secondaryWindow = asRecord(rateLimit?.secondary_window) ?? asRecord(rateLimit?.secondary);
+  const fiveHour = parseCodexWindow(primaryWindow, FIVE_HOUR_SECONDS);
+  const sevenDay = parseCodexWindow(secondaryWindow, SEVEN_DAY_SECONDS);
+  const meters = collectUsageMeters(
+    Object.entries(rateLimit ?? {}).map(([key, value]) => {
+      if (KNOWN_CODEX_PRIMARY_KEYS.has(key)) {
+        return undefined;
+      }
+      return parseCodexUsageMeter(key, asRecord(value));
+    })
+  );
+
+  if (!hasParsedQuota(fiveHour, sevenDay, meters)) {
+    return undefined;
+  }
+
+  return {
+    fiveHour,
+    sevenDay,
+    ...(meters ? { meters } : {})
+  };
+}
+
 export function parseClaudeWindow(window: Record<string, unknown> | undefined): LimitWindow | undefined {
   if (!window) {
     return undefined;
@@ -304,16 +373,12 @@ export function parseClaudeWindow(window: Record<string, unknown> | undefined): 
   );
 }
 
-export function parseCodexWindow(window: Record<string, unknown> | undefined, expectedSeconds: number): LimitWindow | undefined {
+export function parseCodexWindow(window: Record<string, unknown> | undefined, expectedSeconds?: number): LimitWindow | undefined {
   if (!window) {
     return undefined;
   }
-  const seconds = toNumber(window.limit_window_seconds);
-  const minutes = toNumber(window.window_minutes);
-  if (seconds !== undefined && seconds !== expectedSeconds) {
-    return undefined;
-  }
-  if (minutes !== undefined && minutes * 60 !== expectedSeconds) {
+  const seconds = parseUsageMeterWindowSeconds(window);
+  if (expectedSeconds !== undefined && seconds !== undefined && seconds !== expectedSeconds) {
     return undefined;
   }
 
@@ -341,7 +406,7 @@ function sanitizeAuthenticatedState(state: ProviderUsageState): ProviderUsageSta
     provider: state.provider,
     fiveHour: state.fiveHour,
     sevenDay: state.sevenDay,
-    sevenDayOpus: state.sevenDayOpus,
+    meters: state.meters,
     sourceKind: state.sourceKind,
     source: state.source,
     lastUpdatedEpochMs: state.lastUpdatedEpochMs,
@@ -354,6 +419,204 @@ function sanitizeAuthenticatedState(state: ProviderUsageState): ProviderUsageSta
     stale: state.stale,
     diagnosticSeverity: state.diagnosticSeverity
   };
+}
+
+function cachedMetersForState(state: ProviderUsageState): UsageMeter[] | undefined {
+  const record = state as ProviderUsageState & Record<string, unknown>;
+  const meters = Array.isArray(record.meters) ? record.meters as UsageMeter[] : [];
+  const legacyOpus = state.provider === 'claude'
+    ? buildUsageMeter(
+      CLAUDE_OPUS_USAGE_METER_ID,
+      'opus 7d',
+      'modelFamily',
+      parseLegacyCachedOpusWindow(asRecord(record.sevenDayOpus)),
+      { windowSeconds: SEVEN_DAY_SECONDS, requireUsedPercentage: true }
+    )
+    : undefined;
+  return collectUsageMeters([...meters, legacyOpus]);
+}
+
+// Legacy cached sevenDayOpus blobs are already a LimitWindow-shaped object
+// ({ usedPercentage, resetsAtEpochSeconds }), not a raw provider payload window
+// (which uses aliases like used_percentage/utilization/resets_at). Read the
+// legacy fields directly instead of routing through parseClaudeWindow's aliases.
+function parseLegacyCachedOpusWindow(window: Record<string, unknown> | undefined): LimitWindow | undefined {
+  if (!window) {
+    return undefined;
+  }
+  return parsedWindow(
+    toNumber(window.usedPercentage),
+    parseResetEpochSeconds(window.resetsAtEpochSeconds)
+  );
+}
+
+function parseClaudeUsageMeter(key: string, window: Record<string, unknown> | undefined): UsageMeter | undefined {
+  if (!window) {
+    return undefined;
+  }
+  return buildUsageMeter(
+    asString(window.id) ?? key,
+    parseUsageMeterLabel(asString(window.label) ?? asString(window.display_label) ?? asString(window.name), key, parseUsageMeterWindowSeconds(window)),
+    parseUsageMeterScope(window),
+    parseClaudeWindow(window),
+    {
+      windowSeconds: parseUsageMeterWindowSeconds(window),
+      rollup: asBoolean(window.rollup),
+      temporary: asBoolean(window.temporary),
+      expiresAtEpochSeconds: parseResetEpochSeconds(window.expires_at) ?? parseResetEpochSeconds(window.expiresAtEpochSeconds),
+      requireUsedPercentage: true
+    }
+  );
+}
+
+function parseCodexUsageMeter(key: string, window: Record<string, unknown> | undefined): UsageMeter | undefined {
+  if (!window) {
+    return undefined;
+  }
+  const windowSeconds = parseUsageMeterWindowSeconds(window);
+  return buildUsageMeter(
+    asString(window.id) ?? key,
+    parseUsageMeterLabel(asString(window.label) ?? asString(window.display_label) ?? asString(window.name), key, windowSeconds),
+    parseUsageMeterScope(window),
+    parseCodexWindow(window),
+    {
+      windowSeconds,
+      rollup: asBoolean(window.rollup),
+      temporary: asBoolean(window.temporary),
+      expiresAtEpochSeconds: parseResetEpochSeconds(window.expires_at) ?? parseResetEpochSeconds(window.expiresAtEpochSeconds),
+      requireUsedPercentage: true
+    }
+  );
+}
+
+function buildUsageMeter(
+  id: string,
+  label: string,
+  scope: UsageMeterScope,
+  window: LimitWindow | undefined,
+  options: {
+    windowSeconds?: number;
+    rollup?: boolean;
+    temporary?: boolean;
+    expiresAtEpochSeconds?: number;
+    requireUsedPercentage?: boolean;
+  } = {}
+): UsageMeter | undefined {
+  if (!window) {
+    return undefined;
+  }
+
+  // Generic meters (unknown/unrecognized windows) require a defined usedPercentage;
+  // reset-only or empty objects must not become meters. Primaries and the migrated
+  // Opus meter are exempt (requireUsedPercentage left unset by their call sites).
+  if (options.requireUsedPercentage && window.usedPercentage === undefined) {
+    return undefined;
+  }
+
+  const normalizedId = normalizeUsageMeterId(id);
+  if (!normalizedId) {
+    return undefined;
+  }
+
+  return {
+    id: normalizedId,
+    label: label.trim(),
+    scope,
+    ...(options.windowSeconds !== undefined ? { windowSeconds: options.windowSeconds } : {}),
+    window,
+    ...(options.rollup !== undefined ? { rollup: options.rollup } : {}),
+    ...(options.temporary !== undefined ? { temporary: options.temporary } : {}),
+    ...(options.expiresAtEpochSeconds !== undefined ? { expiresAtEpochSeconds: options.expiresAtEpochSeconds } : {})
+  };
+}
+
+function normalizeUsageMeterId(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function parseUsageMeterScope(window: Record<string, unknown>): UsageMeterScope {
+  const value = asString(window.scope) ?? asString(window.meter_scope) ?? asString(window.meterScope);
+  switch (value) {
+    case 'account':
+    case 'model':
+    case 'modelFamily':
+    case 'unknown':
+      return value;
+    default:
+      return 'unknown';
+  }
+}
+
+function parseUsageMeterWindowSeconds(window: Record<string, unknown>): number | undefined {
+  const seconds = toNumber(window.limit_window_seconds) ?? toNumber(window.window_seconds) ?? toNumber(window.windowSeconds);
+  if (seconds !== undefined) {
+    return seconds;
+  }
+  const minutes = toNumber(window.window_minutes);
+  if (minutes !== undefined) {
+    return minutes * 60;
+  }
+  return undefined;
+}
+
+function parseUsageMeterLabel(explicit: string | undefined, fallbackId: string, windowSeconds: number | undefined): string {
+  if (explicit && explicit.trim()) {
+    return explicit.trim();
+  }
+
+  const base = fallbackId
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const windowLabel = formatWindowSecondsLabel(windowSeconds);
+  if (!windowLabel || base.includes(windowLabel)) {
+    return base;
+  }
+  return `${base} ${windowLabel}`;
+}
+
+function formatWindowSecondsLabel(windowSeconds: number | undefined): string | undefined {
+  if (windowSeconds === undefined || !Number.isFinite(windowSeconds) || windowSeconds <= 0) {
+    return undefined;
+  }
+  if (windowSeconds % 86_400 === 0) {
+    return `${windowSeconds / 86_400}d`;
+  }
+  if (windowSeconds % 3_600 === 0) {
+    return `${windowSeconds / 3_600}h`;
+  }
+  if (windowSeconds % 60 === 0) {
+    return `${windowSeconds / 60}m`;
+  }
+  return `${windowSeconds}s`;
+}
+
+function hasParsedQuota(
+  fiveHour: LimitWindow | undefined,
+  sevenDay: LimitWindow | undefined,
+  meters: UsageMeter[] | undefined
+): boolean {
+  return Boolean(fiveHour || sevenDay || (meters && meters.length > 0));
+}
+
+function collectUsageMeters(meters: Array<UsageMeter | undefined>): UsageMeter[] | undefined {
+  const collected: UsageMeter[] = [];
+  const seen = new Set<string>();
+  for (const meter of meters) {
+    if (!meter || seen.has(meter.id)) {
+      continue;
+    }
+    seen.add(meter.id);
+    collected.push(meter);
+  }
+  return collected.length > 0 ? collected : undefined;
 }
 
 function parseRetryAfter(value: string | string[] | undefined): number | undefined {
@@ -381,6 +644,10 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function toNumber(value: unknown): number | undefined {

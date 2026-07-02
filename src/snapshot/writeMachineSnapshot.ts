@@ -8,7 +8,8 @@ import type {
   SnapshotProviderUsageV2,
   SnapshotHistoryBucket,
   SnapshotBucketModel,
-  PromptFuelMachineSnapshotV2
+  PromptFuelMachineSnapshotV2,
+  SnapshotUsageMeter
 } from './types';
 import { SNAPSHOT_SCHEMA_V1 } from './types';
 import { hasTokenData } from './tokenMath';
@@ -116,6 +117,34 @@ function safePositiveNumber(value: number | undefined | null): number | undefine
 function safeNonEmptyString(value: string | undefined): string | undefined {
   if (!value || typeof value !== 'string' || value.trim().length === 0) return undefined;
   return value.trim();
+}
+
+function buildSnapshotMeter(meter: NonNullable<ProviderUsageState['meters']>[number]): SnapshotUsageMeter | undefined {
+  const id = safeNonEmptyString(meter.id);
+  const label = safeNonEmptyString(meter.label);
+  if (!id || !label) {
+    return undefined;
+  }
+
+  const snapshotMeter: SnapshotUsageMeter = {
+    id,
+    label,
+    scope: meter.scope
+  };
+
+  const windowSeconds = safePositiveNumber(meter.windowSeconds);
+  const usedPercent = windowUsedPercent(meter.window);
+  const resetAtEpochSeconds = safePositiveNumber(meter.window.resetsAtEpochSeconds);
+  const expiresAtEpochSeconds = safePositiveNumber(meter.expiresAtEpochSeconds);
+
+  if (windowSeconds !== undefined) snapshotMeter.windowSeconds = windowSeconds;
+  if (usedPercent !== undefined) snapshotMeter.usedPercent = usedPercent;
+  if (resetAtEpochSeconds !== undefined) snapshotMeter.resetAtEpochSeconds = resetAtEpochSeconds;
+  if (meter.rollup !== undefined) snapshotMeter.rollup = meter.rollup;
+  if (meter.temporary !== undefined) snapshotMeter.temporary = meter.temporary;
+  if (expiresAtEpochSeconds !== undefined) snapshotMeter.expiresAtEpochSeconds = expiresAtEpochSeconds;
+
+  return snapshotMeter;
 }
 
 function buildSnapshotBucketModelEntry(
@@ -233,7 +262,7 @@ function buildProviderUsage(
   _extraContributions?: ModelContributionInput[],
   historyInput?: ProviderHistoryInput
 ): SnapshotProviderUsageV2 | undefined {
-  if (!state.fiveHour && !state.sevenDay) {
+  if (!state.fiveHour && !state.sevenDay && !(state.meters?.length)) {
     return undefined;
   }
 
@@ -257,6 +286,13 @@ function buildProviderUsage(
   }
   if (sevenDayReset !== undefined) {
     base.sevenDayResetAtEpochSeconds = sevenDayReset;
+  }
+
+  const meters = (state.meters ?? [])
+    .map(meter => buildSnapshotMeter(meter))
+    .filter((meter): meter is SnapshotUsageMeter => meter !== undefined);
+  if (meters.length > 0) {
+    base.meters = meters;
   }
 
   const historyBuckets = buildHistoryBuckets(state, historyInput);

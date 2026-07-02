@@ -75,6 +75,11 @@ Invoke-Step "Validate manifest" {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+Invoke-Step "Validate encoding" {
+    npm run validate:encoding
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 if (-not $SkipSmoke) {
     $mainRelative = $packageJson.main -replace '^\./', '' -replace '/', '\'
     $mainPath = Join-Path $repoRoot $mainRelative

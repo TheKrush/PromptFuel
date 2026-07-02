@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Compatibility warning: snapshot files written by this version are not readable by older PromptFuel versions.**
+
+- Snapshot writers now include a `meters` array on each provider entry (generic per-window usage meters beyond the fixed five-hour/seven-day windows). Snapshot files containing `meters` will fail to parse on PromptFuel versions that predate this release.
+- Machines that share a snapshot folder (`promptFuel.snapshot.path`) should update to this version together, or older readers on that folder will report snapshot validation errors for newer machines' files until they update.
+
 ## 1.0.9
 
 Adds a range-aware Weekday distribution chart to the usage history dashboard.

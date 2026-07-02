@@ -1,6 +1,19 @@
 import type { UsageDashboardSourceConfidence } from '../panel/usageDashboardModel';
+import type { UsageMeterScope } from '../types';
 
 export type SnapshotProviderName = 'claude' | 'codex';
+
+export interface SnapshotUsageMeter {
+  id: string;
+  label: string;
+  scope: UsageMeterScope;
+  windowSeconds?: number;
+  usedPercent?: number;
+  resetAtEpochSeconds?: number;
+  rollup?: boolean;
+  temporary?: boolean;
+  expiresAtEpochSeconds?: number;
+}
 
 export interface PromptFuelMachineSnapshotProvider {
   provider: SnapshotProviderName;
@@ -9,6 +22,7 @@ export interface PromptFuelMachineSnapshotProvider {
   sevenDayUsedPercent?: number;
   fiveHourResetAtEpochSeconds?: number;
   sevenDayResetAtEpochSeconds?: number;
+  meters?: SnapshotUsageMeter[];
   lastUpdatedEpochMs?: number;
   stale: boolean;
   source: 'authenticated' | 'localSession' | 'hook' | 'snapshot' | 'cache' | 'stale' | 'unknown';
@@ -57,14 +71,13 @@ export interface SnapshotProviderUsageV2 {
   sevenDayUsedPercent?: number;
   fiveHourResetAtEpochSeconds?: number;
   sevenDayResetAtEpochSeconds?: number;
+  meters?: SnapshotUsageMeter[];
   lastUpdatedEpochMs?: number;
   stale: boolean;
   source: 'authenticated' | 'localSession' | 'hook' | 'snapshot' | 'cache' | 'stale' | 'unknown';
   sourceConfidence: UsageDashboardSourceConfidence;
   historyBuckets?: SnapshotHistoryBucket[];
 }
-
-
 
 /** Machine snapshot payload for the current snapshot schema (V1). */
 export interface PromptFuelMachineSnapshotV2 {

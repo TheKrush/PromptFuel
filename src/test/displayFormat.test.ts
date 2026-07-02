@@ -95,6 +95,27 @@ describe('display formatting', () => {
     assert.doesNotMatch(text, /blocked/i);
   });
 
+  it('renders generic meters in the provider tooltip table', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const state: ProviderUsageState[] = [{
+      provider: 'claude',
+      source: 'threshold unit fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'fake-scoped-meter',
+        label: 'preview 1d',
+        scope: 'model',
+        windowSeconds: 86_400,
+        window: { usedPercentage: 40, resetsAtEpochSeconds: reset }
+      }]
+    }];
+
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.tooltip ?? '', /\| preview 1d \|/);
+  });
   it('separates compact status bar providers with pipe', () => {
     const opts = baseOptions();
     const remoteText = `XW ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`;

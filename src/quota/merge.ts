@@ -1,4 +1,4 @@
-import { LimitWindow, ProviderUsageState, QuotaSourceKind } from '../types';
+import { LimitWindow, ProviderUsageState, QuotaSourceKind, UsageMeter } from '../types';
 import { RESET_EXPIRY_GRACE_MS } from '../usageTime';
 
 const AUTHORITY_RANK: Record<QuotaSourceKind, number> = {
@@ -24,24 +24,34 @@ interface MergeWindowResult {
   ignored?: string;
 }
 
+interface MergeMetersResult {
+  meters?: UsageMeter[];
+  ignored: string[];
+}
+
 export function mergeLocalAndAuthenticated(
   local: ProviderUsageState,
   authenticated: ProviderUsageState | undefined,
   options?: QuotaMergeOptions
 ): ProviderUsageState {
   const localWithMetadata = annotateStateWindows(local, options);
-  if (!authenticated?.fiveHour && !authenticated?.sevenDay && !authenticated?.sevenDayOpus) {
+  if (!authenticated || !stateHasQuota(authenticated)) {
     return localWithMetadata;
   }
 
   const authenticatedWithMetadata = annotateStateWindows(authenticated, options);
   const fiveHour = chooseQuotaWindow(localWithMetadata.fiveHour, authenticatedWithMetadata.fiveHour);
   const sevenDay = chooseQuotaWindow(localWithMetadata.sevenDay, authenticatedWithMetadata.sevenDay);
-  const ignored = unique([fiveHour.ignored, sevenDay.ignored].filter((value): value is string => Boolean(value)));
-  const quotaSource = summarizeQuotaSource([fiveHour.window, sevenDay.window], localWithMetadata.source);
+  const meters = mergeQuotaMeters(localWithMetadata.meters, authenticatedWithMetadata.meters);
+  const quotaWindows = [fiveHour.window, sevenDay.window, ...(meters.meters ?? []).map(meter => meter.window)];
+  const ignored = unique([
+    fiveHour.ignored,
+    sevenDay.ignored,
+    ...meters.ignored
+  ].filter((value): value is string => Boolean(value)));
+  const quotaSource = summarizeQuotaSource(quotaWindows, localWithMetadata.source);
   const lastQuotaUpdate = Math.max(
-    fiveHour.window?.sourceUpdatedEpochMs ?? 0,
-    sevenDay.window?.sourceUpdatedEpochMs ?? 0,
+    ...quotaWindows.map(window => window?.sourceUpdatedEpochMs ?? 0),
     localWithMetadata.lastUpdatedEpochMs ?? 0,
     authenticatedWithMetadata.lastUpdatedEpochMs ?? 0
   );
@@ -50,7 +60,7 @@ export function mergeLocalAndAuthenticated(
     ...localWithMetadata,
     fiveHour: fiveHour.window,
     sevenDay: sevenDay.window,
-    sevenDayOpus: authenticated?.sevenDayOpus,
+    meters: meters.meters,
     source: quotaSource,
     lastUpdatedEpochMs: lastQuotaUpdate || localWithMetadata.lastUpdatedEpochMs,
     lastAuthenticatedRefreshEpochMs: authenticated.lastAuthenticatedRefreshEpochMs,
@@ -58,8 +68,8 @@ export function mergeLocalAndAuthenticated(
     authenticatedStatus: authenticated.authenticatedStatus,
     authenticatedHttpStatus: authenticated.authenticatedHttpStatus,
     authenticatedError: authenticated.authenticatedError,
-    stale: mergedQuotaIsStale([fiveHour.window, sevenDay.window], localWithMetadata.stale),
-    error: fiveHour.window || sevenDay.window ? undefined : localWithMetadata.error,
+    stale: mergedQuotaIsStale(quotaWindows, localWithMetadata.stale),
+    error: quotaWindows.some(window => Boolean(window)) ? undefined : localWithMetadata.error,
     ignoredQuotaSource: ignored.length > 0 ? ignored.join('; ') : localWithMetadata.ignoredQuotaSource
   };
 }
@@ -81,7 +91,7 @@ export function mergeAuthenticatedQuotaSuccess(
     ...base,
     fiveHour: annotated.fiveHour ?? nonExpiredWindow(current?.fiveHour),
     sevenDay: annotated.sevenDay ?? nonExpiredWindow(current?.sevenDay),
-    sevenDayOpus: authenticated.sevenDayOpus,
+    meters: annotated.meters ?? nonExpiredMeters(current?.meters),
     source: 'live authenticated refresh',
     lastUpdatedEpochMs: authenticated.lastUpdatedEpochMs,
     lastLocalUpdateEpochMs: localUpdated,
@@ -102,7 +112,7 @@ export function mergeAuthenticatedFailure(
   backoffUntil: number,
   options?: QuotaMergeOptions
 ): ProviderUsageState {
-  const hasQuota = Boolean(current?.fiveHour || current?.sevenDay);
+  const hasQuota = stateHasQuota(current);
   const state = annotateStateWindows(current ?? { provider: failure.provider, source: 'authenticated quota provider', stale: true }, options);
   const fallback = annotateAuthenticatedFallbackWindows(state);
 
@@ -130,20 +140,27 @@ export function annotateStateWindows(state: ProviderUsageState, options?: QuotaM
 
   return {
     ...state,
-    fiveHour: annotateWindow(state.fiveHour, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options),
-    sevenDay: annotateWindow(state.sevenDay, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options)
+    fiveHour: annotateWindow(state.fiveHour, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options, FIVE_HOUR_WINDOW_S),
+    sevenDay: annotateWindow(state.sevenDay, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options, SEVEN_DAY_WINDOW_S),
+    meters: annotateMeters(state.meters, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options)
   };
 }
 
 function annotateAuthenticatedFallbackWindows(state: ProviderUsageState): ProviderUsageState {
   const fiveHour = annotateAuthenticatedFallbackWindow(state.fiveHour);
   const sevenDay = annotateAuthenticatedFallbackWindow(state.sevenDay);
-  const labels = unique([fiveHour?.sourceLabel, sevenDay?.sourceLabel].filter((value): value is string => Boolean(value)));
+  const meters = annotateAuthenticatedFallbackMeters(state.meters);
+  const labels = unique([
+    fiveHour?.sourceLabel,
+    sevenDay?.sourceLabel,
+    ...(meters ?? []).map(meter => meter.window.sourceLabel)
+  ].filter((value): value is string => Boolean(value)));
 
   return {
     ...state,
     fiveHour,
     sevenDay,
+    meters,
     source: labels.length === 1 ? labels[0] : labels.length > 1 ? 'mixed quota sources' : state.source
   };
 }
@@ -164,8 +181,24 @@ function annotateAuthenticatedFallbackWindow(window: LimitWindow | undefined): L
   });
 }
 
+function annotateAuthenticatedFallbackMeters(meters: UsageMeter[] | undefined): UsageMeter[] | undefined {
+  if (!meters || meters.length === 0) {
+    return undefined;
+  }
+
+  const annotated = meters
+    .map(meter => {
+      const window = annotateAuthenticatedFallbackWindow(meter.window);
+      return window ? { ...meter, window } : undefined;
+    })
+    .filter((meter): meter is UsageMeter => Boolean(meter));
+
+  return annotated.length > 0 ? annotated : undefined;
+}
+
 function hasCachedQuota(state: ProviderUsageState): boolean {
-  return [state.fiveHour, state.sevenDay].some(window => window?.sourceKind === 'cache');
+  return [state.fiveHour, state.sevenDay, ...(state.meters ?? []).map(meter => meter.window)]
+    .some(window => window?.sourceKind === 'cache');
 }
 
 function chooseQuotaWindow(local: LimitWindow | undefined, authenticated: LimitWindow | undefined): MergeWindowResult {
@@ -225,7 +258,8 @@ function annotateWindow(
   sourceLabel: string,
   sourceUpdatedEpochMs: number | undefined,
   sourceAuthorityRank: number,
-  options?: QuotaMergeOptions
+  options?: QuotaMergeOptions,
+  windowDurationSeconds?: number
 ): LimitWindow | undefined {
   if (!window) {
     return undefined;
@@ -239,8 +273,84 @@ function annotateWindow(
       sourceUpdatedEpochMs: window.sourceUpdatedEpochMs ?? sourceUpdatedEpochMs,
       sourceAuthorityRank: window.sourceAuthorityRank ?? sourceAuthorityRank
     }),
-    options
+    options,
+    windowDurationSeconds
   );
+}
+
+function annotateMeters(
+  meters: UsageMeter[] | undefined,
+  sourceKind: QuotaSourceKind,
+  sourceLabel: string,
+  sourceUpdatedEpochMs: number | undefined,
+  sourceAuthorityRank: number,
+  options?: QuotaMergeOptions
+): UsageMeter[] | undefined {
+  if (!meters || meters.length === 0) {
+    return undefined;
+  }
+
+  const annotated = meters
+    .map(meter => {
+      const window = annotateWindow(
+        meter.window,
+        sourceKind,
+        sourceLabel,
+        sourceUpdatedEpochMs,
+        sourceAuthorityRank,
+        options,
+        meter.windowSeconds
+      );
+      return window ? { ...meter, window } : undefined;
+    })
+    .filter((meter): meter is UsageMeter => Boolean(meter));
+
+  return annotated.length > 0 ? annotated : undefined;
+}
+
+function mergeQuotaMeters(localMeters: UsageMeter[] | undefined, authenticatedMeters: UsageMeter[] | undefined): MergeMetersResult {
+  const orderedIds = unique([
+    ...(authenticatedMeters ?? []).map(meter => meter.id),
+    ...(localMeters ?? []).map(meter => meter.id)
+  ]);
+  const merged: UsageMeter[] = [];
+  const ignored: string[] = [];
+
+  for (const id of orderedIds) {
+    const localMeter = localMeters?.find(meter => meter.id === id);
+    const authenticatedMeter = authenticatedMeters?.find(meter => meter.id === id);
+
+    if (!localMeter && authenticatedMeter) {
+      merged.push(authenticatedMeter);
+      continue;
+    }
+    if (localMeter && !authenticatedMeter) {
+      merged.push(localMeter);
+      continue;
+    }
+    if (!localMeter || !authenticatedMeter) {
+      continue;
+    }
+
+    const choice = chooseQuotaWindow(localMeter.window, authenticatedMeter.window);
+    if (choice.ignored) {
+      ignored.push(choice.ignored);
+    }
+    if (!choice.window) {
+      continue;
+    }
+
+    const selectedMeter = choice.window === localMeter.window ? localMeter : authenticatedMeter;
+    merged.push({
+      ...selectedMeter,
+      window: choice.window
+    });
+  }
+
+  return {
+    meters: merged.length > 0 ? merged : undefined,
+    ignored: unique(ignored)
+  };
 }
 
 function annotateExpiredFallbackWindow(window: LimitWindow): LimitWindow {
@@ -269,7 +379,11 @@ function annotateExpiredFallbackWindow(window: LimitWindow): LimitWindow {
   return window;
 }
 
-function clearSuspiciousFreshExhaustedWindow(window: LimitWindow, options?: QuotaMergeOptions): LimitWindow {
+function clearSuspiciousFreshExhaustedWindow(
+  window: LimitWindow,
+  options?: QuotaMergeOptions,
+  windowDurationSeconds?: number
+): LimitWindow {
   const tolerance = options?.freshResetToleranceSeconds ?? FRESH_WINDOW_TOLERANCE_S;
   if (tolerance <= 0) {
     return window;
@@ -287,7 +401,7 @@ function clearSuspiciousFreshExhaustedWindow(window: LimitWindow, options?: Quot
     return window;
   }
 
-  const knownDurations = [FIVE_HOUR_WINDOW_S, SEVEN_DAY_WINDOW_S];
+  const knownDurations = uniqueNumbers([windowDurationSeconds, FIVE_HOUR_WINDOW_S, SEVEN_DAY_WINDOW_S]);
   const matchesFreshReset = knownDurations.some(
     duration => Math.abs(timeUntilResetSeconds - duration) <= tolerance
   );
@@ -345,6 +459,21 @@ function isPostResetCandidate(candidate: LimitWindow, expired: LimitWindow): boo
 
 function nonExpiredWindow(window: LimitWindow | undefined): LimitWindow | undefined {
   return window && !isExpiredWindow(window) ? window : undefined;
+}
+
+function nonExpiredMeters(meters: UsageMeter[] | undefined): UsageMeter[] | undefined {
+  if (!meters || meters.length === 0) {
+    return undefined;
+  }
+
+  const filtered = meters
+    .map(meter => {
+      const window = nonExpiredWindow(meter.window);
+      return window ? { ...meter, window } : undefined;
+    })
+    .filter((meter): meter is UsageMeter => Boolean(meter));
+
+  return filtered.length > 0 ? filtered : undefined;
 }
 
 function isExpiredWindow(window: LimitWindow): boolean {
@@ -466,6 +595,14 @@ function cachedWindowIgnored(window: LimitWindow): string | undefined {
   return `${window.sourceLabel} ignored: older/lower authority`;
 }
 
+function stateHasQuota(state: ProviderUsageState | undefined): boolean {
+  return Boolean(state?.fiveHour || state?.sevenDay || state?.meters?.length);
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function uniqueNumbers(values: Array<number | undefined>): number[] {
+  return [...new Set(values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0))];
 }

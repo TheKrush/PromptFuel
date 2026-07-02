@@ -149,6 +149,75 @@ describe('snapshotReader', () => {
       assert.ok(entry.snapshot.providerUsage?.[0]?.historyBuckets);
     });
 
+    it('reads optional generic meters and keeps older snapshots without meters compatible', async () => {
+      await writeLatest('WITH-METERS-latest.json', makeSnapshot({
+        machineLabel: 'WITH-METERS',
+        providerUsage: [{
+          provider: 'claude',
+          sourceLabel: 'Claude',
+          fiveHourUsedPercent: 30,
+          sevenDayUsedPercent: 60,
+          fiveHourResetAtEpochSeconds: 1_800_000_000,
+          sevenDayResetAtEpochSeconds: 1_900_000_000,
+          meters: [{
+            id: 'fake-scoped-meter',
+            label: 'preview 1d',
+            scope: 'model' as const,
+            windowSeconds: 86_400,
+            usedPercent: 12,
+            resetAtEpochSeconds: 1_810_000_000,
+            temporary: true
+          }],
+          lastUpdatedEpochMs: Date.now(),
+          stale: false,
+          source: 'authenticated',
+          sourceConfidence: 'quotaState',
+          historyBuckets: [{ dateKey: TODAY_KEY }]
+        }]
+      }));
+
+      const result = await readMachineSnapshots({ readEnabled: true, readPath: tmpDir });
+      const entry = result.snapshots.find(s => s.snapshot.machineLabel === 'WITH-METERS');
+
+      assert.ok(entry);
+      assert.equal(entry?.snapshot.providerUsage?.[0]?.meters?.[0]?.id, 'fake-scoped-meter');
+      assert.equal(entry?.snapshot.providerUsage?.[0]?.meters?.[0]?.usedPercent, 12);
+    });
+
+    it('accepts a provider entry and a meter with an unknown forward-compatible extra field', async () => {
+      await writeLatest('FUTURE-FIELD-latest.json', makeSnapshot({
+        machineLabel: 'FUTURE-FIELD',
+        providerUsage: [{
+          provider: 'claude',
+          sourceLabel: 'Claude',
+          fiveHourUsedPercent: 30,
+          sevenDayUsedPercent: 60,
+          fiveHourResetAtEpochSeconds: 1_800_000_000,
+          sevenDayResetAtEpochSeconds: 1_900_000_000,
+          meters: [{
+            id: 'fake-scoped-meter',
+            label: 'preview 1d',
+            scope: 'model' as const,
+            usedPercent: 12,
+            futureMeterField: 'from-a-newer-writer'
+          } as any],
+          lastUpdatedEpochMs: Date.now(),
+          stale: false,
+          source: 'authenticated',
+          sourceConfidence: 'quotaState',
+          futureProviderField: 'from-a-newer-writer'
+        } as any]
+      }));
+
+      const result = await readMachineSnapshots({ readEnabled: true, readPath: tmpDir });
+      const entry = result.snapshots.find(s => s.snapshot.machineLabel === 'FUTURE-FIELD');
+
+      assert.ok(entry, 'snapshot with an unknown extra field must still be accepted');
+      assert.ok(!result.errors.some(e => e.filePath.includes('FUTURE-FIELD')));
+      assert.equal(entry?.snapshot.providerUsage?.[0]?.meters?.[0]?.id, 'fake-scoped-meter');
+      assert.equal(entry?.snapshot.providerUsage?.[0]?.meters?.[0]?.usedPercent, 12);
+    });
+
     it('rejects non-current schema snapshot files', async () => {
       await writeLatest('old-schema-latest.json', makeNonCurrentSnapshot());
 
@@ -158,10 +227,10 @@ describe('snapshotReader', () => {
       assert.ok(result.errors.some(error => error.filePath.includes('old-schema-latest.json')));
     });
 
-    it('rejects current-schema snapshots containing removed provider fields', async () => {
+    it('ignores unrecognized/removed provider fields instead of rejecting the snapshot', async () => {
       for (const field of ['model', 'resetAtEpochSeconds', 'windowResetMeta', 'todaySummary', 'modelContribution']) {
         const snap = makeSnapshot() as any;
-        snap.machineLabel = `BAD_${field}`;
+        snap.machineLabel = `IGNORED_${field}`;
         snap.providerUsage[0][field] = field === 'windowResetMeta'
           ? { fiveHourResetAtEpochSeconds: 1_800_000_000 }
           : field === 'todaySummary'
@@ -171,14 +240,15 @@ describe('snapshotReader', () => {
               : field === 'model'
                 ? 'gpt-5.5'
                 : 1_800_000_000;
-        await writeLatest(`bad-${field}-latest.json`, snap);
+        await writeLatest(`ignored-${field}-latest.json`, snap);
       }
 
       const result = await readMachineSnapshots({ readEnabled: true, readPath: tmpDir });
 
       for (const field of ['model', 'resetAtEpochSeconds', 'windowResetMeta', 'todaySummary', 'modelContribution']) {
-        assert.equal(result.snapshots.find(s => s.filePath.includes(`bad-${field}`)), undefined, `${field} snapshot must be rejected`);
-        assert.ok(result.errors.some(e => e.filePath.includes(`bad-${field}`)), `${field} snapshot must produce an error`);
+        const entry = result.snapshots.find(s => s.filePath.includes(`ignored-${field}`));
+        assert.ok(entry, `${field} snapshot must still be accepted`);
+        assert.ok(!result.errors.some(e => e.filePath.includes(`ignored-${field}`)), `${field} snapshot must not produce an error`);
       }
     });
 
@@ -494,6 +564,28 @@ describe('snapshotReader', () => {
       assert.equal(dp.windows.find(w => w.key === 'sevenDay')?.resetIso, new Date(1_900_000_000 * 1000).toISOString());
     });
 
+    it('maps snapshot generic meters into dashboard windows', () => {
+      const baseProvider = makeSnapshot().providerUsage![0]!;
+      const snapProvider = {
+        ...baseProvider,
+        meters: [{
+          id: 'fake-scoped-meter',
+          label: 'preview 1d',
+          scope: 'model' as const,
+          windowSeconds: 86_400,
+          usedPercent: 18,
+          resetAtEpochSeconds: 1_810_000_000
+        }]
+      };
+
+      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop');
+      const meterWindow = dp.windows.find(w => w.key === 'meter:fake-scoped-meter');
+
+      assert.ok(meterWindow);
+      assert.equal(meterWindow?.label, 'preview 1d');
+      assert.equal(meterWindow?.remainingPercent, 82);
+      assert.equal(meterWindow?.resetIso, new Date(1_810_000_000 * 1000).toISOString());
+    });
     it('marks provider stale when containing snapshot file is stale', () => {
       const dp = snapshotProviderToDashboardProvider({
         provider: 'codex',

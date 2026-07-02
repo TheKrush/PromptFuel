@@ -1,11 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import {
+  CLAUDE_OPUS_USAGE_METER_ID,
   normalizePercent,
+  parseClaudeQuotaPayload,
   parseClaudeWindow,
+  parseCodexQuotaPayload,
   parseCodexWindow,
   parsedWindow,
-  parseResetEpochSeconds
+  parseResetEpochSeconds,
+  readAuthenticatedQuotaCache
 } from '../providers/authenticatedQuota';
 
 const S_EPOCH = 1_747_900_000;
@@ -85,5 +92,179 @@ describe('authenticated quota parsing', () => {
       parseCodexWindow({ utilization: 1, reset_at: S_EPOCH }, FIVE_HOUR_S),
       { usedPercentage: 100, resetsAtEpochSeconds: S_EPOCH }
     );
+  });
+
+  it('parses Claude generic meters and migrates the Opus meter into the generic path', () => {
+    const parsed = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH },
+      seven_day_opus: { used_percentage: 75, reset_at: S_EPOCH },
+      preview_window: {
+        id: 'fake-scoped-meter',
+        label: 'preview 1d',
+        scope: 'modelFamily',
+        window_seconds: 86_400,
+        used_percentage: 12,
+        reset_at: S_EPOCH,
+        temporary: true
+      }
+    });
+
+    assert.equal(parsed?.fiveHour?.usedPercentage, 25);
+    assert.equal(parsed?.sevenDay?.usedPercentage, 40);
+    assert.deepEqual(parsed?.meters, [
+      {
+        id: CLAUDE_OPUS_USAGE_METER_ID,
+        label: 'opus 7d',
+        scope: 'modelFamily',
+        windowSeconds: SEVEN_DAY_S,
+        window: { usedPercentage: 75, resetsAtEpochSeconds: S_EPOCH }
+      },
+      {
+        id: 'fake-scoped-meter',
+        label: 'preview 1d',
+        scope: 'modelFamily',
+        windowSeconds: 86_400,
+        window: { usedPercentage: 12, resetsAtEpochSeconds: S_EPOCH },
+        temporary: true
+      }
+    ]);
+  });
+
+  it('parses non-5h/7d Codex windows as generic meters instead of dropping them', () => {
+    const parsed = parseCodexQuotaPayload({
+      rate_limit: {
+        primary_window: { limit_window_seconds: FIVE_HOUR_S, used_percent: 10, reset_at: S_EPOCH },
+        secondary_window: { limit_window_seconds: SEVEN_DAY_S, used_percent: 20, reset_at: S_EPOCH },
+        preview_window: {
+          id: 'fake-scoped-meter',
+          label: 'preview 1d',
+          scope: 'model',
+          limit_window_seconds: 86_400,
+          used_percent: 15,
+          reset_at: S_EPOCH,
+          rollup: true
+        }
+      }
+    });
+
+    assert.equal(parsed?.fiveHour?.usedPercentage, 10);
+    assert.equal(parsed?.sevenDay?.usedPercentage, 20);
+    assert.deepEqual(parsed?.meters, [{
+      id: 'fake-scoped-meter',
+      label: 'preview 1d',
+      scope: 'model',
+      windowSeconds: 86_400,
+      window: { usedPercentage: 15, resetsAtEpochSeconds: S_EPOCH },
+      rollup: true
+    }]);
+  });
+
+  it('does not turn a reset-only window into a generic meter', () => {
+    const parsed = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH },
+      preview_window: {
+        id: 'fake-scoped-meter',
+        label: 'preview 1d',
+        scope: 'modelFamily',
+        window_seconds: 86_400,
+        reset_at: S_EPOCH
+      }
+    });
+
+    assert.equal(parsed?.meters, undefined);
+  });
+
+  it('turns a percent-only window (no reset) into a generic meter since percent is the required field', () => {
+    const parsed = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH },
+      preview_window: {
+        id: 'fake-scoped-meter',
+        label: 'preview 1d',
+        scope: 'modelFamily',
+        window_seconds: 86_400,
+        utilization: 0.3
+      }
+    });
+
+    assert.deepEqual(parsed?.meters, [{
+      id: 'fake-scoped-meter',
+      label: 'preview 1d',
+      scope: 'modelFamily',
+      windowSeconds: 86_400,
+      window: { usedPercentage: 30, resetsAtEpochSeconds: undefined }
+    }]);
+  });
+
+  it('produces no meter for an empty or non-window generic entry', () => {
+    const parsedEmptyObject = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH },
+      preview_window: {}
+    });
+    assert.equal(parsedEmptyObject?.meters, undefined);
+
+    const parsedNonObject = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH },
+      preview_window: 'not-a-window'
+    });
+    assert.equal(parsedNonObject?.meters, undefined);
+  });
+
+  it('migrates a legacy cached sevenDayOpus window into a generic meter on cache read', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
+    try {
+      const futureEpochSeconds = Math.floor(Date.now() / 1000) + 3600;
+      await fs.writeFile(
+        path.join(tmpDir, 'authenticated-quota-cache.json'),
+        JSON.stringify({
+          providers: [{
+            provider: 'claude',
+            lastUpdatedEpochMs: Date.now(),
+            sevenDayOpus: { usedPercentage: 80, resetsAtEpochSeconds: futureEpochSeconds }
+          }]
+        }, undefined, 2),
+        'utf8'
+      );
+
+      const result = await readAuthenticatedQuotaCache(tmpDir);
+
+      assert.deepEqual(result.claude?.meters, [{
+        id: CLAUDE_OPUS_USAGE_METER_ID,
+        label: 'opus 7d',
+        scope: 'modelFamily',
+        windowSeconds: 604_800,
+        window: { usedPercentage: 80, resetsAtEpochSeconds: futureEpochSeconds }
+      }]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not migrate a legacy cached sevenDayOpus window without usedPercentage', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
+    try {
+      const futureEpochSeconds = Math.floor(Date.now() / 1000) + 3600;
+      await fs.writeFile(
+        path.join(tmpDir, 'authenticated-quota-cache.json'),
+        JSON.stringify({
+          providers: [{
+            provider: 'claude',
+            lastUpdatedEpochMs: Date.now(),
+            sevenDayOpus: { resetsAtEpochSeconds: futureEpochSeconds }
+          }]
+        }, undefined, 2),
+        'utf8'
+      );
+
+      const result = await readAuthenticatedQuotaCache(tmpDir);
+
+      assert.equal(result.claude?.meters, undefined);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

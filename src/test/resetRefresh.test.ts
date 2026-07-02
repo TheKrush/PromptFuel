@@ -35,6 +35,26 @@ describe('reset refresh planning', () => {
     assert.equal(plan?.scheduledEpochMs, soonerSevenDay * 1000 + DELAY_MS);
   });
 
+  it('includes generic meter resets in the same planner', () => {
+    const meterReset = Math.floor((NOW + 90_000) / 1000);
+    const plan = getNextResetRefreshPlan(
+      [{
+        provider: 'claude',
+        meters: [{
+          id: 'fake-scoped-meter',
+          label: 'preview 1d',
+          scope: 'model',
+          windowSeconds: 86_400,
+          window: { usedPercentage: 20, resetsAtEpochSeconds: meterReset }
+        }]
+      }],
+      { nowEpochMs: NOW, delayMs: DELAY_MS, immediateDelayMs: IMMEDIATE_DELAY_MS }
+    );
+
+    assert.equal(plan?.windowLabel, 'preview 1d');
+    assert.equal(plan?.scheduledEpochMs, meterReset * 1000 + DELAY_MS);
+  });
+
   it('retries recent past resets immediately unless retry cooldown blocks the key', () => {
     const recentPastReset = Math.floor((NOW - 20_000) / 1000);
     const plan = getNextResetRefreshPlan(

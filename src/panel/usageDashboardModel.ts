@@ -63,8 +63,8 @@ export interface UsageDashboardProvider {
 }
 
 export interface UsageDashboardWindow {
-  key: 'fiveHour' | 'sevenDay' | 'sevenDayOpus';
-  label: '5h' | '7d' | 'opus 7d';
+  key: string;
+  label: string;
   usedPercent?: number;
   remainingPercent?: number;
   level?: UsageDashboardLevel;
@@ -449,16 +449,16 @@ function buildProvider(state: ProviderUsageState, normalizedSources?: Record<str
     windows: [
       buildWindow('sevenDay', '7d', state.sevenDay),
       buildWindow('fiveHour', '5h', state.fiveHour),
-      ...(state.sevenDayOpus?.usedPercentage !== undefined
-        ? [buildWindow('sevenDayOpus', 'opus 7d', state.sevenDayOpus)]
-        : [])
+      ...(state.meters ?? [])
+        .filter(meter => meter.window.usedPercentage !== undefined)
+        .map(meter => buildMeterWindow(meter))
     ]
   };
 }
 
 function buildWindow(
-  key: 'fiveHour' | 'sevenDay' | 'sevenDayOpus',
-  label: '5h' | '7d' | 'opus 7d',
+  key: string,
+  label: string,
   window: LimitWindow | undefined
 ): UsageDashboardWindow {
   const usedPercent = normalizePercent(window?.usedPercentage);
@@ -475,6 +475,10 @@ function buildWindow(
     resetLabel: formatRelativeTime(window?.resetsAtEpochSeconds),
     available: usedPercent !== undefined
   };
+}
+
+function buildMeterWindow(meter: NonNullable<ProviderUsageState['meters']>[number]): UsageDashboardWindow {
+  return buildWindow('meter:' + meter.id, meter.label, meter.window);
 }
 
 function buildDetails(

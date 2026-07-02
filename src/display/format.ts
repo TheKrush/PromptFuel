@@ -225,8 +225,10 @@ function getDisplayedWindows(
     if (resolved.showSevenDay) windows.push({ label: '7d', value: state.sevenDay });
   }
 
-  if (state.sevenDayOpus?.usedPercentage !== undefined) {
-    windows.push({ label: 'opus 7d', value: state.sevenDayOpus });
+  for (const meter of state.meters ?? []) {
+    if (isUsableWindow(meter.window)) {
+      windows.push({ label: meter.label, value: meter.window });
+    }
   }
 
   return windows;
@@ -306,7 +308,7 @@ function providerAlertSeverity(
 }
 
 function providerQuotaEmoji(state: ProviderUsageState, resolved: ResolvedDisplayParts): string {
-  if (!state.fiveHour && !state.sevenDay) {
+  if (!state.fiveHour && !state.sevenDay && !(state.meters?.length)) {
     return '\u26AB';
   }
 
@@ -415,8 +417,10 @@ function formatCombinedQuotaSummaryLines(
   for (const state of states) {
     rows.push(formatCombinedQuotaWindowRow(state, '7d', state.sevenDay, options));
     rows.push(formatCombinedQuotaWindowRow(state, '5h', state.fiveHour, options));
-    if (state.sevenDayOpus?.usedPercentage !== undefined) {
-      rows.push(formatCombinedQuotaWindowRow(state, 'opus 7d', state.sevenDayOpus, options));
+    for (const meter of state.meters ?? []) {
+      if (isUsableWindow(meter.window)) {
+        rows.push(formatCombinedQuotaWindowRow(state, meter.label, meter.window, options));
+      }
     }
   }
 
@@ -579,6 +583,7 @@ function formatFreshnessLine(states: ProviderUsageState[]): string | undefined {
     ...states.flatMap(state => [
       state.sevenDay?.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0,
       state.fiveHour?.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0,
+      ...(state.meters ?? []).map(meter => meter.window.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0),
       state.lastAuthenticatedRefreshEpochMs ?? 0
     ])
   );
@@ -625,8 +630,10 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
 
   rows.push(formatQuotaWindowRow('5h', state.fiveHour, options, state));
 
-  if (state.sevenDayOpus?.usedPercentage !== undefined) {
-    rows.push(formatQuotaWindowRow('opus 7d', state.sevenDayOpus, options, state));
+  for (const meter of state.meters ?? []) {
+    if (isUsableWindow(meter.window)) {
+      rows.push(formatQuotaWindowRow(meter.label, meter.window, options, state));
+    }
   }
 
   return rows;
@@ -691,7 +698,7 @@ function formatWindowPercent(value: number, showPercentSymbol: boolean, preserve
 }
 
 function hasUsableQuota(state: ProviderUsageState): boolean {
-  return isUsableWindow(state.fiveHour) || isUsableWindow(state.sevenDay);
+  return isUsableWindow(state.fiveHour) || isUsableWindow(state.sevenDay) || (state.meters ?? []).some(meter => isUsableWindow(meter.window));
 }
 
 function isUsableWindow(window: LimitWindow | undefined): boolean {
@@ -827,7 +834,7 @@ function summarizeProviderStatus(state: ProviderUsageState): string | undefined 
   if (state.stale) {
     return 'stale snapshot';
   }
-  if (!state.fiveHour && !state.sevenDay) {
+  if (!state.fiveHour && !state.sevenDay && !(state.meters?.length)) {
     return 'quota unavailable';
   }
   return undefined;
@@ -837,7 +844,7 @@ function formatQuotaFreshnessSummary(states: ProviderUsageState[], options: Form
   const labels = unique(
     states
       .flatMap(state =>
-        [state.sevenDay, state.fiveHour]
+        [state.sevenDay, state.fiveHour, ...(state.meters ?? []).map(meter => meter.window)]
           .filter(isUsableWindow)
           .map(window => formatFreshnessLabel(derivePresentableQuotaWindowState(state, window, options).freshness))
       )
@@ -958,7 +965,8 @@ function expiredFallbackWindowLabels(state: ProviderUsageState): string[] {
   const provider = state.provider === 'claude' ? 'Claude' : 'Codex';
   return [
     { label: '7d', window: state.sevenDay },
-    { label: '5h', window: state.fiveHour }
+    { label: '5h', window: state.fiveHour },
+    ...(state.meters ?? []).map(meter => ({ label: meter.label, window: meter.window }))
   ]
     .filter(item => isExpiredFallbackWindow(item.window))
     .map(item => `${provider} ${item.label}`);
@@ -995,7 +1003,7 @@ function fallbackQuotaDescription(state: ProviderUsageState): string {
   if (expiredFallbackWindowLabels(state).length > 0) {
     return 'expired cached quota';
   }
-  const sourceKinds = unique([state.fiveHour?.sourceKind, state.sevenDay?.sourceKind].filter((value): value is QuotaSourceKind => Boolean(value)));
+  const sourceKinds = unique([state.fiveHour?.sourceKind, state.sevenDay?.sourceKind, ...(state.meters ?? []).map(meter => meter.window.sourceKind)].filter((value): value is QuotaSourceKind => Boolean(value)));
   if (sourceKinds.includes('cache')) {
     return 'cached quota';
   }
@@ -1072,7 +1080,7 @@ function normalizeSourceSummary({ label, kind }: { label: string; kind?: QuotaSo
 }
 
 function quotaSourceLabels(state: ProviderUsageState): { label: string; kind?: QuotaSourceKind }[] {
-  const windows = [state.sevenDay, state.fiveHour]
+  const windows = [state.sevenDay, state.fiveHour, ...(state.meters ?? []).map(meter => meter.window)]
     .filter((w): w is LimitWindow & { sourceLabel: string } => Boolean(w?.sourceLabel));
   if (windows.length > 0) {
     const seen = new Set<string>();

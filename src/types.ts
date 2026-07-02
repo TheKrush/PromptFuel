@@ -27,11 +27,24 @@ export interface LimitWindow {
 
 export type QuotaSourceKind = 'authenticated' | 'statusLine' | 'hook' | 'localSession' | 'cache' | 'stale' | 'unknown';
 
+export type UsageMeterScope = 'account' | 'model' | 'modelFamily' | 'unknown';
+
+export interface UsageMeter {
+  id: string;
+  label: string;
+  scope: UsageMeterScope;
+  windowSeconds?: number;
+  window: LimitWindow;
+  rollup?: boolean;
+  temporary?: boolean;
+  expiresAtEpochSeconds?: number;
+}
+
 export interface ProviderUsageState {
   provider: ProviderName;
   fiveHour?: LimitWindow;
   sevenDay?: LimitWindow;
-  sevenDayOpus?: LimitWindow;
+  meters?: UsageMeter[];
   model?: string;
   sessionId?: string;
   workspace?: string;

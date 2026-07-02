@@ -9,6 +9,7 @@ import {
 import { getAuthenticatedRefreshGate } from '../quota/refreshPolicy';
 import { getNextResetRefreshPlan } from '../quota/resetRefresh';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
+import { CLAUDE_OPUS_USAGE_METER_ID } from '../providers/authenticatedQuota';
 import type { ProviderName, ProviderUsageState } from '../types';
 
 const now = Date.now();
@@ -79,6 +80,17 @@ function dashboardWindow(state: ProviderUsageState, key: 'fiveHour' | 'sevenDay'
 
   assert.ok(provider);
   const window = provider.windows.find(item => item.key === key);
+
+  assert.ok(window);
+  return window;
+}
+
+function dashboardMeter(state: ProviderUsageState, id: string) {
+  const dashboard = buildUsageDashboardModel({ states: [state] });
+  const provider = dashboard.providers[0];
+
+  assert.ok(provider);
+  const window = provider.windows.find(item => item.key === 'meter:' + id);
 
   assert.ok(window);
   return window;
@@ -260,7 +272,7 @@ describe('quota fallback regression coverage', () => {
     assert.equal(merged.lastAuthenticatedRefreshEpochMs, now);
   });
 
-  it('carries seven-day Opus quota through authenticated merges', () => {
+  it('carries the migrated Opus meter through authenticated merges', () => {
     const opusReset = Math.floor((now + 7 * 24 * 60 * 60 * 1000) / 1000);
     const local = localState('claude', {
       fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: fiveHourReset },
@@ -269,7 +281,13 @@ describe('quota fallback regression coverage', () => {
     const authenticated = liveState('claude', {
       fiveHour: { usedPercentage: 40, resetsAtEpochSeconds: fiveHourReset },
       sevenDay: { usedPercentage: 60, resetsAtEpochSeconds: sevenDayReset },
-      sevenDayOpus: { usedPercentage: 80, resetsAtEpochSeconds: opusReset }
+      meters: [{
+        id: CLAUDE_OPUS_USAGE_METER_ID,
+        label: 'opus 7d',
+        scope: 'modelFamily',
+        windowSeconds: 7 * 24 * 60 * 60,
+        window: { usedPercentage: 80, resetsAtEpochSeconds: opusReset }
+      }]
     });
 
     const merged = mergeLocalAndAuthenticated(local, authenticated);
@@ -277,20 +295,52 @@ describe('quota fallback regression coverage', () => {
 
     assert.equal(merged.fiveHour?.usedPercentage, 40);
     assert.equal(merged.sevenDay?.usedPercentage, 60);
-    assert.deepEqual(merged.sevenDayOpus, authenticated.sevenDayOpus);
-    assert.deepEqual(successMerged.sevenDayOpus, authenticated.sevenDayOpus);
+    assert.equal(merged.meters?.[0]?.id, CLAUDE_OPUS_USAGE_METER_ID);
+    assert.equal(merged.meters?.[0]?.window.usedPercentage, 80);
+    assert.equal(successMerged.meters?.[0]?.id, CLAUDE_OPUS_USAGE_METER_ID);
 
     const opusOnly = mergeLocalAndAuthenticated(local, liveState('claude', {
       fiveHour: undefined,
       sevenDay: undefined,
-      sevenDayOpus: { usedPercentage: 70, resetsAtEpochSeconds: opusReset }
+      meters: [{
+        id: CLAUDE_OPUS_USAGE_METER_ID,
+        label: 'opus 7d',
+        scope: 'modelFamily',
+        windowSeconds: 7 * 24 * 60 * 60,
+        window: { usedPercentage: 70, resetsAtEpochSeconds: opusReset }
+      }]
     }));
     assert.equal(opusOnly.fiveHour?.usedPercentage, 30);
     assert.equal(opusOnly.sevenDay?.usedPercentage, 50);
-    assert.equal(opusOnly.sevenDayOpus?.usedPercentage, 70);
+    assert.equal(opusOnly.meters?.[0]?.window.usedPercentage, 70);
+    assert.equal(dashboardMeter(opusOnly, CLAUDE_OPUS_USAGE_METER_ID).remainingPercent, 30);
 
     const codexMerged = mergeLocalAndAuthenticated(localState('codex'), liveState('codex'));
-    assert.equal(codexMerged.sevenDayOpus, undefined);
+    assert.equal(codexMerged.meters, undefined);
+  });
+
+  it('generic meters receive cached expiry treatment like primary windows', () => {
+    const meterId = 'fake-scoped-meter';
+    const expiredCached = mergeAuthenticatedFailure(
+      liveState('claude', {
+        fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset },
+        meters: [{
+          id: meterId,
+          label: 'preview 1d',
+          scope: 'model',
+          windowSeconds: 86_400,
+          window: { usedPercentage: 100, resetsAtEpochSeconds: expiredReset }
+        }],
+        lastUpdatedEpochMs: expiredReset * 1000 - 60_000,
+        lastAuthenticatedRefreshEpochMs: expiredReset * 1000 - 60_000
+      }),
+      failure('claude', 'network_error'),
+      backoffUntil
+    );
+
+    assert.equal(expiredCached.meters?.[0]?.window.usedPercentage, 0);
+    assert.equal(expiredCached.meters?.[0]?.window.sourceKind, 'cache');
+    assert.equal(dashboardMeter(expiredCached, meterId).remainingPercent, 100);
   });
 
   it('reset-time refresh treats expired cached quota as reset after live failure', () => {

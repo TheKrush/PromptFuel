@@ -8,6 +8,7 @@ import {
   type PromptFuelMachineSnapshotV2,
   type SnapshotProviderUsageV2,
   type SnapshotBucketModel,
+  type SnapshotUsageMeter,
   type SanitizedHistorySource,
 } from './types';
 import type { UsageDashboardProvider, UsageDashboardWindow } from '../panel/usageDashboardModel';
@@ -170,30 +171,25 @@ function isValidSnapshotProviderV2(value: unknown): value is SnapshotProviderUsa
   }
 
   const v2 = value as unknown as Record<string, unknown>;
-  const allowedProviderFields = [
-    'provider',
-    'sourceLabel',
-    'fiveHourUsedPercent',
-    'sevenDayUsedPercent',
-    'fiveHourResetAtEpochSeconds',
-    'sevenDayResetAtEpochSeconds',
-    'lastUpdatedEpochMs',
-    'stale',
-    'source',
-    'sourceConfidence',
-    'historyBuckets'
-  ];
-  for (const key of Object.keys(v2)) {
-    if (!allowedProviderFields.includes(key)) {
-      return false;
-    }
-  }
+  // Unrecognized provider-entry fields are ignored (forward-compatible), not rejected.
+  // Known fields are still type-validated below; malformed known fields still reject.
 
   if (v2.fiveHourResetAtEpochSeconds !== undefined && typeof v2.fiveHourResetAtEpochSeconds !== 'number') {
     return false;
   }
   if (v2.sevenDayResetAtEpochSeconds !== undefined && typeof v2.sevenDayResetAtEpochSeconds !== 'number') {
     return false;
+  }
+
+  if (v2.meters !== undefined) {
+    if (!Array.isArray(v2.meters)) {
+      return false;
+    }
+    for (const meter of v2.meters) {
+      if (!isValidSnapshotUsageMeter(meter)) {
+        return false;
+      }
+    }
   }
 
   if (v2.historyBuckets !== undefined) {
@@ -226,6 +222,31 @@ function isValidSnapshotProviderV2(value: unknown): value is SnapshotProviderUsa
     }
   }
 
+  return true;
+}
+
+function isValidSnapshotUsageMeter(value: unknown): value is SnapshotUsageMeter {
+  if (!isObject(value)) {
+    return false;
+  }
+  if (typeof value.id !== 'string' || !value.id) {
+    return false;
+  }
+  if (typeof value.label !== 'string' || !value.label) {
+    return false;
+  }
+  if (!['account', 'model', 'modelFamily', 'unknown'].includes(String(value.scope))) {
+    return false;
+  }
+  // Unrecognized meter fields are ignored (forward-compatible); known fields are still type-validated.
+  for (const key of Object.keys(value)) {
+    if (['windowSeconds', 'usedPercent', 'resetAtEpochSeconds', 'expiresAtEpochSeconds'].includes(key) && value[key] !== undefined && typeof value[key] !== 'number') {
+      return false;
+    }
+    if (['rollup', 'temporary'].includes(key) && value[key] !== undefined && typeof value[key] !== 'boolean') {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -539,6 +560,8 @@ function snapshotLevel(remaining: number | undefined): UsageDashboardWindow['lev
 }
 
 function buildSnapshotWindow(
+  key: string,
+  label: string,
   usedPercent: number | undefined,
   resetAtEpochSeconds: number | undefined
 ): UsageDashboardWindow {
@@ -550,8 +573,8 @@ function buildSnapshotWindow(
     : undefined;
 
   return {
-    key: 'fiveHour',
-    label: '5h',
+    key,
+    label,
     usedPercent: used,
     remainingPercent: remaining,
     level: snapshotLevel(remaining),
@@ -564,22 +587,11 @@ function buildSnapshotSevenDayWindow(
   usedPercent: number | undefined,
   resetAtEpochSeconds: number | undefined
 ): UsageDashboardWindow {
-  const available = typeof usedPercent === 'number' && Number.isFinite(usedPercent) && usedPercent >= 0;
-  const used = available ? Math.min(usedPercent!, 100) : undefined;
-  const remaining = used !== undefined ? Math.max(0, 100 - used) : undefined;
-  const resetIso = typeof resetAtEpochSeconds === 'number' && Number.isFinite(resetAtEpochSeconds) && resetAtEpochSeconds > 0
-    ? new Date(resetAtEpochSeconds * 1000).toISOString()
-    : undefined;
+  return buildSnapshotWindow('sevenDay', '7d', usedPercent, resetAtEpochSeconds);
+}
 
-  return {
-    key: 'sevenDay',
-    label: '7d',
-    usedPercent: used,
-    remainingPercent: remaining,
-    level: snapshotLevel(remaining),
-    resetIso,
-    available: available
-  };
+function buildSnapshotMeterWindow(meter: SnapshotUsageMeter): UsageDashboardWindow {
+  return buildSnapshotWindow('meter:' + meter.id, meter.label, meter.usedPercent, meter.resetAtEpochSeconds);
 }
 
 export interface GroupedRemoteProvider {
@@ -595,29 +607,17 @@ export function snapshotProviderToDashboardProvider(
   machineLabel: string,
   snapshotStale = false
 ): UsageDashboardProvider {
-  const windows: UsageDashboardWindow[] = [];
-
   const sevenDayReset = resolveResetEpoch(snapProvider, 'sevenDay');
   const fiveHourReset = resolveResetEpoch(snapProvider, 'fiveHour');
-
-  if (snapProvider.sevenDayUsedPercent !== undefined) {
-    windows.push(buildSnapshotSevenDayWindow(snapProvider.sevenDayUsedPercent, sevenDayReset));
-  }
-  if (snapProvider.fiveHourUsedPercent !== undefined) {
-    windows.push(buildSnapshotWindow(snapProvider.fiveHourUsedPercent, fiveHourReset));
-  }
-
-  if (windows.length === 0) {
-    windows.push({
-      key: 'sevenDay',
-      label: '7d',
-      available: false
-    }, {
-      key: 'fiveHour',
-      label: '5h',
-      available: false
-    });
-  }
+  const windows: UsageDashboardWindow[] = [
+    snapProvider.sevenDayUsedPercent !== undefined
+      ? buildSnapshotSevenDayWindow(snapProvider.sevenDayUsedPercent, sevenDayReset)
+      : { key: 'sevenDay', label: '7d', available: false },
+    snapProvider.fiveHourUsedPercent !== undefined
+      ? buildSnapshotWindow('fiveHour', '5h', snapProvider.fiveHourUsedPercent, fiveHourReset)
+      : { key: 'fiveHour', label: '5h', available: false },
+    ...(snapProvider.meters ?? []).map(meter => buildSnapshotMeterWindow(meter))
+  ];
 
   const stale = snapshotStale || snapProvider.stale;
 
