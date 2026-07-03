@@ -271,6 +271,18 @@ describe('Codex incremental history cache', () => {
     ].join('\n');
   }
 
+  function buildCachedCodexSession(model: string, completedAtMs: number, after: number, cachedAfter: number): string {
+    const ts = new Date(completedAtMs).toISOString();
+    const turnId = `turn-cached-${completedAtMs}`;
+    return [
+      codexTurnContext(turnId, model, ts),
+      codexTokenCount(turnId, { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, total_tokens: 0 }, ts),
+      codexTaskStarted(turnId, ts),
+      codexTokenCount(turnId, { input_tokens: after, output_tokens: 10, cached_input_tokens: cachedAfter, total_tokens: after + 10 }, ts),
+      codexTaskComplete(turnId, completedAtMs, ts)
+    ].join('\n');
+  }
+
   it('cold cache returns correct Codex totals', async () => {
     const sessDir = path.join(tmpDir, 'sess1');
     await fs.mkdir(sessDir, { recursive: true });
@@ -328,5 +340,34 @@ describe('Codex incremental history cache', () => {
     const second = await readCodexHistoryIncremental(sessDir, RANGE_DAYS, cache, targetDate);
     assert.equal(second.recordsMatched, 1);
     assert.equal(cache.entries.size, 1);
+  });
+
+  it('maps cached_input_tokens to cache-read on the incremental production path, not double-counted', async () => {
+    const sessDir = path.join(tmpDir, 'sess4');
+    await fs.mkdir(sessDir, { recursive: true });
+
+    const completedAtMs = dayStart(2026, 5, 15) + 10 * 3600 * 1000;
+    // Real-shaped values: total_tokens === input_tokens + output_tokens, cached_input_tokens is a subset of input_tokens.
+    await fs.writeFile(path.join(sessDir, 'session.jsonl'), buildCachedCodexSession('gpt-5.4', completedAtMs, 19573, 4480));
+
+    const cache = makeCodexHistoryCache();
+    const result = await readCodexHistoryIncremental(sessDir, RANGE_DAYS, cache, targetDate);
+
+    assert.equal(result.available, true);
+    assert.equal(result.cacheReadInputTokens, 4480, 'cached_input_tokens must map to cache-read on the incremental path');
+    assert.equal(result.cacheCreationInputTokens, 0, 'Codex reports no distinct cache-write signal');
+    assert.equal(result.inputTokens, 19573 - 4480, 'inputTokens must be the derived uncached remainder, not the raw inclusive value');
+    // Disjoint components must reconstruct the provider-reported total exactly (no double-count).
+    assert.equal(result.inputTokens + result.outputTokens + result.cacheCreationInputTokens + result.cacheReadInputTokens, result.totalTokens);
+
+    const day = result.days.find(d => d.dateKey === '2026-05-15');
+    assert.ok(day);
+    assert.equal(day!.cacheReadInputTokens, 4480);
+    assert.equal(day!.inputTokens, 19573 - 4480);
+
+    const model = result.modelUsage.find(m => m.model === 'gpt-5.4');
+    assert.ok(model);
+    assert.equal(model!.cacheReadInputTokens, 4480);
+    assert.equal(model!.inputTokens, 19573 - 4480);
   });
 });

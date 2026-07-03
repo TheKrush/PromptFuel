@@ -214,9 +214,12 @@ describe('snapshotWriter', () => {
       assert.ok(buckets, 'historyBuckets must be present when tracing is available');
       assert.equal(buckets.length, 1);
       assert.match(buckets[0].dateKey, /^\d{4}-\d{2}-\d{2}$/);
-      assert.equal(buckets[0].inputTokens, 12000);
+      // totalCachedInputTokens (3000) is a Codex-style subset of totalInputTokens (12000), so it maps to
+      // cache-read and inputTokens is the derived uncached remainder (12000 - 3000), not the raw total.
+      assert.equal(buckets[0].inputTokens, 9000);
       assert.equal(buckets[0].outputTokens, 8000);
-      assert.equal(buckets[0].cacheCreationTokens, 3000);
+      assert.equal(buckets[0].cacheReadTokens, 3000);
+      assert.equal(buckets[0].cacheCreationTokens, undefined);
       assert.equal(buckets[0].reasoningOutputTokens, 2000);
       assertRemovedProviderFieldsAbsent(provider);
     });

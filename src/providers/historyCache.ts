@@ -316,6 +316,7 @@ function mergeCodexContributions(
     inputTokens: number;
     outputTokens: number;
     cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
     reasoningOutputTokens: number;
     totalTokens: number;
     modelBreakdown: Map<string, CodexDayModelContribution>;
@@ -345,26 +346,28 @@ function mergeCodexContributions(
     for (const [dateKey, dayContrib] of entry.contribution.days) {
       let mergedDay = mergedDays.get(dateKey);
       if (!mergedDay) {
-        mergedDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, modelBreakdown: new Map() };
+        mergedDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, modelBreakdown: new Map() };
         mergedDays.set(dateKey, mergedDay);
       }
       mergedDay.correlatedTurns += dayContrib.correlatedTurns;
       mergedDay.inputTokens += dayContrib.inputTokens;
       mergedDay.outputTokens += dayContrib.outputTokens;
       mergedDay.cacheCreationInputTokens += dayContrib.cacheCreationInputTokens;
+      mergedDay.cacheReadInputTokens += dayContrib.cacheReadInputTokens;
       mergedDay.reasoningOutputTokens += dayContrib.reasoningOutputTokens;
       mergedDay.totalTokens += dayContrib.totalTokens;
 
       for (const [model, mc] of dayContrib.modelBreakdown) {
         let dayModel = mergedDay.modelBreakdown.get(model);
         if (!dayModel) {
-          dayModel = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
+          dayModel = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
           mergedDay.modelBreakdown.set(model, dayModel);
         }
         dayModel.correlatedTurns += mc.correlatedTurns;
         dayModel.inputTokens += mc.inputTokens;
         dayModel.outputTokens += mc.outputTokens;
         dayModel.cacheCreationInputTokens += mc.cacheCreationInputTokens;
+        dayModel.cacheReadInputTokens += mc.cacheReadInputTokens;
         dayModel.reasoningOutputTokens += mc.reasoningOutputTokens;
         dayModel.totalTokens += mc.totalTokens;
 
@@ -377,6 +380,7 @@ function mergeCodexContributions(
         gm.inputTokens += mc.inputTokens;
         gm.outputTokens += mc.outputTokens;
         gm.cacheCreationInputTokens += mc.cacheCreationInputTokens;
+        gm.cacheReadInputTokens += mc.cacheReadInputTokens;
         gm.reasoningOutputTokens += mc.reasoningOutputTokens;
         gm.totalTokens += mc.totalTokens;
       }
@@ -402,7 +406,7 @@ function mergeCodexContributions(
           inputTokens: m.inputTokens,
           outputTokens: m.outputTokens,
           cacheCreationInputTokens: m.cacheCreationInputTokens,
-          cacheReadInputTokens: 0,
+          cacheReadInputTokens: m.cacheReadInputTokens,
           reasoningOutputTokens: m.reasoningOutputTokens,
           totalTokens: m.totalTokens
         }))
@@ -416,7 +420,7 @@ function mergeCodexContributions(
         inputTokens: md.inputTokens,
         outputTokens: md.outputTokens,
         cacheCreationInputTokens: md.cacheCreationInputTokens,
-        cacheReadInputTokens: 0,
+        cacheReadInputTokens: md.cacheReadInputTokens,
         reasoningOutputTokens: md.reasoningOutputTokens,
         totalTokens: md.totalTokens,
         models: modelUsage.map(m => m.model),
@@ -446,12 +450,13 @@ function mergeCodexContributions(
 
   const modelUsage = Array.from(globalModels.values()).sort((a, b) => b.totalTokens - a.totalTokens);
 
-  let assistantMessages = 0, inputTokens = 0, outputTokens = 0, cacheCreationInputTokens = 0, reasoningOutputTokens = 0, totalTokens = 0;
+  let assistantMessages = 0, inputTokens = 0, outputTokens = 0, cacheCreationInputTokens = 0, cacheReadInputTokens = 0, reasoningOutputTokens = 0, totalTokens = 0;
   for (const d of days) {
     assistantMessages += d.assistantMessages;
     inputTokens += d.inputTokens;
     outputTokens += d.outputTokens;
     cacheCreationInputTokens += d.cacheCreationInputTokens;
+    cacheReadInputTokens += d.cacheReadInputTokens;
     reasoningOutputTokens += d.reasoningOutputTokens;
     totalTokens += d.totalTokens;
   }
@@ -466,7 +471,7 @@ function mergeCodexContributions(
     inputTokens,
     outputTokens,
     cacheCreationInputTokens,
-    cacheReadInputTokens: 0,
+    cacheReadInputTokens,
     reasoningOutputTokens,
     totalTokens,
     modelUsage,

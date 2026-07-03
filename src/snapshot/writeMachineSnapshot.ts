@@ -240,11 +240,21 @@ function buildHistoryBuckets(
   const t = state.tracing;
   const bucket: SnapshotHistoryBucket = { dateKey: todayKey };
 
-  const inputTokens = safePositiveNumber(t.totalInputTokens);
+  const rawInputTokens = safePositiveNumber(t.totalInputTokens);
   const outputTokens = safePositiveNumber(t.totalOutputTokens);
-  const cacheCreationTokens = safePositiveNumber(t.totalCachedInputTokens);
-  const cacheReadTokens = safePositiveNumber(t.currentCacheReadInputTokens);
   const reasoningOutputTokens = safePositiveNumber(t.totalReasoningOutputTokens);
+
+  // Codex's totalCachedInputTokens is a subset of totalInputTokens, not additive on top of it (verified
+  // against live Codex rollout token_count events). Map it to cache-read and derive uncached input so
+  // hasTokenData()/displayTotalTokens() do not double-count the cached portion. currentCacheReadInputTokens
+  // represents already-disjoint cache accounting (no subtraction needed) when a source provides it directly.
+  const disjointCacheReadTokens = safePositiveNumber(t.currentCacheReadInputTokens);
+  const codexCachedInputTokens = safePositiveNumber(t.totalCachedInputTokens);
+  const inputTokens = disjointCacheReadTokens === undefined && rawInputTokens !== undefined && codexCachedInputTokens !== undefined
+    ? Math.max(0, rawInputTokens - codexCachedInputTokens)
+    : rawInputTokens;
+  const cacheCreationTokens = disjointCacheReadTokens === undefined ? undefined : safePositiveNumber(t.currentCacheCreationInputTokens);
+  const cacheReadTokens = disjointCacheReadTokens ?? codexCachedInputTokens;
 
   if (inputTokens !== undefined) { bucket.inputTokens = inputTokens; }
   if (outputTokens !== undefined) { bucket.outputTokens = outputTokens; }

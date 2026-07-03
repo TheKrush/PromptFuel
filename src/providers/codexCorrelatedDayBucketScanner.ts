@@ -406,11 +406,17 @@ async function scanCodexSessionFile(
       }
 
       // Only after negative check, clamp missing optional fields to 0
-      const deltaInput = rawInput;
       const deltaOutput = rawOutput;
       const deltaCached = clampOptional(currentTurn.lastTotal.cached_input_tokens, baseline.cached_input_tokens);
       const deltaReasoning = clampOptional(currentTurn.lastTotal.reasoning_output_tokens, baseline.reasoning_output_tokens);
       const deltaTotal = rawTotal;
+
+      // Codex reports cached_input_tokens as a subset of input_tokens, not an addition on top of it
+      // (verified against live Codex rollout token_count events: total_tokens === input_tokens + output_tokens
+      // holds regardless of cache ratio). Map it to cache-read and derive uncached input so the shared
+      // displayTotalTokens() sum (input + output + cacheCreation + cacheRead) stays disjoint and matches
+      // the provider-reported total instead of double-counting the cached portion.
+      const deltaUncachedInput = Math.max(0, rawInput - deltaCached);
 
       const dateKey = formatLocalDateKey(new Date(completedAtEpochMs));
       const bucket = getOrCreateHistoryBucket(acc.buckets, dateKey);
@@ -418,15 +424,14 @@ async function scanCodexSessionFile(
       bucket.recordsMatched++;
       bucket.assistantMessages++;
       bucket.correlatedTurns++;
-      bucket.inputTokens += deltaInput;
+      bucket.inputTokens += deltaUncachedInput;
       bucket.outputTokens += deltaOutput;
-      bucket.cacheCreationInputTokens += deltaCached;
-      bucket.cacheReadInputTokens += 0;
+      bucket.cacheReadInputTokens += deltaCached;
       bucket.reasoningOutputTokens += deltaReasoning;
       bucket.totalTokens += deltaTotal;
 
-      addCodexModelUsage(bucket.modelUsage, currentTurn.model, deltaInput, deltaOutput, deltaCached, deltaReasoning, deltaTotal);
-      addCodexModelUsage(acc.modelAgg, currentTurn.model, deltaInput, deltaOutput, deltaCached, deltaReasoning, deltaTotal);
+      addCodexModelUsage(bucket.modelUsage, currentTurn.model, deltaUncachedInput, deltaOutput, deltaCached, deltaReasoning, deltaTotal);
+      addCodexModelUsage(acc.modelAgg, currentTurn.model, deltaUncachedInput, deltaOutput, deltaCached, deltaReasoning, deltaTotal);
 
       acc.recordsMatched++;
       currentTurn = null;
@@ -503,9 +508,9 @@ function clampOptional(last: number | undefined, first: number | undefined): num
 function addCodexModelUsage(
   list: CodexCorrelatedHistoryModelUsage[],
   model: string,
-  inputTokens: number,
+  uncachedInputTokens: number,
   outputTokens: number,
-  cachedInputTokens: number,
+  cacheReadInputTokens: number,
   reasoningOutputTokens: number,
   totalTokens: number
 ): void {
@@ -524,9 +529,9 @@ function addCodexModelUsage(
     list.push(entry);
   }
   entry.assistantMessages++;
-  entry.inputTokens += inputTokens;
+  entry.inputTokens += uncachedInputTokens;
   entry.outputTokens += outputTokens;
-  entry.cacheCreationInputTokens += cachedInputTokens;
+  entry.cacheReadInputTokens += cacheReadInputTokens;
   entry.reasoningOutputTokens += reasoningOutputTokens;
   entry.totalTokens += totalTokens;
 }
@@ -770,6 +775,7 @@ export interface CodexDayModelContribution {
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
 }
@@ -779,6 +785,7 @@ export interface CodexDayContribution {
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
   modelBreakdown: Map<string, CodexDayModelContribution>;
@@ -954,6 +961,11 @@ export async function scanCodexFileContribution(
       const deltaCached = clampOptional(currentTurn.lastTotal.cached_input_tokens, baseline.cached_input_tokens);
       const deltaReasoning = clampOptional(currentTurn.lastTotal.reasoning_output_tokens, baseline.reasoning_output_tokens);
 
+      // Codex reports cached_input_tokens as a subset of input_tokens, not an addition on top of it.
+      // Map it to cache-read and derive uncached input so this incremental path stays disjoint with
+      // scanCodexSessionFile's history path instead of double-counting the cached portion.
+      const deltaUncachedInput = Math.max(0, rawInput - deltaCached);
+
       const dateKey = formatLocalDateKey(new Date(completedAtMs));
       let day = contribution.days.get(dateKey);
       if (!day) {
@@ -962,6 +974,7 @@ export async function scanCodexFileContribution(
           inputTokens: 0,
           outputTokens: 0,
           cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
           reasoningOutputTokens: 0,
           totalTokens: 0,
           modelBreakdown: new Map()
@@ -970,21 +983,21 @@ export async function scanCodexFileContribution(
       }
 
       day.correlatedTurns++;
-      day.inputTokens += rawInput;
+      day.inputTokens += deltaUncachedInput;
       day.outputTokens += rawOutput;
-      day.cacheCreationInputTokens += deltaCached;
+      day.cacheReadInputTokens += deltaCached;
       day.reasoningOutputTokens += deltaReasoning;
       day.totalTokens += rawTotal;
 
       let modelDay = day.modelBreakdown.get(currentTurn.model);
       if (!modelDay) {
-        modelDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
+        modelDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
         day.modelBreakdown.set(currentTurn.model, modelDay);
       }
       modelDay.correlatedTurns++;
-      modelDay.inputTokens += rawInput;
+      modelDay.inputTokens += deltaUncachedInput;
       modelDay.outputTokens += rawOutput;
-      modelDay.cacheCreationInputTokens += deltaCached;
+      modelDay.cacheReadInputTokens += deltaCached;
       modelDay.reasoningOutputTokens += deltaReasoning;
       modelDay.totalTokens += rawTotal;
 

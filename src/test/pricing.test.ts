@@ -80,9 +80,16 @@ describe('pricing estimates', () => {
     assert.equal(nano.isFallback, false);
   });
 
-  it('prices OpenAI cached input as a discounted part of input tokens', () => {
-    const estimate = estimateCodexCostUsd(10_000, 0, 4_000, 0, ['gpt-5.4']);
+  it('prices OpenAI cached input at the discounted cache-read rate', () => {
+    // Disjoint components: 6,000 uncached input + 4,000 cache-read input (10,000 logical input total).
+    const estimate = estimateCodexCostUsd(6_000, 0, 4_000, 0, ['gpt-5.4']);
     assertApprox(estimate.costUsd, 0.016);
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('prices an all-cache-read turn with zero uncached input tokens', () => {
+    const estimate = estimateCodexCostUsd(0, 0, 4_000, 0, ['gpt-5.4']);
+    assertApprox(estimate.costUsd, 0.001);
     assert.equal(estimate.isFallback, false);
   });
 

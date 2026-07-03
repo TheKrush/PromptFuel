@@ -135,17 +135,16 @@ function computeOpenAiCost(
   cacheReadTokens: number,
   cacheWriteTokens: number
 ): number {
-  const cachedInputTokens = Math.min(inputTokens, cacheReadTokens);
-  const uncachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
-  const cachedOnlyTokens = Math.max(0, cacheReadTokens - inputTokens);
-  // Codex cache-creation counters come from cached_input_tokens deltas. In OpenAI-style
-  // pricing they are prompt input already represented by inputTokens, not an extra
-  // Anthropic-style cache-write surcharge. If a snapshot has only cache write data,
-  // treat it as ordinary input so the API-equivalent estimate remains conservative.
-  const cacheWriteOnlyTokens = inputTokens > 0 ? 0 : cacheWriteTokens;
+  // Callers must pass already-disjoint components: inputTokens is uncached input (Codex's
+  // cached_input_tokens has already been subtracted at the source — see
+  // codexCorrelatedDayBucketScanner.ts), cacheReadTokens is the cached portion, priced at the
+  // discounted cache-read rate. Codex has no distinct cache-write rate; if a record has only
+  // cache-write data and no other input signal, treat it as ordinary input so the API-equivalent
+  // estimate remains conservative instead of $0.
+  const cacheWriteOnlyTokens = inputTokens > 0 || cacheReadTokens > 0 ? 0 : cacheWriteTokens;
   const cachedInputRate = pricing.cacheReadPerMillion ?? pricing.inputPerMillion * CODEX_CACHE_READ_MULTIPLIER;
-  const inputCost = ((uncachedInputTokens + cacheWriteOnlyTokens) / 1_000_000) * pricing.inputPerMillion;
-  const cachedInputCost = ((cachedInputTokens + cachedOnlyTokens) / 1_000_000) * cachedInputRate;
+  const inputCost = ((inputTokens + cacheWriteOnlyTokens) / 1_000_000) * pricing.inputPerMillion;
+  const cachedInputCost = (cacheReadTokens / 1_000_000) * cachedInputRate;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   return inputCost + cachedInputCost + outputCost;
 }

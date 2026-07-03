@@ -812,6 +812,7 @@ function buildCachePerformanceCard(
 function buildProviderDetails(state: ProviderUsageState, normalizedSources?: Record<string, SourceConfigEntry>): UsageDashboardProviderDetails {
   const tracing = state.tracing;
   const available = hasAnyTracingValue(tracing);
+  const { inputTokens, cacheReadTokens } = resolveInputAndCacheReadTokens(tracing);
 
   return {
     provider: state.provider,
@@ -820,9 +821,9 @@ function buildProviderDetails(state: ProviderUsageState, normalizedSources?: Rec
     workspace: state.workspace,
     totalTokens: firstNumber(tracing?.totalTokens, addNumbers(tracing?.totalInputTokens, tracing?.totalOutputTokens)),
     currentTokens: firstNumber(tracing?.currentTotalTokens, addNumbers(tracing?.currentInputTokens, tracing?.currentOutputTokens)),
-    inputTokens: firstNumber(tracing?.currentInputTokens, tracing?.totalInputTokens),
+    inputTokens,
     outputTokens: firstNumber(tracing?.currentOutputTokens, tracing?.totalOutputTokens),
-    cacheReadTokens: firstNumber(tracing?.currentCacheReadInputTokens, tracing?.totalCachedInputTokens, tracing?.currentCachedInputTokens),
+    cacheReadTokens,
     cacheWriteTokens: addNumbers(
       tracing?.currentCacheCreationInputTokens,
       tracing?.currentEphemeral1hCacheCreationInputTokens,
@@ -831,6 +832,31 @@ function buildProviderDetails(state: ProviderUsageState, normalizedSources?: Rec
     reasoningTokens: firstNumber(tracing?.currentReasoningOutputTokens, tracing?.totalReasoningOutputTokens),
     apiEquivalentCostUsd: normalizePositiveNumber(tracing?.totalCostUsd),
     available
+  };
+}
+
+/**
+ * Codex's totalCachedInputTokens/currentCachedInputTokens report a subset of the raw input token count,
+ * not an addition on top of it (verified against live Codex rollout token_count events: total_tokens ===
+ * input_tokens + output_tokens holds regardless of cache ratio). currentCacheReadInputTokens represents
+ * already-disjoint cache accounting (e.g. Anthropic-style) and needs no derivation. Deriving uncached input
+ * here keeps this breakdown consistent with the disjoint-component fix in codexCorrelatedDayBucketScanner.ts.
+ */
+function resolveInputAndCacheReadTokens(tracing: UsageTracing | undefined): { inputTokens?: number; cacheReadTokens?: number } {
+  const rawInputTokens = firstNumber(tracing?.currentInputTokens, tracing?.totalInputTokens);
+  const disjointCacheReadTokens = tracing?.currentCacheReadInputTokens;
+  if (disjointCacheReadTokens !== undefined) {
+    return { inputTokens: rawInputTokens, cacheReadTokens: disjointCacheReadTokens };
+  }
+
+  const codexCachedInputTokens = firstNumber(tracing?.totalCachedInputTokens, tracing?.currentCachedInputTokens);
+  if (codexCachedInputTokens === undefined) {
+    return { inputTokens: rawInputTokens, cacheReadTokens: undefined };
+  }
+
+  return {
+    inputTokens: rawInputTokens !== undefined ? Math.max(0, rawInputTokens - codexCachedInputTokens) : undefined,
+    cacheReadTokens: codexCachedInputTokens
   };
 }
 

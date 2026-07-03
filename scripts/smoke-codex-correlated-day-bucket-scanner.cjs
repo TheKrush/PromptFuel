@@ -62,9 +62,12 @@ async function testSingleTurnSession() {
     assert.equal(result.recordsMatched, 1);
     assert.equal(result.filesInspected, 1);
     assert.equal(result.totalTokens, 5000);
-    assert.equal(result.inputTokens, 3000);
+    // cached_input_tokens (delta 500) is a subset of input_tokens, not additive: inputTokens is the
+    // derived uncached remainder (3000 raw - 500 cached = 2500) and the cached amount maps to cache-read.
+    assert.equal(result.inputTokens, 2500);
     assert.equal(result.outputTokens, 1500);
-    assert.equal(result.cacheCreationInputTokens, 500);
+    assert.equal(result.cacheCreationInputTokens, 0, 'Codex reports no distinct cache-write signal');
+    assert.equal(result.cacheReadInputTokens, 500);
     assert.equal(result.assistantMessages, 1);
     assert.equal(result.skippedMissingTokenData, 0, 'skippedMissingTokenData');
     assert.equal(result.skippedMissingModel, 0, 'Turn 2 gets model from latestModel fallback');
@@ -264,7 +267,10 @@ async function testReasoningTokensRetained() {
     const activeDay = result.days.find(d => d.correlatedTurns > 0);
     assert.ok(activeDay, 'reasoning: active day found');
     assert.equal(activeDay.reasoningOutputTokens, 600, 'reasoning: day reasoning tokens (200 + 400)');
-    assert.equal(activeDay.inputTokens, 3000, 'reasoning: day input tokens (1500 + 1500)');
+    // Raw input delta is 1500+1500=3000, but cached_input_tokens deltas (300+400=700) are a subset of it,
+    // not additive: derived uncached input is (1500-300)+(1500-400) = 1200+1100 = 2300.
+    assert.equal(activeDay.inputTokens, 2300, 'reasoning: day uncached input tokens ((1500-300)+(1500-400))');
+    assert.equal(activeDay.cacheReadInputTokens, 700, 'reasoning: day cache-read tokens (300 + 400)');
     assert.equal(activeDay.outputTokens, 4000, 'reasoning: day output tokens (1500 + 2500)');
 
     // Aggregate history reasoning tokens
@@ -314,9 +320,12 @@ async function testTodayBucket() {
     assert.equal(bucket.available, true, 'today bucket available with session data');
     assert.equal(bucket.dateKey, '2026-05-12', 'today bucket date key is correct');
     assert.equal(bucket.totalTokens, 5000, 'today bucket delta total (6700-1700=5000)');
-    assert.equal(bucket.inputTokens, 3000, 'today bucket delta input (4000-1000=3000)');
+    // cached_input_tokens delta (700-200=500) is a subset of the raw input delta (4000-1000=3000), so
+    // inputTokens is the derived uncached remainder (3000-500=2500) and cached maps to cache-read.
+    assert.equal(bucket.inputTokens, 2500, 'today bucket delta uncached input (3000-500=2500)');
     assert.equal(bucket.outputTokens, 1500, 'today bucket delta output (2000-500=1500)');
-    assert.equal(bucket.cacheCreationInputTokens, 500, 'today bucket delta cached (700-200=500)');
+    assert.equal(bucket.cacheCreationInputTokens, 0, 'Codex reports no distinct cache-write signal');
+    assert.equal(bucket.cacheReadInputTokens, 500, 'today bucket delta cached (700-200=500) maps to cache-read');
     assert.equal(bucket.correlatedTurns, 1, 'today bucket 1 correlated turn');
     assert.deepEqual(bucket.models, ['gpt-5.5'], 'today bucket model detected');
 
