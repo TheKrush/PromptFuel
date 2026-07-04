@@ -697,3 +697,54 @@ describe('F6: explicit sourceKind — label-independence of merge results', () =
     assert.equal(renamedSource.fiveHour?.sourceKind, 'statusLine');
   });
 });
+
+describe('authenticated refresh failure fallback stale semantics', () => {
+  it('transient failure with recently cached quota does not mark the state stale', () => {
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('claude', {
+      lastUpdatedEpochMs: now - 92_000,
+      lastAuthenticatedRefreshEpochMs: now - 92_000
+    }));
+
+    const fallback = mergeAuthenticatedFailure(cached, failure('claude', 'network_error'), backoffUntil);
+
+    assert.equal(fallback.fiveHour?.sourceKind, 'cache');
+    assert.equal(fallback.stale, false);
+  });
+
+  it('genuinely old cached quota is still marked stale', () => {
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('claude', {
+      lastUpdatedEpochMs: now - 25 * 60_000,
+      lastAuthenticatedRefreshEpochMs: now - 25 * 60_000
+    }));
+
+    const fallback = mergeAuthenticatedFailure(cached, failure('claude', 'network_error'), backoffUntil);
+
+    assert.equal(fallback.fiveHour?.sourceKind, 'cache');
+    assert.equal(fallback.stale, true);
+  });
+
+  it('a state already flagged stale remains stale even with a recent timestamp', () => {
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('claude', {
+      lastUpdatedEpochMs: now - 92_000,
+      lastAuthenticatedRefreshEpochMs: now - 92_000
+    }));
+    const alreadyStale: ProviderUsageState = { ...cached, stale: true };
+
+    const fallback = mergeAuthenticatedFailure(alreadyStale, failure('claude', 'network_error'), backoffUntil);
+
+    assert.equal(fallback.stale, true);
+  });
+
+  it('a successful authenticated refresh clears stale state', () => {
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('claude', {
+      lastUpdatedEpochMs: now - 25 * 60_000,
+      lastAuthenticatedRefreshEpochMs: now - 25 * 60_000
+    }));
+    const stalledFallback = mergeAuthenticatedFailure(cached, failure('claude', 'network_error'), backoffUntil);
+    assert.equal(stalledFallback.stale, true);
+
+    const recovered = mergeAuthenticatedQuotaSuccess(stalledFallback, liveState('claude'));
+
+    assert.equal(recovered.stale, false);
+  });
+});

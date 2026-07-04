@@ -1,5 +1,5 @@
 import { LimitWindow, ProviderUsageState, QuotaSourceKind, UsageMeter } from '../types';
-import { RESET_EXPIRY_GRACE_MS } from '../usageTime';
+import { isStale, RESET_EXPIRY_GRACE_MS } from '../usageTime';
 
 const AUTHORITY_RANK: Record<QuotaSourceKind, number> = {
   authenticated: 400,
@@ -125,7 +125,7 @@ export function mergeAuthenticatedFailure(
     authenticatedError: failure.authenticatedError,
     authenticatedBackoffUntilEpochMs: backoffUntil,
     diagnostics: state.diagnostics,
-    stale: fallback.stale || hasCachedQuota(fallback),
+    stale: fallback.stale || (hasCachedQuota(fallback) && isStale(fallback.lastUpdatedEpochMs)),
     diagnosticSeverity: state.diagnosticSeverity ?? failure.diagnosticSeverity,
     error: hasQuota ? undefined : state.error ?? failure.authenticatedError,
     lastUpdatedEpochMs: state.lastUpdatedEpochMs
