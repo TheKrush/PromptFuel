@@ -12,10 +12,6 @@
 - Fixed a false "stale" indicator that could appear right after a fresh authenticated refresh. A failed refresh now only falls back to the cached quota as stale when that cached data is actually older than the stale threshold, instead of flagging any post-failure fallback as stale regardless of age.
 - Added Claude Sonnet 5 introductory API pricing ($2 input / $10 output per MTok) to the model pricing estimates, used for Usage dashboard cost estimates.
 
-**CI only:**
-
-- Removed emoji from GitHub Actions workflow, action, and job names across the compile, controller, publish, and safety-tag workflows to satisfy a disallowed-character check; no user-visible behavior change.
-
 ## 1.0.9
 
 Adds a range-aware Weekday distribution chart to the usage history dashboard.
