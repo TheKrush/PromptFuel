@@ -4,8 +4,17 @@
 
 **Compatibility warning: snapshot files written by this version are not readable by older PromptFuel versions.**
 
+**Included in this release:**
+
 - Snapshot writers now include a `meters` array on each provider entry (generic per-window usage meters beyond the fixed five-hour/seven-day windows). Snapshot files containing `meters` will fail to parse on PromptFuel versions that predate this release.
 - Machines that share a snapshot folder (`promptFuel.snapshot.path`) should update to this version together, or older readers on that folder will report snapshot validation errors for newer machines' files until they update.
+- Fixed Codex token totals double-counting cached input. `cached_input_tokens` is a subset of `input_tokens`, not additional tokens on top of it, but the day-bucket scanner, snapshot writer, and dashboard current-turn breakdown were all folding the cached amount into cache-creation while still counting the full raw input, inflating displayed totals and cost estimates for every Codex session. Cached tokens are now mapped to cache-read and subtracted from input consistently across the live, snapshot, and 365-day history paths.
+- Fixed a false "stale" indicator that could appear right after a fresh authenticated refresh. A failed refresh now only falls back to the cached quota as stale when that cached data is actually older than the stale threshold, instead of flagging any post-failure fallback as stale regardless of age.
+- Added Claude Sonnet 5 introductory API pricing ($2 input / $10 output per MTok) to the model pricing estimates, used for Usage dashboard cost estimates.
+
+**CI only:**
+
+- Removed emoji from GitHub Actions workflow, action, and job names across the compile, controller, publish, and safety-tag workflows to satisfy a disallowed-character check; no user-visible behavior change.
 
 ## 1.0.9
 
