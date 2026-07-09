@@ -67,12 +67,13 @@ const CODEX_CACHE_READ_MULTIPLIER = 0.1;
 
 function matchModelPricing(
   modelName: string,
-  provider: 'claude' | 'codex'
+  provider: 'claude' | 'codex',
+  asOfDate?: string
 ): { pricing: ModelPricingEntry; matchedKey: string | undefined } {
   const sources = provider === 'claude' ? CLAUDE_SOURCES : CODEX_SOURCES;
   const defaultPricing = provider === 'claude' ? DEFAULT_CLAUDE_PRICING : DEFAULT_CODEX_PRICING;
 
-  const match = findModelPricing(provider, modelName);
+  const match = findModelPricing(provider, modelName, asOfDate);
   if (match && match.row.inputPer1m !== undefined && match.row.outputPer1m !== undefined) {
     return {
       pricing: {
@@ -93,9 +94,10 @@ function matchModelPricing(
 
 export function findConfiguredModelPricing(
   provider: PricingProvider,
-  modelName: string
+  modelName: string,
+  asOfDate?: string
 ): ConfiguredModelPricingRate | undefined {
-  const match = findModelPricing(provider, modelName);
+  const match = findModelPricing(provider, modelName, asOfDate);
   if (!match || match.row.inputPer1m === undefined || match.row.outputPer1m === undefined) {
     return undefined;
   }
@@ -172,9 +174,10 @@ export function estimateConfiguredModelCostUsd(
   inputTokens: number | undefined,
   outputTokens: number | undefined,
   cacheReadTokens: number | undefined = 0,
-  cacheWriteTokens: number | undefined = 0
+  cacheWriteTokens: number | undefined = 0,
+  asOfDate?: string
 ): ConfiguredModelCostEstimate {
-  const pricing = findConfiguredModelPricing(provider, modelName);
+  const pricing = findConfiguredModelPricing(provider, modelName, asOfDate);
   if (!pricing) {
     return { available: false, unavailableReason: 'Pricing unavailable' };
   }
@@ -207,10 +210,11 @@ export function estimateClaudeCostUsd(
   outputTokens: number,
   cacheReadTokens: number = 0,
   cacheWriteTokens: number = 0,
-  models: string[] = []
+  models: string[] = [],
+  asOfDate?: string
 ): CostEstimate {
   const result = models.length > 0
-    ? matchModelPricing(models[0], 'claude')
+    ? matchModelPricing(models[0], 'claude', asOfDate)
     : { pricing: DEFAULT_CLAUDE_PRICING, matchedKey: undefined };
 
   const costUsd = computeCost(result.pricing, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
@@ -228,10 +232,11 @@ export function estimateCodexCostUsd(
   outputTokens: number,
   cacheReadTokens: number = 0,
   cacheWriteTokens: number = 0,
-  models: string[] = []
+  models: string[] = [],
+  asOfDate?: string
 ): CostEstimate {
   const result = models.length > 0
-    ? matchModelPricing(models[0], 'codex')
+    ? matchModelPricing(models[0], 'codex', asOfDate)
     : { pricing: DEFAULT_CODEX_PRICING, matchedKey: undefined };
 
   const costUsd = computeOpenAiCost(result.pricing, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
@@ -251,13 +256,14 @@ export function estimateAggregateCostUsd(
     cacheCreationInputTokens: number;
     cacheReadInputTokens: number;
   }>,
-  isClaude: boolean
+  isClaude: boolean,
+  asOfDate?: string
 ): { costUsd: number; fallbackCount: number; totalCount: number } {
   let total = 0;
   let fallbackCount = 0;
 
   for (const usage of modelUsage) {
-    const result = matchModelPricing(usage.model, isClaude ? 'claude' : 'codex');
+    const result = matchModelPricing(usage.model, isClaude ? 'claude' : 'codex', asOfDate);
 
     if (!result.matchedKey) {
       fallbackCount++;

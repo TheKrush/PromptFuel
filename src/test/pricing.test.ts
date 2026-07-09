@@ -6,7 +6,8 @@ import { initModelPricingFromCsv } from '../modelPricing';
 import {
   estimateAggregateCostUsd,
   estimateClaudeCostUsd,
-  estimateCodexCostUsd
+  estimateCodexCostUsd,
+  findConfiguredModelPricing
 } from '../providers/pricing';
 
 before(() => {
@@ -50,6 +51,30 @@ describe('pricing estimates', () => {
     assertApprox(openRouterAlias.costUsd, 0.253);
     assert.equal(openRouterAlias.matchedModel, 'anthropic/claude-fable-5');
     assert.equal(openRouterAlias.isFallback, false);
+  });
+
+  it('selects scheduled Claude Sonnet 5 pricing by explicit as-of date', () => {
+    const intro = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-08-31');
+    assert.ok(intro);
+    assert.equal(intro.inputPerMillion, 2);
+    assert.equal(intro.outputPerMillion, 10);
+    assert.equal(intro.matchedModel, 'claude-sonnet-5');
+
+    const standard = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-09-01');
+    assert.ok(standard);
+    assert.equal(standard.inputPerMillion, 3);
+    assert.equal(standard.outputPerMillion, 15);
+    assert.equal(standard.matchedModel, 'claude-sonnet-5');
+  });
+
+  it('keeps future-only scheduled rows unavailable and preserves fallback behavior', () => {
+    const configured = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-06-29');
+    assert.equal(configured, undefined);
+
+    const fallback = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-sonnet-5'], '2026-06-29');
+    assertApprox(fallback.costUsd, 0.105);
+    assert.equal(fallback.matchedModel, undefined);
+    assert.equal(fallback.isFallback, true);
   });
 
   it('falls back for unknown or missing Claude models', () => {

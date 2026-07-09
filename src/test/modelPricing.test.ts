@@ -14,6 +14,8 @@ function sampleCsv(): string {
     CSV_HEADER,
     'claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,Claude Fable 5',
     'claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,OpenRouter-style alias',
+    'claude,claude-sonnet-5,2,10,2.50,4,0.20,USD,2026-06-30,Claude Sonnet 5 intro',
+    'claude,claude-sonnet-5,3,15,3.75,6,0.30,USD,2026-09-01,Claude Sonnet 5 standard',
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
     'codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,GPT-5.6 Sol',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
@@ -25,7 +27,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 7);
+    assert.equal(rows.length, 9);
   });
 
   it('parses numeric values correctly', () => {
@@ -111,14 +113,15 @@ describe('blank optional numeric fields', () => {
 });
 
 describe('buildPricingTable', () => {
-  it('builds a lookup table keyed by provider then model', () => {
+  it('builds a lookup table keyed by provider then model with scheduled rows preserved', () => {
     const rows = parseModelPricingCsv(sampleCsv());
     const table = buildPricingTable(rows);
     assert.equal(table.size, 2);
     assert.ok(table.has('claude'));
     assert.ok(table.has('codex'));
-    assert.equal(table.get('claude')!.size, 4);
+    assert.equal(table.get('claude')!.size, 5);
     assert.equal(table.get('codex')!.size, 3);
+    assert.equal(table.get('claude')!.get('claude-sonnet-5')!.length, 2);
   });
 });
 
@@ -142,6 +145,25 @@ describe('findModelPricingInTable', () => {
     assert.ok(result);
     assert.equal(result.matchedKey, 'claude-sonnet-4-6');
     assert.equal(result.row.inputPer1m, 3);
+  });
+
+  it('selects the scheduled Claude Sonnet 5 row by UTC calendar as-of date', () => {
+    const intro = findModelPricingInTable(table, 'claude', 'claude-sonnet-5', '2026-08-31');
+    assert.ok(intro);
+    assert.equal(intro.matchedKey, 'claude-sonnet-5');
+    assert.equal(intro.row.inputPer1m, 2);
+    assert.equal(intro.row.outputPer1m, 10);
+
+    const standard = findModelPricingInTable(table, 'claude', 'claude-sonnet-5', '2026-09-01');
+    assert.ok(standard);
+    assert.equal(standard.matchedKey, 'claude-sonnet-5');
+    assert.equal(standard.row.inputPer1m, 3);
+    assert.equal(standard.row.outputPer1m, 15);
+  });
+
+  it('returns undefined before the first effective date for a scheduled model', () => {
+    const result = findModelPricingInTable(table, 'claude', 'claude-sonnet-5', '2026-06-29');
+    assert.equal(result, undefined);
   });
 
   it('finds Claude Fable 5 direct and OpenRouter-style aliases', () => {
@@ -172,11 +194,15 @@ describe('findModelPricingInTable', () => {
     assert.equal(result.matchedKey, 'gpt-5.4-mini');
   });
 
-  it('finds PromptFuel codex rows', () => {
+  it('finds PromptFuel codex rows for dated suffixes', () => {
     const result = findModelPricingInTable(table, 'codex', 'gpt-5.4-20260513');
     assert.ok(result);
     assert.equal(result.matchedKey, 'gpt-5.4');
     assert.equal(result.row.provider, 'codex');
+
+    const hyphenated = findModelPricingInTable(table, 'codex', 'gpt-5.4-2026-05-13');
+    assert.ok(hyphenated);
+    assert.equal(hyphenated.matchedKey, 'gpt-5.4');
   });
 
   it('finds GPT-5.6 Codex rows by exact model id', () => {
@@ -185,6 +211,15 @@ describe('findModelPricingInTable', () => {
     assert.equal(result.matchedKey, 'gpt-5.6-sol');
     assert.equal(result.row.cacheWrite5mPer1m, 6.25);
     assert.equal(result.row.cacheReadPer1m, 0.50);
+  });
+
+  it('rejects prefix collisions that are not approved version suffixes', () => {
+    const collision = findModelPricingInTable(table, 'codex', 'gpt-5.6-solar');
+    assert.equal(collision, undefined);
+
+    const dated = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol-20260710', '2026-07-10');
+    assert.ok(dated);
+    assert.equal(dated.matchedKey, 'gpt-5.6-sol');
   });
 
   it('returns undefined for unknown provider', () => {

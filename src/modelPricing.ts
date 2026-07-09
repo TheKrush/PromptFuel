@@ -19,9 +19,10 @@ export interface ModelPricingMatch {
   matchedKey: string;
 }
 
-export type ModelPricingTable = Map<string, Map<string, CsvPricingRow>>;
+export type ModelPricingTable = Map<string, Map<string, CsvPricingRow[]>>;
 
 const EXPECTED_CSV_HEADER = 'provider,model,input_per_1m,output_per_1m,cache_write_5m_per_1m,cache_write_1h_per_1m,cache_read_per_1m,currency,effective_date,notes';
+const VERSION_DATE_SUFFIX_PATTERN = /^-(\d{8}|\d{4}-\d{2}-\d{2})$/;
 
 function parseOptionalNumber(s: string): number | undefined {
   const trimmed = s.trim();
@@ -77,7 +78,15 @@ export function buildPricingTable(rows: CsvPricingRow[]): ModelPricingTable {
       providerMap = new Map();
       table.set(providerKey, providerMap);
     }
-    providerMap.set(modelKey, row);
+
+    const scheduledRows = providerMap.get(modelKey);
+    if (scheduledRows) {
+      scheduledRows.push(row);
+      scheduledRows.sort(comparePricingRowEffectiveDate);
+      continue;
+    }
+
+    providerMap.set(modelKey, [row]);
   }
   return table;
 }
@@ -97,28 +106,76 @@ export function resetModelPricing(): void {
   loadedTable = undefined;
 }
 
-export function findModelPricingInTable(
-  table: ModelPricingTable,
-  provider: string,
-  modelName: string
-): ModelPricingMatch | undefined {
-  const providerMap = table.get(provider.toLowerCase());
-  if (!providerMap) return undefined;
+function comparePricingRowEffectiveDate(a: CsvPricingRow, b: CsvPricingRow): number {
+  return a.effectiveDate.localeCompare(b.effectiveDate);
+}
 
-  const normalized = modelName.toLowerCase();
-  const keys = Array.from(providerMap.keys()).sort((a, b) => b.length - a.length);
+// Pricing schedules resolve against a UTC calendar date so runtime selection and tests
+// share the same deterministic YYYY-MM-DD rule.
+function currentUtcCalendarDate(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
 
-  for (const key of keys) {
-    if (normalized.startsWith(key)) {
-      return { row: providerMap.get(key)!, matchedKey: key };
+function resolveAsOfDate(asOfDate?: string): string {
+  return asOfDate?.trim() || currentUtcCalendarDate();
+}
+
+function hasApprovedVersionSuffix(modelName: string, key: string): boolean {
+  if (!modelName.startsWith(key)) {
+    return false;
+  }
+
+  const suffix = modelName.slice(key.length);
+  return VERSION_DATE_SUFFIX_PATTERN.test(suffix);
+}
+
+function matchesModelKey(modelName: string, key: string): boolean {
+  return modelName === key || hasApprovedVersionSuffix(modelName, key);
+}
+
+function findApplicablePricingRow(rows: CsvPricingRow[], asOfDate: string): CsvPricingRow | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (!row.effectiveDate || row.effectiveDate <= asOfDate) {
+      return row;
     }
   }
 
   return undefined;
 }
 
-export function findModelPricing(provider: string, modelName: string): ModelPricingMatch | undefined {
-  return findModelPricingInTable(getLoadedTable(), provider, modelName);
+export function findModelPricingInTable(
+  table: ModelPricingTable,
+  provider: string,
+  modelName: string,
+  asOfDate?: string
+): ModelPricingMatch | undefined {
+  const providerMap = table.get(provider.toLowerCase());
+  if (!providerMap) return undefined;
+
+  const normalized = modelName.toLowerCase();
+  const resolvedAsOfDate = resolveAsOfDate(asOfDate);
+  const keys = Array.from(providerMap.keys()).sort((a, b) => b.length - a.length);
+
+  for (const key of keys) {
+    if (!matchesModelKey(normalized, key)) {
+      continue;
+    }
+
+    const rows = providerMap.get(key)!;
+    const row = findApplicablePricingRow(rows, resolvedAsOfDate);
+    if (row) {
+      return { row, matchedKey: key };
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
+export function findModelPricing(provider: string, modelName: string, asOfDate?: string): ModelPricingMatch | undefined {
+  return findModelPricingInTable(getLoadedTable(), provider, modelName, asOfDate);
 }
 
 export async function loadModelPricingCsv(extensionPath: string): Promise<void> {

@@ -16,7 +16,7 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 ## Modeling Notes
 
 - Claude rows use first-party Claude API global pricing. PromptFuel does not model Anthropic data residency, batch, partner cloud, or private-offer modifiers.
-- `claude-sonnet-5` uses Anthropic's introductory API pricing through 2026-08-31; the future standard pricing that starts on 2026-09-01 is recorded in the CSV notes column instead of as a second scheduled row.
+- `claude-sonnet-5` has two scheduled CSV rows: introductory pricing through 2026-08-31 and standard pricing from 2026-09-01. PromptFuel resolves these rows by `effective_date` using a UTC calendar-date `YYYY-MM-DD` as-of rule.
 - `anthropic/claude-fable-5` is included as an OpenRouter-style alias for the first-party `claude-fable-5` API model id.
 - Claude cache-write fields distinguish the official 5-minute and 1-hour prompt cache write prices. PromptFuel's current estimate path uses the 5-minute cache-write field for existing cache-write counters.
 - Claude fast-mode rows are included for matching explicit fast-mode model labels. Fast mode can have additional modifiers; PromptFuel does not model those separately.
