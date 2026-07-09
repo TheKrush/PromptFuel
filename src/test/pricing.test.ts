@@ -87,6 +87,13 @@ describe('pricing estimates', () => {
     assert.equal(estimate.isFallback, false);
   });
 
+  it('uses explicit GPT-5.6 OpenAI cache-write pricing', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-sol']);
+    assertApprox(estimate.costUsd, 0.0915);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-sol');
+    assert.equal(estimate.isFallback, false);
+  });
+
   it('prices an all-cache-read turn with zero uncached input tokens', () => {
     const estimate = estimateCodexCostUsd(0, 0, 4_000, 0, ['gpt-5.4']);
     assertApprox(estimate.costUsd, 0.001);

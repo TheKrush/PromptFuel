@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.11
+
+**Included in this release:**
+
+- Added OpenAI GPT-5.6 Sol, Terra, and Luna Standard short-context API pricing to the model pricing estimates, including the published cache-write rates.
+
 ## 1.0.10
 
 **Compatibility warning: snapshot files written by this version are not readable by older PromptFuel versions.**

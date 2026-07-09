@@ -49,7 +49,7 @@ export const DEFAULT_CLAUDE_PRICING: ModelPricingEntry = {
 export const CODEX_SOURCES = {
   url: 'https://developers.openai.com/api/docs/pricing',
   label: 'OpenAI API Pricing (official)',
-  verified: '2026-06-04'
+  verified: '2026-07-09'
 } as const;
 
 // Fallback rate used when model name does not match any known Codex entry
@@ -138,15 +138,15 @@ function computeOpenAiCost(
   // Callers must pass already-disjoint components: inputTokens is uncached input (Codex's
   // cached_input_tokens has already been subtracted at the source — see
   // codexCorrelatedDayBucketScanner.ts), cacheReadTokens is the cached portion, priced at the
-  // discounted cache-read rate. Codex has no distinct cache-write rate; if a record has only
-  // cache-write data and no other input signal, treat it as ordinary input so the API-equivalent
-  // estimate remains conservative instead of $0.
-  const cacheWriteOnlyTokens = inputTokens > 0 || cacheReadTokens > 0 ? 0 : cacheWriteTokens;
+  // discounted cache-read rate. Older Codex rows have no distinct cache-write rate; keep their
+  // legacy write-only fallback as ordinary input while avoiding duplicate charges when input is present.
+  const cacheWriteOnlyTokens = pricing.cacheWritePerMillion === undefined && inputTokens === 0 && cacheReadTokens === 0 ? cacheWriteTokens : 0;
   const cachedInputRate = pricing.cacheReadPerMillion ?? pricing.inputPerMillion * CODEX_CACHE_READ_MULTIPLIER;
+  const cacheWriteCost = pricing.cacheWritePerMillion === undefined ? 0 : (cacheWriteTokens / 1_000_000) * pricing.cacheWritePerMillion;
   const inputCost = ((inputTokens + cacheWriteOnlyTokens) / 1_000_000) * pricing.inputPerMillion;
   const cachedInputCost = (cacheReadTokens / 1_000_000) * cachedInputRate;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
-  return inputCost + cachedInputCost + outputCost;
+  return inputCost + cachedInputCost + cacheWriteCost + outputCost;
 }
 
 function configuredPricingEntry(provider: PricingProvider, rate: ConfiguredModelPricingRate): ModelPricingEntry {

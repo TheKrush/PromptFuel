@@ -15,6 +15,7 @@ function sampleCsv(): string {
     'claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,Claude Fable 5',
     'claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,OpenRouter-style alias',
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
+    'codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,GPT-5.6 Sol',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
     'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
     'claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,Claude Opus 4.8'
@@ -24,7 +25,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 6);
+    assert.equal(rows.length, 7);
   });
 
   it('parses numeric values correctly', () => {
@@ -93,6 +94,11 @@ describe('blank optional numeric fields', () => {
     assert.equal(fable.cacheWrite5mPer1m, 12.50);
     assert.equal(fable.cacheWrite1hPer1m, 20);
     assert.equal(fable.cacheReadPer1m, 1);
+
+    const sol = rows.find(r => r.model === 'gpt-5.6-sol')!;
+    assert.equal(sol.cacheWrite5mPer1m, 6.25);
+    assert.equal(sol.cacheWrite1hPer1m, 6.25);
+    assert.equal(sol.cacheReadPer1m, 0.50);
   });
 
   it('parses explicit zero cache values correctly', () => {
@@ -112,7 +118,7 @@ describe('buildPricingTable', () => {
     assert.ok(table.has('claude'));
     assert.ok(table.has('codex'));
     assert.equal(table.get('claude')!.size, 4);
-    assert.equal(table.get('codex')!.size, 2);
+    assert.equal(table.get('codex')!.size, 3);
   });
 });
 
@@ -171,6 +177,14 @@ describe('findModelPricingInTable', () => {
     assert.ok(result);
     assert.equal(result.matchedKey, 'gpt-5.4');
     assert.equal(result.row.provider, 'codex');
+  });
+
+  it('finds GPT-5.6 Codex rows by exact model id', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol');
+    assert.ok(result);
+    assert.equal(result.matchedKey, 'gpt-5.6-sol');
+    assert.equal(result.row.cacheWrite5mPer1m, 6.25);
+    assert.equal(result.row.cacheReadPer1m, 0.50);
   });
 
   it('returns undefined for unknown provider', () => {
