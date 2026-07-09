@@ -1585,6 +1585,18 @@
     return selectModelDistributionRange(distribution, chart, rangeKey, (chart && chart.providerLabel) || (distribution && distribution.providerLabel) || 'Codex');
   }
 
+  function buildUnavailableModelDistribution(distribution, selectedChart, selectedRange, label) {
+    return {
+      available: false,
+      title: distribution && distribution.title || 'Model distribution',
+      rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : claudeHistoryRangeLabel(selectedRange),
+      totalTokens: 0,
+      segments: [],
+      unavailableReason: 'No ' + label + ' model distribution is available for this range.',
+      source: distribution && distribution.source
+    };
+  }
+
   function selectModelDistributionRange(distribution, chart, rangeKey, label) {
     if (!distribution || !chart || !chart.available || !chart.points || !chart.points.length) {
       return distribution;
@@ -1595,54 +1607,14 @@
     var points = selectedChart && selectedChart.points ? selectedChart.points : [];
 
     if (!points.length) {
-      return {
-        available: false,
-        title: distribution.title || 'Model distribution',
-        rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : claudeHistoryRangeLabel(selectedRange),
-        totalTokens: 0,
-        segments: [],
-        unavailableReason: 'No ' + label + ' model distribution is available for this range.',
-        source: distribution.source
-      };
+      return buildUnavailableModelDistribution(distribution, selectedChart, selectedRange, label);
     }
 
     var aggregate = aggregateModelDistribution(points);
     var totalTokens = aggregate.reduce(function(sum, entry) { return sum + entry.totalTokens; }, 0);
-    var baseDistributionTotal = distribution && Number(distribution.totalTokens || 0);
 
     if (totalTokens <= 0) {
-      if (distribution.available && distribution.segments && distribution.segments.length) {
-        return {
-          available: true,
-          title: distribution.title || label + ' model distribution',
-          providerLabel: distribution.providerLabel || label,
-          rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : (distribution.rangeLabel || claudeHistoryRangeLabel(selectedRange)),
-          totalTokens: distribution.totalTokens,
-          segments: distribution.segments,
-          source: distribution.source
-        };
-      }
-      return {
-        available: false,
-        title: distribution.title || 'Model distribution',
-        rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : claudeHistoryRangeLabel(selectedRange),
-        totalTokens: 0,
-        segments: [],
-        unavailableReason: 'No ' + label + ' model distribution is available for this range.',
-        source: distribution.source
-      };
-    }
-
-    if (distribution.available && distribution.segments && distribution.segments.length && isFinite(baseDistributionTotal) && baseDistributionTotal > totalTokens) {
-      return {
-        available: true,
-        title: distribution.title || label + ' model distribution',
-        providerLabel: distribution.providerLabel || label,
-        rangeLabel: selectedChart && selectedChart.rangeLabel ? selectedChart.rangeLabel : (distribution.rangeLabel || claudeHistoryRangeLabel(selectedRange)),
-        totalTokens: distribution.totalTokens,
-        segments: distribution.segments,
-        source: distribution.source
-      };
+      return buildUnavailableModelDistribution(distribution, selectedChart, selectedRange, label);
     }
 
     return {

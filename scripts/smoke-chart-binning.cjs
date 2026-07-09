@@ -35,6 +35,61 @@ function makePoint(dateKey, totalTokens, model = 'claude-sonnet-4-20250514') {
   };
 }
 
+function makeScopedModelPoint(dateKey, totalTokens, options = {}) {
+  const inputTokens = Math.floor(totalTokens * 0.5);
+  const outputTokens = Math.floor(totalTokens * 0.4);
+  const cacheCreationTokens = Math.floor(totalTokens * 0.06);
+  const cacheReadTokens = Math.max(0, totalTokens - inputTokens - outputTokens - cacheCreationTokens);
+  return {
+    dateKey,
+    label: dateKey.slice(5),
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    cacheTokens: cacheCreationTokens + cacheReadTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    assistantMessages: totalTokens > 0 ? 1 : 0,
+    sourcePointCount: options.sourcePointCount,
+    isEmpty: options.isEmpty,
+    models: options.includeModels === false ? [] : [{
+      label: options.label || options.model || 'Model',
+      model: options.model || 'model',
+      pricingModel: options.pricingModel,
+      provider: options.provider,
+      providerLabel: options.providerLabel,
+      totalTokens,
+      inputTokens,
+      outputTokens,
+      cacheCreationInputTokens: cacheCreationTokens,
+      cacheReadInputTokens: cacheReadTokens,
+      assistantMessages: totalTokens > 0 ? 1 : 0,
+      apiEquivalentCostUsd: options.apiEquivalentCostUsd ?? 0
+    }]
+  };
+}
+
+function makeRangeChart(providerLabel, source, allPoints, rangeViews) {
+  const ranges = ['1D', '1W', '1M', '1Y', 'ALL'].map(key => ({
+    key,
+    label: key,
+    available: Boolean(rangeViews[key]),
+    active: key === '1M'
+  }));
+  const maxTotalTokens = allPoints.reduce((max, point) => Math.max(max, Number(point.totalTokens || 0)), 0);
+  return {
+    available: true,
+    title: 'Token trend',
+    providerLabel,
+    rangeLabel: '1M / daily bins',
+    points: allPoints,
+    maxTotalTokens,
+    source,
+    ranges,
+    rangeViews
+  };
+}
+
 function makeClaudeHistory(days) {
   return {
     available: true,
@@ -113,7 +168,7 @@ function main() {
 
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__usageHistoryTest = { selectClaudeHistoryChartRange: selectClaudeHistoryChartRange, selectClaudeModelDistributionRange: selectClaudeModelDistributionRange, selectCodexModelDistributionRange: selectCodexModelDistributionRange, renderHistoryChart: renderHistoryChart }; })();'
+    'globalThis.__usageHistoryTest = { selectClaudeHistoryChartRange: selectClaudeHistoryChartRange, selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectClaudeModelDistributionRange: selectClaudeModelDistributionRange, selectCodexModelDistributionRange: selectCodexModelDistributionRange, selectCombinedModelDistributionRange: selectCombinedModelDistributionRange, renderHistoryChart: renderHistoryChart }; })();'
   );
   const fakeElement = {
     value: '',
@@ -187,14 +242,146 @@ function main() {
     source: { confidence: 'snapshotOnly', label: 'Remote snapshot history buckets' }
   };
   const selectedRemoteClaudeDistribution = sandbox.__usageHistoryTest.selectClaudeModelDistributionRange(remoteDistribution, remoteHistoryWithoutModelStacks, '1M');
-  assert.ok(selectedRemoteClaudeDistribution.available, 'remote bucket-model distribution remains available when history buckets have no model stacks');
-  assert.equal(selectedRemoteClaudeDistribution.segments[0].model, 'claude-sonnet-4-20250514', 'remote bucket-model segment is preserved');
+  assert.equal(selectedRemoteClaudeDistribution.available, false, 'remote Claude provider distribution is unavailable when selected history buckets have no model stacks');
+  assert.equal(selectedRemoteClaudeDistribution.totalTokens, 0, 'remote Claude provider distribution reports zero tokens when selected history buckets have no model stacks');
+  assert.match(selectedRemoteClaudeDistribution.unavailableReason, /No Claude model distribution is available for this range/, 'remote Claude provider distribution reports the selected-range unavailable reason');
   const selectedRemoteCodexDistribution = sandbox.__usageHistoryTest.selectCodexModelDistributionRange({
     ...remoteDistribution,
     segments: [{ ...remoteDistribution.segments[0], label: 'gpt-5-5', model: 'gpt-5-5' }]
   }, remoteHistoryWithoutModelStacks, '1M');
-  assert.ok(selectedRemoteCodexDistribution.available, 'remote Codex bucket-model distribution remains available when history buckets have no model stacks');
-  assert.equal(selectedRemoteCodexDistribution.segments[0].model, 'gpt-5-5', 'remote Codex bucket-model segment is preserved');
+  assert.equal(selectedRemoteCodexDistribution.available, false, 'remote Codex provider distribution is unavailable when selected history buckets have no model stacks');
+  assert.equal(selectedRemoteCodexDistribution.totalTokens, 0, 'remote Codex provider distribution reports zero tokens when selected history buckets have no model stacks');
+  assert.match(selectedRemoteCodexDistribution.unavailableReason, /No Codex model distribution is available for this range/, 'remote Codex provider distribution reports the selected-range unavailable reason');
+
+  const rangeScopedSource = { confidence: 'trusted', label: 'Local trusted history' };
+  const claudeOldPoint = makeScopedModelPoint('2026-05-09', 100, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    model: 'claude-old',
+    label: 'Old Claude'
+  });
+  const claudeWeekPoint = makeScopedModelPoint('2026-05-16', 7, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    model: 'claude-week',
+    label: 'Week Claude'
+  });
+  const claudeNewPoint = makeScopedModelPoint('2026-05-17', 10, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    model: 'claude-new',
+    label: 'New Claude'
+  });
+  const claudeRangeChart = makeRangeChart('Claude', rangeScopedSource, [claudeOldPoint, claudeWeekPoint, claudeNewPoint], {
+    '1D': { rangeLabel: '1D / today (day-level)', points: [claudeNewPoint], maxTotalTokens: 10 },
+    '1W': { rangeLabel: '1W / daily bins', points: [claudeWeekPoint, claudeNewPoint], maxTotalTokens: 10 },
+    '1M': { rangeLabel: '1M / daily bins', points: [claudeOldPoint, claudeWeekPoint, claudeNewPoint], maxTotalTokens: 100 },
+    'ALL': { rangeLabel: 'ALL / monthly bins (12M loaded)', points: [claudeOldPoint, claudeWeekPoint, claudeNewPoint], maxTotalTokens: 100 }
+  });
+  const claudeAllHistoryDistribution = {
+    available: true,
+    title: 'Model distribution',
+    providerLabel: 'Claude',
+    rangeLabel: 'ALL / monthly bins (12M loaded)',
+    totalTokens: 117,
+    segments: [
+      { label: 'Old Claude', model: 'claude-old', provider: 'claude', totalTokens: 100, percent: 100 / 117, percentLabel: '85%' },
+      { label: 'New Claude', model: 'claude-new', provider: 'claude', totalTokens: 10, percent: 10 / 117, percentLabel: '9%' },
+      { label: 'Week Claude', model: 'claude-week', provider: 'claude', totalTokens: 7, percent: 7 / 117, percentLabel: '6%' }
+    ],
+    source: rangeScopedSource
+  };
+  const selectedClaude1DDistribution = sandbox.__usageHistoryTest.selectClaudeModelDistributionRange(claudeAllHistoryDistribution, claudeRangeChart, '1D');
+  assert.ok(selectedClaude1DDistribution.available, 'Claude provider distribution stays available for a selected range with model stacks');
+  assert.equal(selectedClaude1DDistribution.totalTokens, 10, 'Claude 1D distribution uses only selected-range tokens');
+  assert.deepEqual(Array.from(selectedClaude1DDistribution.segments, segment => segment.model), ['claude-new'], 'Claude 1D distribution excludes older model rows outside the selected range');
+  const selectedClaude1WDistribution = sandbox.__usageHistoryTest.selectClaudeModelDistributionRange(claudeAllHistoryDistribution, claudeRangeChart, '1W');
+  assert.ok(selectedClaude1WDistribution.available, 'Claude provider distribution stays available for a 1W range with model stacks');
+  assert.equal(selectedClaude1WDistribution.totalTokens, 17, 'Claude 1W distribution uses only selected-range tokens');
+  assert.deepEqual(Array.from(selectedClaude1WDistribution.segments, segment => segment.model), ['claude-new', 'claude-week'], 'Claude 1W distribution excludes older model rows outside the selected range');
+
+  const codexOldPoint = makeScopedModelPoint('2026-05-16', 100, {
+    provider: 'codex',
+    providerLabel: 'Codex',
+    model: 'gpt-5.5-old',
+    label: 'Old Codex'
+  });
+  const codexNewPoint = makeScopedModelPoint('2026-05-17', 10, {
+    provider: 'codex',
+    providerLabel: 'Codex',
+    model: 'gpt-5.5-new',
+    label: 'New Codex'
+  });
+  const codexRangeChart = makeRangeChart('Codex', rangeScopedSource, [codexOldPoint, codexNewPoint], {
+    '1D': { rangeLabel: '1D / today (day-level)', points: [codexNewPoint], maxTotalTokens: 10 },
+    '1M': { rangeLabel: '1M / daily bins', points: [codexOldPoint, codexNewPoint], maxTotalTokens: 100 },
+    'ALL': { rangeLabel: 'ALL / monthly bins (12M loaded)', points: [codexOldPoint, codexNewPoint], maxTotalTokens: 100 }
+  });
+  const codexAllHistoryDistribution = {
+    available: true,
+    title: 'Model distribution',
+    providerLabel: 'Codex',
+    rangeLabel: 'ALL / monthly bins (12M loaded)',
+    totalTokens: 110,
+    segments: [
+      { label: 'Old Codex', model: 'gpt-5.5-old', provider: 'codex', totalTokens: 100, percent: 100 / 110, percentLabel: '91%' },
+      { label: 'New Codex', model: 'gpt-5.5-new', provider: 'codex', totalTokens: 10, percent: 10 / 110, percentLabel: '9%' }
+    ],
+    source: rangeScopedSource
+  };
+  const selectedCodex1DDistribution = sandbox.__usageHistoryTest.selectCodexModelDistributionRange(codexAllHistoryDistribution, codexRangeChart, '1D');
+  assert.ok(selectedCodex1DDistribution.available, 'Codex provider distribution stays available for a selected range with model stacks');
+  assert.equal(selectedCodex1DDistribution.totalTokens, 10, 'Codex 1D distribution uses only selected-range tokens');
+  assert.deepEqual(Array.from(selectedCodex1DDistribution.segments, segment => segment.model), ['gpt-5.5-new'], 'Codex 1D distribution excludes older model rows outside the selected range');
+
+  const bucketOnlySelectedPoint = makeScopedModelPoint('2026-05-17', 10, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    includeModels: false,
+    sourcePointCount: 1
+  });
+  const missingStacksChart = makeRangeChart('Claude', rangeScopedSource, [claudeOldPoint, bucketOnlySelectedPoint], {
+    '1D': { rangeLabel: '1D / today (day-level)', points: [bucketOnlySelectedPoint], maxTotalTokens: 10 },
+    '1M': { rangeLabel: '1M / daily bins', points: [claudeOldPoint, bucketOnlySelectedPoint], maxTotalTokens: 100 },
+    'ALL': { rangeLabel: 'ALL / monthly bins (12M loaded)', points: [claudeOldPoint, bucketOnlySelectedPoint], maxTotalTokens: 100 }
+  });
+  const unavailableSelectedDistribution = sandbox.__usageHistoryTest.selectClaudeModelDistributionRange(claudeAllHistoryDistribution, missingStacksChart, '1D');
+  assert.equal(unavailableSelectedDistribution.available, false, 'selected range with no model stacks does not fall back to all-history distribution');
+  assert.equal(unavailableSelectedDistribution.totalTokens, 0, 'selected range with no model stacks reports zero total tokens');
+  assert.match(unavailableSelectedDistribution.unavailableReason, /No Claude model distribution is available for this range/, 'selected range with no model stacks reports an unavailable reason');
+
+  const combinedOldPoint = makeScopedModelPoint('2026-05-16', 100, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    model: 'claude-old',
+    label: 'Old Claude'
+  });
+  const combinedClaudeNewPoint = makeScopedModelPoint('2026-05-17', 4, {
+    provider: 'claude',
+    providerLabel: 'Claude',
+    model: 'claude-new',
+    label: 'New Claude'
+  });
+  const combinedCodexNewPoint = makeScopedModelPoint('2026-05-17', 6, {
+    provider: 'codex',
+    providerLabel: 'Codex',
+    model: 'gpt-5.5-new',
+    label: 'New Codex'
+  });
+  const combinedBaseChart = makeRangeChart('Claude + Codex', { confidence: 'mixedDayBucket', label: 'Mixed history' }, [combinedOldPoint, combinedClaudeNewPoint, combinedCodexNewPoint], {
+    '1D': { rangeLabel: '1D / today (day-level)', points: [combinedClaudeNewPoint, combinedCodexNewPoint], maxTotalTokens: 6 },
+    '1M': { rangeLabel: '1M / daily bins', points: [combinedOldPoint, combinedClaudeNewPoint, combinedCodexNewPoint], maxTotalTokens: 100 },
+    'ALL': { rangeLabel: 'ALL / monthly bins (12M loaded)', points: [combinedOldPoint, combinedClaudeNewPoint, combinedCodexNewPoint], maxTotalTokens: 100 }
+  });
+  const selectedCombinedChart = sandbox.__usageHistoryTest.selectCombinedHistoryChartRange(combinedBaseChart, '1D');
+  const selectedCombinedDistribution = sandbox.__usageHistoryTest.selectCombinedModelDistributionRange({ combinedHistoryChart: combinedBaseChart }, selectedCombinedChart, '1D');
+  assert.ok(selectedCombinedDistribution.available, 'combined distribution remains available for selected-range model stacks');
+  assert.equal(selectedCombinedDistribution.totalTokens, 10, 'combined distribution uses only selected-range tokens');
+  assert.deepEqual(
+    Array.from(selectedCombinedDistribution.segments, segment => segment.model),
+    ['gpt-5.5-new', 'claude-new'],
+    'combined distribution remains scoped to the selected range instead of all-history'
+  );
 
   const noProviderModel = buildUsageDashboardModel({ states: [], enabledProviders: [] });
   assert.equal(noProviderModel.details.historyChart, undefined, 'no-provider model omits Claude chart');
