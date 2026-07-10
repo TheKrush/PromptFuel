@@ -2,7 +2,7 @@
   "name": "prompt-fuel",
   "displayName": "PromptFuel",
   "description": "Track AI coding assistant usage history and live quota status from the VS Code status bar.",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "publisher": "thekrush",
   "author": "TheKrush",
   "license": "MIT",
@@ -152,7 +152,11 @@
         },
         "promptFuel.weekStartsOn": {
           "type": "string",
-          "enum": ["sunday", "monday", "saturday"],
+          "enum": [
+            "sunday",
+            "monday",
+            "saturday"
+          ],
           "enumDescriptions": [
             "Week starts on Sunday.",
             "Week starts on Monday.",
