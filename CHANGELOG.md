@@ -4,7 +4,12 @@
 
 **Included in this release:**
 
-- Added OpenAI GPT-5.6 Sol, Terra, and Luna Standard short-context API pricing to the model pricing estimates, including the published cache-write rates.
+- Added API-equivalent pricing estimates for GPT-5.6 Sol, Terra, and Luna, including explicit cache-write rates.
+- Added effective-date-aware pricing resolution so scheduled rate changes, including Claude Sonnet 5's transition from introductory to standard pricing, use the correct rates for each date.
+- Hardened model pricing matching so dated model suffixes continue to resolve while prefix collisions such as `gpt-5.6-solar` do not resolve as `gpt-5.6-sol`.
+- Fixed Claude and Codex provider-tab Model Distribution cards so selected ranges use range-specific model attribution instead of all-history data.
+- Renamed the user-facing snapshot compatibility command from “upgrade” wording to validation wording while preserving its existing command ID; the command remains read-only.
+- Clarified `promptFuel.sources`: a non-empty configuration replaces defaults, an empty object uses defaults, and providers omitted from a non-empty set are disabled unless explicitly included.
 
 ## 1.0.10
 
