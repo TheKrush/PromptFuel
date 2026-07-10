@@ -1,0 +1,61 @@
+name: Markdown Link Sanity
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  markdown-links:
+    name: Check relative markdown links resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check relative links in markdown files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import re, sys, os, glob
+
+          link_re = re.compile(r'\[[^\]]*\]\(([^)]+)\)')
+          broken = []
+          checkout_root = os.path.abspath(os.getcwd())
+
+          for md_file in glob.glob('**/*.md', recursive=True):
+              # Skip vendored plugin docs: their links target the upstream
+              # repo layout, not ours.
+              if md_file.startswith(('.git/', 'Plugins/')):
+                  continue
+              base_dir = os.path.dirname(md_file)
+              with open(md_file, encoding='utf-8') as f:
+                  content = f.read()
+              for match in link_re.finditer(content):
+                  target = match.group(1).strip()
+                  if target.startswith(('http://', 'https://', 'mailto:', '#')):
+                      continue
+                  target_path = target.split('#')[0]
+                  if not target_path:
+                      continue
+                  resolved = os.path.abspath(os.path.join(base_dir, target_path))
+                  if os.path.commonpath([checkout_root, resolved]) != checkout_root:
+                      continue
+                  if not os.path.exists(resolved):
+                      broken.append(f'{md_file}: {target}')
+
+          if broken:
+              print('::error::Broken relative markdown links found:')
+              for b in broken:
+                  print(f'  {b}')
+              sys.exit(1)
+
+          print('All relative markdown links resolve.')
+          PYEOF
