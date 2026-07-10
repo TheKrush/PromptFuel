@@ -46,7 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.refresh', () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true })));
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.openDataFolder', () => openStateFolder()));
-  context.subscriptions.push(vscode.commands.registerCommand('promptFuel.upgradeSnapshotFiles', () => upgradeSnapshotFiles()));
+  context.subscriptions.push(vscode.commands.registerCommand('promptFuel.upgradeSnapshotFiles', () => validateSnapshotFiles()));
   registerPromptFuelPanelCommands(context, {
     refreshNow: () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true, suppressPanelBroadcast: true }),
     getUsageDashboardModel: () => {
@@ -103,7 +103,7 @@ async function openStateFolder(): Promise<void> {
   await vscode.env.openExternal(vscode.Uri.file(cfg.stateDirectory));
 }
 
-async function upgradeSnapshotFiles(): Promise<void> {
+async function validateSnapshotFiles(): Promise<void> {
   const cfg = getConfig();
   const paths: string[] = [];
   const snapshotsDir = path.join(cfg.stateDirectory, 'snapshots');
@@ -115,20 +115,20 @@ async function upgradeSnapshotFiles(): Promise<void> {
     }
   }
 
-  let upgraded = 0;
+  let validated = 0;
   let errors = 0;
   for (const readPath of paths) {
     const result = await readMachineSnapshots({ readEnabled: true, readPath });
-    upgraded += result.snapshots.length;
+    validated += result.snapshots.length;
     errors += result.errors.length;
   }
 
-  if (upgraded === 0 && errors === 0) {
-    void vscode.window.showInformationMessage('PromptFuel: No snapshot files found to upgrade.');
+  if (validated === 0 && errors === 0) {
+    void vscode.window.showInformationMessage('PromptFuel: No compatible snapshot files found to validate.');
   } else if (errors > 0) {
-    void vscode.window.showWarningMessage(`PromptFuel: Snapshot upgrade complete. ${upgraded} file(s) processed, ${errors} error(s).`);
+    void vscode.window.showWarningMessage(`PromptFuel: Snapshot validation completed with errors. ${validated} compatible snapshot file(s) validated; ${errors} validation error(s) found.`);
   } else {
-    void vscode.window.showInformationMessage(`PromptFuel: Snapshot upgrade complete. ${upgraded} file(s) processed.`);
+    void vscode.window.showInformationMessage(`PromptFuel: Snapshot validation complete. ${validated} compatible snapshot file(s) validated.`);
   }
 }
 

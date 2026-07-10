@@ -67,7 +67,7 @@
       },
       {
         "command": "promptFuel.upgradeSnapshotFiles",
-        "title": "PromptFuel: Upgrade Snapshot Files to Current Schema"
+        "title": "PromptFuel: Validate Snapshot Files for Compatibility"
       }
     ],
     "configuration": {

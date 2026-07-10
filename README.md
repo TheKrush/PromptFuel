@@ -78,13 +78,15 @@ These are unofficial, undocumented usage endpoints. They are not part of any pub
 | `promptFuel.openDashboard` | PromptFuel: Open Usage Dashboard |
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
-| `promptFuel.upgradeSnapshotFiles` | PromptFuel: Upgrade Snapshot Files to Current Schema |
+| `promptFuel.upgradeSnapshotFiles` | PromptFuel: Validate Snapshot Files for Compatibility |
 
 ## Machine Snapshots
 
 PromptFuel can write a sanitized snapshot for the current machine and read compatible snapshots from a configured folder. This keeps multi-machine visibility across remote sources without exposing raw paths in the dashboard, status bar, or tooltip.
 
 Set `promptFuel.snapshot.path` to a local or shared folder that contains compatible `*-latest.json` snapshot files. When the setting is empty, PromptFuel uses its default local snapshot/state behavior. When the setting is present, PromptFuel reads compatible snapshots from that folder and automatically discovers remote machine sources from the snapshot payloads.
+
+Run `PromptFuel: Validate Snapshot Files for Compatibility` to check configured snapshot files and report compatible files or validation errors. The command keeps the historical `promptFuel.upgradeSnapshotFiles` command ID for backward compatibility and does not modify or migrate snapshot files.
 
 Enable `promptFuel.snapshot.enabled` to write this machine's sanitized snapshot under PromptFuel's internal storage. If `promptFuel.snapshot.path` is set, the same sanitized latest snapshot and archive data are also copied to that folder. Set `promptFuel.snapshot.machineLabel` to a safe label such as `desktop`, `laptop`, `workstation`, or `build-agent`; this label is included in the snapshot payload and can appear in supported dashboard/status surfaces.
 
