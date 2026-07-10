@@ -8,7 +8,7 @@ Track AI coding assistant usage history and live quota status from the VS Code s
 
 ## Features
 
-- **Unified source configuration** — `promptFuel.sources` controls which providers and snapshot sources are enabled, their display labels, and status bar visibility.
+- **Unified source configuration** — a non-empty `promptFuel.sources` object is the complete source set. It replaces the default local Claude and Codex entries; omitted sources are not added automatically.
 - **Live quota first** - the status bar and dashboard prioritize live 5h/7d quota when provider auth state and provider APIs are available.
 - **Status bar density** - choose the standard full-label display or compact short-label display with `promptFuel.statusBarDensity`.
 - **Codex and Claude live quota support** - PromptFuel can attempt live quota reads for configured providers from existing provider auth state.
@@ -44,7 +44,7 @@ Break down usage by provider and model, with token share, estimated API-equivale
 ## Privacy & Data
 
 - **Local history stays local.** Live quota reads may contact provider services using existing provider auth state for sources enabled in `promptFuel.sources`.
-- **Sources are opt-in by individual source.** Each entry in `promptFuel.sources` can be independently enabled or disabled.
+- **Sources are opt-in by individual source.** Each entry in a non-empty `promptFuel.sources` object can be independently enabled or disabled; omitting a source removes it from the configured set.
 - **No raw prompts, responses, or transcripts are collected or displayed.**
 - **No secrets, tokens, or API keys are stored by PromptFuel.**
 - **No telemetry** is sent by PromptFuel.
@@ -131,20 +131,24 @@ When `promptFuel.snapshot.path` points to a shared folder, PromptFuel discovers 
 
 **Settings:**
 
-- `promptFuel.sources` — unified source configuration. Each key is a source ID (e.g. `claude`, `codex`, or `desktop/codex`). Controls enablement, display labels, and status bar visibility via `enabled`, `label`, `shortLabel`, and `statusBar` fields.
+- `promptFuel.sources` — complete source configuration. A non-empty object replaces the default local source set, so include `claude` and `codex` entries when you want to keep local providers. Each key is a source ID (e.g. `claude`, `codex`, or `desktop/codex`). Controls enablement, display labels, and status bar visibility via `enabled`, `label`, `shortLabel`, and `statusBar` fields.
+
+> Warning: An empty `promptFuel.sources` object uses the default local providers. Within a non-empty source object, omit a local provider or include it with `"enabled": false` to disable it. Omitted local providers are not added automatically.
 
 **Worked example:**
 
 1. Machine **desktop** has `promptFuel.snapshot.enabled: true` and `promptFuel.snapshot.machineLabel: "desktop"`. It writes sanitized snapshots to the shared folder.
 2. Machine **laptop** has `promptFuel.snapshot.path` set to the same shared folder. It discovers `desktop-latest.json` automatically.
-3. On the laptop, add source entries to `promptFuel.sources` for the desktop's sources:
+3. On the laptop, configure the complete source set in `promptFuel.sources`, keeping local Claude and Codex alongside the desktop sources:
    ```json
    "promptFuel.sources": {
+     "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true },
+     "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true },
      "desktop/claude": { "enabled": true, "label": "Claude Home Desktop", "shortLabel": "CH", "statusBar": true },
      "desktop/codex": { "enabled": true, "label": "Codex Home Desktop", "shortLabel": "XH", "statusBar": false }
    }
    ```
-   This shows the desktop's Claude in both the dashboard and status bar, and its Codex in the dashboard only.
+   This keeps local Claude and Codex enabled, shows the desktop's Claude in both the dashboard and status bar, and its Codex in the dashboard only.
 4. The `label` field provides friendlier display names instead of raw machine labels.
 
 Remote sources appear alongside local providers in the dashboard with a "snapshot-backed" indicator showing their age.
@@ -161,7 +165,7 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 
 | Setting | Description | Default |
 | --- | --- | --- |
-| `promptFuel.sources` | Unified source configuration. Keyed by source ID (`claude`, `codex`, or `machineLabel/provider`). Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
+| `promptFuel.sources` | Complete source configuration. A non-empty object replaces the default local source set; include `claude` and `codex` entries to keep them enabled. An empty object uses the defaults. Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
 | `promptFuel.refreshIntervalMinutes` | Minimum interval in minutes for periodic refresh (local scanning and authenticated quota). | `5` |
 | `promptFuel.statusBarDensity` | Status bar label density: `standard` uses full source labels and reset countdowns; `compact` uses source `shortLabel` values and compact quota windows. | `"standard"` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
