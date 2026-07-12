@@ -1681,58 +1681,7 @@
   }
 
   function aggregateModelDistribution(points) {
-    var byModel = {};
-    points.forEach(function(point) {
-      (point.models || []).forEach(function(model) {
-        var key = modelDistributionAggregationKey(model);
-        var modelName = model.model || model.label || 'unknown';
-        if (!byModel[key]) {
-          byModel[key] = {
-            label: model.label || modelName,
-            model: modelName,
-            pricingModel: model.pricingModel || model.model || model.label || key,
-            provider: model.provider,
-            providerLabel: model.providerLabel,
-            totalTokens: 0, inputTokens: 0, outputTokens: 0,
-            cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0,
-            apiEquivalentCostUsd: 0
-          };
-        }
-        byModel[key].totalTokens += Number(model.totalTokens || 0);
-        byModel[key].inputTokens += Number(model.inputTokens || 0);
-        byModel[key].outputTokens += Number(model.outputTokens || 0);
-        byModel[key].cacheCreationInputTokens += Number(model.cacheCreationInputTokens || 0);
-        byModel[key].cacheReadInputTokens += Number(model.cacheReadInputTokens || 0);
-        byModel[key].assistantMessages += Number(model.assistantMessages || 0);
-        mergeModelDistributionCost(byModel[key], model);
-      });
-    });
-
-    var entries = Object.keys(byModel)
-      .map(function(key) { return byModel[key]; })
-      .filter(function(entry) { return entry.totalTokens > 0; })
-      .sort(function(a, b) { return b.totalTokens - a.totalTokens; });
-
-    var top = entries.slice(0, 5);
-    var rest = entries.slice(5);
-    if (!rest.length) { return top; }
-
-    var other = rest.reduce(function(sum, entry) {
-      sum.totalTokens += entry.totalTokens;
-      sum.inputTokens += entry.inputTokens;
-      sum.outputTokens += entry.outputTokens;
-      sum.cacheCreationInputTokens += entry.cacheCreationInputTokens;
-      sum.cacheReadInputTokens += entry.cacheReadInputTokens;
-      sum.assistantMessages += entry.assistantMessages;
-      mergeModelDistributionCost(sum, entry);
-      return sum;
-    }, { label: 'Other', model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0, apiEquivalentCostUsd: 0 });
-    other.inputRatePerMillionUsd = undefined;
-    other.outputRatePerMillionUsd = undefined;
-    other.cacheReadRatePerMillionUsd = undefined;
-    other.cacheWriteRatePerMillionUsd = undefined;
-
-    return other.totalTokens > 0 ? top.concat([other]) : top;
+    return aggregateCombinedModelDistribution(points);
   }
 
   function filterHistoryPointsByRange(points, rangeKey) {

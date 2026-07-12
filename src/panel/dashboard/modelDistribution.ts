@@ -139,29 +139,18 @@ export function buildClaudeModelDistribution(
     };
   }
 
-  const top = allEntries.slice(0, 5);
-  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({
-    model: 'Other',
-    totalTokens: sum.totalTokens + e.totalTokens,
-    inputTokens: sum.inputTokens + e.inputTokens,
-    outputTokens: sum.outputTokens + e.outputTokens,
-    cacheCreationInputTokens: sum.cacheCreationInputTokens + e.cacheCreationInputTokens,
-    cacheReadInputTokens: sum.cacheReadInputTokens + e.cacheReadInputTokens,
-    assistantMessages: sum.assistantMessages + e.assistantMessages
-  }), { model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0 });
-  const entries = otherTotal.totalTokens > 0 ? [...top, otherTotal] : top;
   const grandTotal = allEntries.reduce((sum, e) => sum + e.totalTokens, 0);
 
   return {
-    available: entries.length > 0,
+    available: true,
     title: 'Model distribution',
     rangeLabel: '1M / 30d',
     providerLabel,
     totalTokens: grandTotal,
-    segments: entries.map(model => {
+    segments: allEntries.map(model => {
       const percent = model.totalTokens / grandTotal;
       return {
-        label: model.model === 'Other' ? 'Other' : shortenClaudeModel(model.model),
+        label: shortenClaudeModel(model.model),
         model: model.model,
         provider: 'claude' as const,
         providerLabel,
@@ -237,26 +226,15 @@ export function buildCodexModelDistribution(
     };
   }
 
-  const top = allEntries.slice(0, 5);
-  const otherTotal = allEntries.slice(5).reduce((sum, e) => ({
-    model: 'Other',
-    totalTokens: sum.totalTokens + e.totalTokens,
-    inputTokens: sum.inputTokens + e.inputTokens,
-    outputTokens: sum.outputTokens + e.outputTokens,
-    cacheCreationInputTokens: sum.cacheCreationInputTokens + e.cacheCreationInputTokens,
-    cacheReadInputTokens: sum.cacheReadInputTokens + e.cacheReadInputTokens,
-    assistantMessages: sum.assistantMessages + e.assistantMessages
-  }), { model: 'Other', totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, assistantMessages: 0 });
-  const entries = otherTotal.totalTokens > 0 ? [...top, otherTotal] : top;
   const grandTotal = allEntries.reduce((sum, e) => sum + e.totalTokens, 0);
 
   return {
-    available: entries.length > 0,
+    available: true,
     title: 'Model distribution',
     rangeLabel: '1M / 30d',
     providerLabel,
     totalTokens: grandTotal,
-    segments: entries.map(model => {
+    segments: allEntries.map(model => {
       const percent = model.totalTokens / grandTotal;
       return {
         label: shortenCodexModel(model.model),
