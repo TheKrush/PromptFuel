@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.12
+
+**Included in this release:**
+
+- Fixed Claude and Codex Model Distribution cards collapsing models beyond the top 5 into an "Other" bucket. All models used in the selected range are now shown individually.
+
 ## 1.0.11
 
 **Included in this release:**
