@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.13
+
+**Included in this release:**
+
+- Kept Codex seven-day quota updates independent when five-hour data is unavailable, so missing windows no longer block healthy quota data.
+- Tracked quota freshness and cached recovery independently per window: fresh window evidence overrides obsolete stale state, while cached numeric values without trustworthy window timestamps remain stale after restart.
+- Kept imported snapshot freshness tied to each snapshot's generation time and added conditional Quota issues rows for missing or stale windows while preserving the aligned At a glance layout.
+- Replaced the synthetic 100% fallback for unavailable windows with an empty bar and `—`, omitted those windows from the compact status bar, retained `—` in tooltips, and kept status presentation free of persistent warning decoration.
+
 ## 1.0.12
 
 **Included in this release:**
