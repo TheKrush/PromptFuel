@@ -508,6 +508,23 @@ function main() {
     '',
     'fresh per-window timestamps suppress stale issues carried at provider level'
   );
+  const timestampLessModel = buildUsageDashboardModel({
+    states: [{
+      provider: 'claude',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 20, sourceUpdatedEpochMs: Date.now() - 60_000 },
+      fiveHour: { usedPercentage: 35 }
+    }]
+  });
+  const timestampLessIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(timestampLessModel.providers);
+  assert.match(timestampLessIssuesHtml, /Claude[\s\S]*5h[\s\S]*>Stale<[\s\S]*Quota value is stale\./, 'a timestamp-less numeric window renders one Stale issue with no fabricated age');
+  assert.doesNotMatch(timestampLessIssuesHtml, /Last updated/, 'timestamp-less issue details do not borrow provider-level update time');
+  assert.doesNotMatch(
+    sandbox.__combinedDashboardTest.renderGlanceList(timestampLessModel.providers),
+    /source-chip quota-health|>Stale<|tabindex=|aria-label=/,
+    'timestamp-less health remains outside the At-a-glance measurement grid'
+  );
   const missingIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
     provider: 'codex', label: 'Codex', windows: [
       { key: 'sevenDay', label: '7d', available: true, remainingPercent: 34 },

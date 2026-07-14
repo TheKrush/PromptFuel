@@ -404,19 +404,23 @@ describe('quota fallback regression coverage', () => {
     }
   });
 
-  it('does not fabricate a stale age from a provider refresh attempt without a window timestamp', () => {
+  it('treats a cached Codex value without last-live evidence as stale', () => {
     const window = dashboardWindow(liveState('codex', {
       fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache' },
       lastUpdatedEpochMs: now,
       lastAuthenticatedRefreshEpochMs: now,
-      authenticatedStatus: 'http_error',
+      authenticatedStatus: 'success',
+      stale: false,
       authenticatedWindows: {
-        fiveHour: { observation: 'valid', availability: 'stale' }
+        fiveHour: { observation: 'valid', availability: 'live' }
       }
     }), 'fiveHour');
 
+    assert.equal(window.available, true);
+    assert.equal(window.freshness, 'stale');
     assert.equal(window.health, 'stale');
     assert.equal(window.healthDetail, 'Quota value is stale.');
+    assert.doesNotMatch(window.healthDetail ?? '', /Last updated/);
   });
 
   it('derives ordinary window health from each window timestamp before a carried stale flag', () => {
@@ -464,15 +468,27 @@ describe('quota fallback regression coverage', () => {
     assert.equal(second.windows.find(window => window.key === 'fiveHour')?.health, undefined);
   });
 
-  it('keeps an explicit stale flag as conservative evidence when an ordinary window has no timestamp', () => {
-    const window = dashboardWindow({
+  it('treats an ordinary value without a timestamp as stale despite fresh provider state', () => {
+    const provider = buildUsageDashboardModel({ states: [{
       provider: 'claude',
-      stale: true,
+      stale: false,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      sevenDay: {
+        usedPercentage: 20,
+        resetsAtEpochSeconds: sevenDayReset,
+        sourceUpdatedEpochMs: now - 60_000
+      },
       fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset }
-    }, 'fiveHour');
+    }] }).providers[0];
+    const fiveHour = provider.windows.find(window => window.key === 'fiveHour');
+    const sevenDay = provider.windows.find(window => window.key === 'sevenDay');
 
-    assert.equal(window.health, 'stale');
-    assert.equal(window.healthDetail, 'Quota value is stale.');
+    assert.equal(fiveHour?.available, true);
+    assert.equal(fiveHour?.health, 'stale');
+    assert.equal(fiveHour?.healthDetail, 'Quota value is stale.');
+    assert.doesNotMatch(fiveHour?.healthDetail ?? '', /Last updated/);
+    assert.equal(sevenDay?.health, undefined);
   });
 
   it('uses a fresh cached Codex window last-live timestamp over a carried stale availability', () => {

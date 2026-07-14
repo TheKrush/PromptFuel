@@ -8,7 +8,8 @@ import {
   formatCoarseAgeLabel,
   formatEpochToIso,
   formatEpochSecondsToIso,
-  isStale
+  isStale,
+  STALE_USAGE_THRESHOLD_MS
 } from '../usageTime';
 
 describe('formatCountdown', () => {
@@ -179,5 +180,12 @@ describe('isStale', () => {
 
   it('returns false for recent timestamps', () => {
     assert.equal(isStale(Date.now()), false);
+  });
+
+  it('uses an inclusive 20-minute freshness boundary', () => {
+    const fixedNow = 2_000_000_000_000;
+
+    assert.equal(isStale(fixedNow - STALE_USAGE_THRESHOLD_MS, fixedNow), false);
+    assert.equal(isStale(fixedNow - STALE_USAGE_THRESHOLD_MS - 1, fixedNow), true);
   });
 });

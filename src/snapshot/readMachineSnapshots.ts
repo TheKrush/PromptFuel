@@ -448,7 +448,8 @@ async function readArchiveSources(
 }
 
 export async function readMachineSnapshots(
-  config: SnapshotReaderConfig
+  config: SnapshotReaderConfig,
+  nowEpochMs = Date.now()
 ): Promise<ReadSnapshotResult> {
   const result: ReadSnapshotResult = { snapshots: [], errors: [] };
 
@@ -469,8 +470,6 @@ export async function readMachineSnapshots(
   const latestFiles = files
     .filter(f => f.endsWith('-latest.json'))
     .slice(0, MAX_READ_FILES);
-
-  const nowEpochMs = Date.now();
 
   for (const fileName of latestFiles) {
     const filePath = path.join(config.readPath, fileName);
@@ -605,13 +604,17 @@ export interface GroupedRemoteProvider {
 export function snapshotProviderToDashboardProvider(
   snapProvider: SnapshotProviderUsageV2,
   machineLabel: string,
-  snapshotStale = false,
-  snapshotGeneratedAtEpochMs?: number
+  snapshotStale: boolean,
+  snapshotGeneratedAtEpochMs: number | undefined
 ): UsageDashboardProvider {
   const sevenDayReset = resolveResetEpoch(snapProvider, 'sevenDay');
   const fiveHourReset = resolveResetEpoch(snapProvider, 'fiveHour');
-  const snapshotEpochMs = snapshotGeneratedAtEpochMs ?? snapProvider.lastUpdatedEpochMs;
-  const stale = snapshotStale;
+  const snapshotEpochMs = typeof snapshotGeneratedAtEpochMs === 'number'
+    && Number.isFinite(snapshotGeneratedAtEpochMs)
+    && snapshotGeneratedAtEpochMs > 0
+    ? snapshotGeneratedAtEpochMs
+    : undefined;
+  const stale = snapshotEpochMs === undefined || snapshotStale;
   const windows: UsageDashboardWindow[] = [
     snapProvider.sevenDayUsedPercent !== undefined
       ? buildSnapshotSevenDayWindow(snapProvider.sevenDayUsedPercent, sevenDayReset)
@@ -622,14 +625,19 @@ export function snapshotProviderToDashboardProvider(
     ...(snapProvider.meters ?? []).map(meter => buildSnapshotMeterWindow(meter))
   ].map(window => ({
     ...window,
-    health: !window.available ? 'missing' : stale ? 'stale' : undefined
+    health: !window.available ? 'missing' : stale ? 'stale' : undefined,
+    ...(window.available && stale && snapshotEpochMs === undefined
+      ? { healthDetail: 'Quota value is stale.' }
+      : {})
   }));
 
   return {
     provider: snapProvider.provider === 'claude' ? 'claude' : snapProvider.provider === 'codex' ? 'codex' : 'codex',
     label: snapProvider.sourceLabel,
     stale,
-    source: `Snapshot from ${machineLabel} ${formatStaleTime(snapshotEpochMs ?? Date.now())}${snapshotStale ? ' (stale snapshot)' : ''}`,
+    source: snapshotEpochMs === undefined
+      ? `Snapshot from ${machineLabel} (timestamp unavailable)`
+      : `Snapshot from ${machineLabel} ${formatStaleTime(snapshotEpochMs)}${stale ? ' (stale snapshot)' : ''}`,
     lastUpdatedIso: typeof snapshotEpochMs === 'number' && snapshotEpochMs > 0
       ? new Date(snapshotEpochMs).toISOString()
       : undefined,

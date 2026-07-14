@@ -62,7 +62,7 @@ function main() {
       fiveHourResetAtEpochSeconds: 1_800_000_000,
       sevenDayResetAtEpochSeconds: 1_900_000_000,
       lastUpdatedEpochMs: Date.now()
-    }, 'fixture');
+    }, 'fixture', false, Date.now());
     const sevenDayWindow = dp.windows.find(w => w.key === 'sevenDay');
     assert.equal(sevenDayWindow.level, testCase.level, `snapshot provider: ${testCase.remaining}% remaining → level=${testCase.level}`);
   }

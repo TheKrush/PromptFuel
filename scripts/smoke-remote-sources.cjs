@@ -141,7 +141,8 @@ function assertCompactRemoteTooltip(markdown, label) {
 }
 
 {
-  const dp = snapshotProviderToDashboardProvider(makeSnapshot().providerUsage[0], 'my-machine');
+  const snapshot = makeSnapshot();
+  const dp = snapshotProviderToDashboardProvider(snapshot.providerUsage[0], 'my-machine', false, snapshot.generatedAtEpochMs);
   assert.equal(dp.windows[0].key, 'sevenDay');
   assert.equal(dp.windows[1].key, 'fiveHour');
   assert.equal(dp.windows.find(w => w.key === 'sevenDay').resetIso, new Date(1_900_000_000 * 1000).toISOString());

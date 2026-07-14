@@ -336,6 +336,23 @@ describe('snapshotReader', () => {
       assert.ok(staleEntry);
       assert.equal(staleEntry.stale, true);
     });
+
+    it('uses an inclusive two-hour freshness boundary', async () => {
+      const fixedNow = 2_000_000_000_000;
+      await writeLatest('EXACT-latest.json', makeSnapshot({
+        generatedAtEpochMs: fixedNow - SNAPSHOT_STALE_THRESHOLD_MS,
+        machineLabel: 'EXACT'
+      }));
+      await writeLatest('OVER-latest.json', makeSnapshot({
+        generatedAtEpochMs: fixedNow - SNAPSHOT_STALE_THRESHOLD_MS - 1,
+        machineLabel: 'OVER'
+      }));
+
+      const result = await readMachineSnapshots({ readEnabled: true, readPath: tmpDir }, fixedNow);
+
+      assert.equal(result.snapshots.find(entry => entry.snapshot.machineLabel === 'EXACT')?.stale, false);
+      assert.equal(result.snapshots.find(entry => entry.snapshot.machineLabel === 'OVER')?.stale, true);
+    });
   });
 
   describe('v2 history projection', () => {
@@ -554,7 +571,7 @@ describe('snapshotReader', () => {
       const snapProvider = makeSnapshot().providerUsage?.[0];
       assert.ok(snapProvider);
 
-      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop');
+      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop', false, Date.now());
 
       assert.equal(dp.provider, 'claude');
       assert.equal(dp.label, 'Claude');
@@ -580,7 +597,7 @@ describe('snapshotReader', () => {
         }]
       };
 
-      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop');
+      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop', false, Date.now());
       const meterWindow = dp.windows.find(w => w.key === 'meter:fake-scoped-meter');
 
       assert.ok(meterWindow);
@@ -597,7 +614,7 @@ describe('snapshotReader', () => {
         sourceConfidence: 'apiEquivalentEstimate',
         sevenDayUsedPercent: 20,
         fiveHourUsedPercent: 35
-      }, 'vm-source', true);
+      }, 'vm-source', true, Date.now() - SNAPSHOT_STALE_THRESHOLD_MS - 1);
 
       assert.equal(dp.provider, 'codex');
       assert.equal(dp.stale, true);
@@ -646,6 +663,25 @@ describe('snapshotReader', () => {
       assert.equal(providers[0].windows.find(window => window.key === 'sevenDay')?.health, 'stale');
     });
 
+    it('treats a numeric snapshot window without generatedAt evidence as stale', () => {
+      const dp = snapshotProviderToDashboardProvider({
+        provider: 'codex',
+        sourceLabel: 'Codex',
+        stale: false,
+        source: 'snapshot',
+        sourceConfidence: 'snapshotOnly',
+        sevenDayUsedPercent: 35,
+        lastUpdatedEpochMs: Date.now()
+      }, 'vm-source', false, undefined);
+      const sevenDay = dp.windows.find(window => window.key === 'sevenDay');
+
+      assert.equal(dp.stale, true);
+      assert.equal(dp.lastUpdatedIso, undefined);
+      assert.equal(sevenDay?.available, true);
+      assert.equal(sevenDay?.health, 'stale');
+      assert.equal(sevenDay?.healthDetail, 'Quota value is stale.');
+    });
+
     it('maps snapshot remaining-percent to the same six-level scale as status bar dots', () => {
       const testCases: Array<{ usedPercent: number; expectedLevel: string }> = [
         { usedPercent: 0, expectedLevel: 'purple' },
@@ -674,7 +710,7 @@ describe('snapshotReader', () => {
           fiveHourResetAtEpochSeconds: 1_800_000_000,
           sevenDayResetAtEpochSeconds: 1_900_000_000,
           lastUpdatedEpochMs: Date.now()
-        }, 'desktop');
+        }, 'desktop', false, Date.now());
 
         const sevenDayWindow = dp.windows.find(w => w.key === 'sevenDay');
         assert.ok(sevenDayWindow, `sevenDay window must exist at used=${usedPercent}`);
@@ -690,7 +726,7 @@ describe('snapshotReader', () => {
         stale: false,
         source: 'authenticated',
         sourceConfidence: 'quotaState'
-      }, 'desktop');
+      }, 'desktop', false, Date.now());
 
       assert.equal(dp.windows.length, 2);
       assert.equal(dp.windows[0].available, false);

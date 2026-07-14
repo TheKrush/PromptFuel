@@ -497,8 +497,8 @@ function buildWindow(
   const remainingPercent = usedPercent === undefined ? undefined : clamp(100 - usedPercent, 0, 100);
   const level = remainingPercent === undefined ? undefined : quotaLevelForRemaining(remainingPercent);
   const freshness = authenticatedWindow ? dashboardWindowFreshness(value, authenticatedWindow, state) : undefined;
-  const health = dashboardWindowHealth(value, authenticatedWindow, freshness, state);
-  const healthDetail = dashboardWindowHealthDetail(health, value, authenticatedWindow, state);
+  const health = dashboardWindowHealth(window, authenticatedWindow);
+  const healthDetail = dashboardWindowHealthDetail(health, value, authenticatedWindow);
 
   return {
     key,
@@ -518,27 +518,19 @@ function buildWindow(
 
 function dashboardWindowHealth(
   window: LimitWindow | undefined,
-  authenticatedWindow: AuthenticatedQuotaWindowState | undefined,
-  freshness: AuthenticatedQuotaWindowAvailability | undefined,
-  state: ProviderUsageState | undefined
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
 ): UsageDashboardWindow['health'] {
-  if (freshness === 'stale' && normalizePercent(window?.usedPercentage) !== undefined) {
-    return 'stale';
-  }
-  if (!window || normalizePercent(window.usedPercentage) === undefined || (authenticatedWindow && authenticatedWindow.observation !== 'valid')) {
+  if (!window || normalizePercent(window.usedPercentage) === undefined) {
     return 'missing';
   }
-  if (!authenticatedWindow && window.sourceUpdatedEpochMs !== undefined) {
-    return isStale(window.sourceUpdatedEpochMs) ? 'stale' : undefined;
-  }
-  return !authenticatedWindow && state?.stale ? 'stale' : undefined;
+  const sourceUpdatedEpochMs = authenticatedWindow?.lastLiveEpochMs ?? window.sourceUpdatedEpochMs;
+  return isStale(sourceUpdatedEpochMs) ? 'stale' : undefined;
 }
 
 function dashboardWindowHealthDetail(
   health: UsageDashboardWindow['health'],
   window: LimitWindow | undefined,
-  authenticatedWindow: AuthenticatedQuotaWindowState | undefined,
-  state: ProviderUsageState | undefined
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
 ): string | undefined {
   if (health === 'missing') {
     const remainingPercent = normalizePercent(window?.usedPercentage);
@@ -573,12 +565,7 @@ function dashboardWindowFreshness(
     }
     return authenticatedWindow.availability === 'live' ? 'live' : 'cached';
   }
-  if (window?.sourceKind === 'authenticated'
-      && authenticatedWindow.observation === 'valid'
-      && state?.authenticatedStatus === 'success') {
-    return 'live';
-  }
-  return authenticatedWindow.availability;
+  return authenticatedWindow.observation === 'valid' ? 'stale' : authenticatedWindow.availability;
 }
 
 function dashboardWindowForPresentation(
