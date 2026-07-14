@@ -2525,7 +2525,7 @@
     var cards = byId('usageDashboardCards');
     if (cards) {
       cards.className = 'usage-provider-grid';
-      cards.innerHTML = renderGlanceList(providers);
+      cards.innerHTML = renderGlanceList(providers) + renderQuotaIssuesSection(providers);
     }
     renderSourceModeControls(ctx);
     renderAtAGlanceTitle(sectionSourceFromProviderWindows(providers));
@@ -2615,18 +2615,14 @@
   }
 
   function renderGlanceRow(provider) {
-    var staleClass = provider.stale ? ' stale' : '';
     var label = provider.label || (provider.provider === 'claude' ? 'Claude' : 'Codex');
-    var badge = provider.stale ? 'stale' : (provider.mergedSourceCount > 1 ? 'merged' : (provider.machineLabel ? 'snapshot' : 'current'));
-    var badgeStaleClass = provider.stale ? ' stale' : '';
     var windows = provider.windows || [];
     var cells = renderGlanceWindowCells(glanceWindowByKey(windows, 'sevenDay'), '7d') +
       renderGlanceWindowCells(glanceWindowByKey(windows, 'fiveHour'), '5h');
 
-    return '<div class="usage-glance-row' + staleClass + '" data-glance-row="provider">' +
+    return '<div class="usage-glance-row" data-glance-row="provider">' +
       '<div class="usage-glance-cell usage-glance-label usage-glance-col-provider" data-glance-col="provider" title="' + escAttr(label) + '">' + esc(label) + '</div>' +
       cells +
-      '<div class="usage-glance-cell usage-glance-badge usage-glance-col-status' + badgeStaleClass + '" data-glance-col="status">' + esc(badge) + '</div>' +
     '</div>';
   }
 
@@ -2638,14 +2634,14 @@
   }
 
   function renderGlanceWindowCells(window, prefix) {
-    var label = window && window.label ? window.label : '';
+    var label = prefix;
     if (!window) {
-      return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label"></span>' +
+      return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label">' + esc(label) + '</span>' +
         '<div class="usage-glance-cell usage-glance-bar-cell usage-glance-col-' + prefix + '-bar" data-glance-col="' + prefix + '-bar"><div class="usage-glance-bar usage-progress"></div></div>' +
         '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent"></span>' +
         '<span class="usage-glance-cell usage-glance-win-reset usage-glance-col-' + prefix + '-reset" data-glance-col="' + prefix + '-reset"></span>';
     }
-    if (!window || !window.available) {
+    if (!window.available) {
       return '<span class="usage-glance-cell usage-glance-win-label usage-glance-col-' + prefix + '-label" data-glance-col="' + prefix + '-label">' + esc(label) + '</span>' +
         '<div class="usage-glance-cell usage-glance-bar-cell usage-glance-col-' + prefix + '-bar" data-glance-col="' + prefix + '-bar"><div class="usage-glance-bar usage-progress"><div class="usage-progress-fill" style="width:0%"></div></div></div>' +
         '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent">—</span>' +
@@ -2663,6 +2659,46 @@
       '</div>' +
       '<span class="usage-glance-cell usage-glance-win-value usage-glance-col-' + prefix + '-percent" data-glance-col="' + prefix + '-percent">' + Math.round(remaining) + '%</span>' +
       '<span class="usage-glance-cell usage-glance-win-reset usage-glance-col-' + prefix + '-reset" data-glance-col="' + prefix + '-reset">' + esc(resetTime) + '</span>';
+  }
+
+  function quotaIssuesForProviders(providers) {
+    var issues = [];
+    (providers || []).forEach(function(provider) {
+      var windows = provider && provider.windows || [];
+      ['sevenDay', 'fiveHour'].forEach(function(key) {
+        var window = glanceWindowByKey(windows, key);
+        if (!window || (window.health !== 'missing' && window.health !== 'stale')) { return; }
+        issues.push({
+          source: provider.label || (provider.provider === 'claude' ? 'Claude' : 'Codex'),
+          window: window.label || (key === 'sevenDay' ? '7d' : '5h'),
+          state: window.health,
+          details: window.healthDetail || (window.health === 'missing' ? 'Live quota unavailable.' : 'Quota value is stale.')
+        });
+      });
+    });
+    return issues;
+  }
+
+  function renderQuotaIssuesSection(providers) {
+    var issues = quotaIssuesForProviders(providers);
+    if (!issues.length) { return ''; }
+    return '<section class="usage-dashboard-section quota-issues-section" aria-labelledby="quotaIssuesTitle">' +
+      '<div class="usage-section-head"><h3 id="quotaIssuesTitle" class="usage-section-title"><span>Quota issues</span></h3></div>' +
+      '<div class="quota-issues-list" role="list">' +
+        '<div class="quota-issue-row quota-issue-header" aria-hidden="true"><span>Source</span><span>Window</span><span>State</span><span>Details</span></div>' +
+        issues.map(renderQuotaIssueRow).join('') +
+      '</div>' +
+    '</section>';
+  }
+
+  function renderQuotaIssueRow(issue) {
+    var label = issue.state === 'missing' ? 'Missing' : 'Stale';
+    return '<div class="quota-issue-row" role="listitem">' +
+      '<span class="quota-issue-source" title="' + escAttr(issue.source) + '">' + esc(issue.source) + '</span>' +
+      '<span class="quota-issue-window">' + esc(issue.window) + '</span>' +
+      '<span class="quota-issue-state ' + issue.state + '">' + label + '</span>' +
+      '<span class="quota-issue-details">' + esc(issue.details) + '</span>' +
+    '</div>';
   }
 
   function renderAtAGlanceTitle(source) {

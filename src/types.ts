@@ -27,6 +27,24 @@ export interface LimitWindow {
 
 export type QuotaSourceKind = 'authenticated' | 'statusLine' | 'hook' | 'localSession' | 'cache' | 'stale' | 'unknown';
 
+export type AuthenticatedQuotaWindowKey = 'fiveHour' | 'sevenDay';
+
+export type AuthenticatedQuotaWindowObservation =
+  | 'valid'
+  | 'absent'
+  | 'null'
+  | 'unsupported'
+  | 'disabled'
+  | 'malformed';
+
+export type AuthenticatedQuotaWindowAvailability = 'live' | 'cached' | 'stale' | 'unavailable';
+
+export interface AuthenticatedQuotaWindowState {
+  observation: AuthenticatedQuotaWindowObservation;
+  availability: AuthenticatedQuotaWindowAvailability;
+  lastLiveEpochMs?: number;
+}
+
 export type UsageMeterScope = 'account' | 'model' | 'modelFamily' | 'unknown';
 
 export interface UsageMeter {
@@ -58,6 +76,7 @@ export interface ProviderUsageState {
   authenticatedStatus?: AuthenticatedQuotaStatus;
   authenticatedHttpStatus?: number;
   authenticatedError?: string;
+  authenticatedWindows?: Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>>;
   lastRequestId?: string;
   lastUsageTimestamp?: string;
   lastEntrypoint?: string;

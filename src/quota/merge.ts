@@ -1,4 +1,12 @@
-import { LimitWindow, ProviderUsageState, QuotaSourceKind, UsageMeter } from '../types';
+import {
+  AuthenticatedQuotaWindowAvailability,
+  AuthenticatedQuotaWindowKey,
+  AuthenticatedQuotaWindowState,
+  LimitWindow,
+  ProviderUsageState,
+  QuotaSourceKind,
+  UsageMeter
+} from '../types';
 import { isStale, RESET_EXPIRY_GRACE_MS } from '../usageTime';
 
 const AUTHORITY_RANK: Record<QuotaSourceKind, number> = {
@@ -68,6 +76,7 @@ export function mergeLocalAndAuthenticated(
     authenticatedStatus: authenticated.authenticatedStatus,
     authenticatedHttpStatus: authenticated.authenticatedHttpStatus,
     authenticatedError: authenticated.authenticatedError,
+    authenticatedWindows: selectedAuthenticatedWindowStates(authenticatedWithMetadata, fiveHour.window, sevenDay.window),
     stale: mergedQuotaIsStale(quotaWindows, localWithMetadata.stale),
     error: quotaWindows.some(window => Boolean(window)) ? undefined : localWithMetadata.error,
     ignoredQuotaSource: ignored.length > 0 ? ignored.join('; ') : localWithMetadata.ignoredQuotaSource
@@ -87,6 +96,33 @@ export function mergeAuthenticatedQuotaSuccess(
     stale: false
   }, options);
 
+  if (authenticated.authenticatedWindows) {
+    const fiveHour = mergeAuthenticatedPrimaryWindow('fiveHour', current, annotated);
+    const sevenDay = mergeAuthenticatedPrimaryWindow('sevenDay', current, annotated);
+
+    return {
+      ...base,
+      fiveHour: fiveHour.window,
+      sevenDay: sevenDay.window,
+      meters: annotated.meters ?? nonExpiredMeters(current?.meters),
+      source: 'live authenticated refresh',
+      lastUpdatedEpochMs: authenticated.lastUpdatedEpochMs,
+      lastLocalUpdateEpochMs: localUpdated,
+      lastAuthenticatedRefreshEpochMs: authenticated.lastAuthenticatedRefreshEpochMs,
+      nextAuthenticatedRefreshEpochMs: authenticated.nextAuthenticatedRefreshEpochMs,
+      authenticatedStatus: authenticated.authenticatedStatus,
+      authenticatedHttpStatus: authenticated.authenticatedHttpStatus,
+      authenticatedError: undefined,
+      authenticatedWindows: {
+        fiveHour: fiveHour.state,
+        sevenDay: sevenDay.state
+      },
+      stale: false,
+      error: undefined,
+      ignoredQuotaSource: undefined
+    };
+  }
+
   return {
     ...base,
     fiveHour: annotated.fiveHour ?? nonExpiredWindow(current?.fiveHour),
@@ -100,6 +136,7 @@ export function mergeAuthenticatedQuotaSuccess(
     authenticatedStatus: authenticated.authenticatedStatus,
     authenticatedHttpStatus: authenticated.authenticatedHttpStatus,
     authenticatedError: undefined,
+    authenticatedWindows: undefined,
     stale: false,
     error: undefined,
     ignoredQuotaSource: undefined
@@ -123,6 +160,7 @@ export function mergeAuthenticatedFailure(
     authenticatedStatus: failure.authenticatedStatus,
     authenticatedHttpStatus: failure.authenticatedHttpStatus,
     authenticatedError: failure.authenticatedError,
+    authenticatedWindows: fallbackAuthenticatedWindowStates(state, fallback),
     authenticatedBackoffUntilEpochMs: backoffUntil,
     diagnostics: state.diagnostics,
     stale: fallback.stale || (hasCachedQuota(fallback) && isStale(fallback.lastUpdatedEpochMs)),
@@ -130,6 +168,170 @@ export function mergeAuthenticatedFailure(
     error: hasQuota ? undefined : state.error ?? failure.authenticatedError,
     lastUpdatedEpochMs: state.lastUpdatedEpochMs
   };
+}
+
+interface AuthenticatedPrimaryWindowMergeResult {
+  window?: LimitWindow;
+  state: AuthenticatedQuotaWindowState;
+}
+
+function mergeAuthenticatedPrimaryWindow(
+  key: AuthenticatedQuotaWindowKey,
+  current: ProviderUsageState | undefined,
+  authenticated: ProviderUsageState
+): AuthenticatedPrimaryWindowMergeResult {
+  const observation = authenticated.authenticatedWindows?.[key];
+  const liveWindow = authenticated[key];
+  if (!observation) {
+    return {
+      window: liveWindow ?? nonExpiredWindow(current?.[key]),
+      state: {
+        observation: 'absent',
+        availability: 'unavailable'
+      }
+    };
+  }
+
+  if (observation.observation === 'valid' && liveWindow) {
+    const lastLiveEpochMs = liveWindow.sourceUpdatedEpochMs
+      ?? observation.lastLiveEpochMs
+      ?? authenticated.lastAuthenticatedRefreshEpochMs
+      ?? authenticated.lastUpdatedEpochMs;
+    return {
+      window: liveWindow,
+      state: {
+        observation: 'valid',
+        availability: 'live',
+        ...(lastLiveEpochMs ? { lastLiveEpochMs } : {})
+      }
+    };
+  }
+
+  const fallback = nonExpiredWindow(current?.[key]);
+  const fallbackState = fallbackAuthenticatedWindowState(
+    observation,
+    current?.authenticatedWindows?.[key],
+    fallback,
+    current?.lastUpdatedEpochMs
+  );
+  if (!fallbackState) {
+    return {
+      window: fallback,
+      state: {
+        observation: 'absent',
+        availability: 'unavailable'
+      }
+    };
+  }
+
+  return {
+    window: fallback
+      ? annotateAuthenticatedFallbackWindow(fallback, fallbackState.availability, fallbackState.lastLiveEpochMs)
+      : undefined,
+    state: fallbackState
+  };
+}
+
+function fallbackAuthenticatedWindowStates(
+  current: ProviderUsageState,
+  fallback: ProviderUsageState
+): Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> | undefined {
+  if (!current.authenticatedWindows) {
+    return undefined;
+  }
+
+  return {
+    fiveHour: fallbackAuthenticatedWindowState(
+      current.authenticatedWindows.fiveHour,
+      current.authenticatedWindows.fiveHour,
+      fallback.fiveHour,
+      current.lastUpdatedEpochMs
+    ),
+    sevenDay: fallbackAuthenticatedWindowState(
+      current.authenticatedWindows.sevenDay,
+      current.authenticatedWindows.sevenDay,
+      fallback.sevenDay,
+      current.lastUpdatedEpochMs
+    )
+  };
+}
+
+function fallbackAuthenticatedWindowState(
+  observation: AuthenticatedQuotaWindowState | undefined,
+  previous: AuthenticatedQuotaWindowState | undefined,
+  window: LimitWindow | undefined,
+  legacyLastUpdatedEpochMs: number | undefined
+): AuthenticatedQuotaWindowState | undefined {
+  if (!observation) {
+    return undefined;
+  }
+
+  if (window && !isAuthenticatedDerivedWindow(window)) {
+    return {
+      observation: observation.observation,
+      availability: 'unavailable'
+    };
+  }
+
+  const lastLiveEpochMs = previous?.lastLiveEpochMs
+    ?? window?.sourceUpdatedEpochMs
+    ?? legacyLastUpdatedEpochMs;
+  return {
+    observation: observation.observation,
+    availability: window ? fallbackAvailability(lastLiveEpochMs) : 'unavailable',
+    ...(lastLiveEpochMs !== undefined ? { lastLiveEpochMs } : {})
+  };
+}
+
+function fallbackAvailability(lastLiveEpochMs: number | undefined): AuthenticatedQuotaWindowAvailability {
+  return isStale(lastLiveEpochMs) ? 'stale' : 'cached';
+}
+
+function isAuthenticatedDerivedWindow(window: LimitWindow): boolean {
+  return window.sourceKind === 'authenticated'
+    || window.sourceKind === 'cache'
+    || window.sourceKind === 'stale';
+}
+
+function selectedAuthenticatedWindowStates(
+  authenticated: ProviderUsageState,
+  fiveHour: LimitWindow | undefined,
+  sevenDay: LimitWindow | undefined
+): Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> | undefined {
+  if (!authenticated.authenticatedWindows) {
+    return undefined;
+  }
+
+  const selected: Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> = {};
+  selectAuthenticatedWindowState(selected, 'fiveHour', authenticated, fiveHour);
+  selectAuthenticatedWindowState(selected, 'sevenDay', authenticated, sevenDay);
+
+  return Object.keys(selected).length > 0 ? selected : undefined;
+}
+
+function selectAuthenticatedWindowState(
+  selected: Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>>,
+  key: AuthenticatedQuotaWindowKey,
+  authenticated: ProviderUsageState,
+  selectedWindow: LimitWindow | undefined
+): void {
+  const state = authenticated.authenticatedWindows?.[key];
+  const authenticatedWindow = authenticated[key];
+  if (!state) {
+    return;
+  }
+
+  if (authenticatedWindow && selectedWindow === authenticatedWindow) {
+    selected[key] = state;
+    return;
+  }
+
+  // An explicitly classified broken observation has no window to compare by
+  // identity, but must still reach the dashboard. Do not treat two unrelated
+  // undefined legacy fields as a selected observation.
+  if (!authenticatedWindow && !selectedWindow && state.observation !== 'valid') {
+    selected[key] = state;
+  }
 }
 
 export function annotateStateWindows(state: ProviderUsageState, options?: QuotaMergeOptions): ProviderUsageState {
@@ -147,8 +349,28 @@ export function annotateStateWindows(state: ProviderUsageState, options?: QuotaM
 }
 
 function annotateAuthenticatedFallbackWindows(state: ProviderUsageState): ProviderUsageState {
-  const fiveHour = annotateAuthenticatedFallbackWindow(state.fiveHour);
-  const sevenDay = annotateAuthenticatedFallbackWindow(state.sevenDay);
+  const fiveHourState = fallbackAuthenticatedWindowState(
+    state.authenticatedWindows?.fiveHour,
+    state.authenticatedWindows?.fiveHour,
+    state.fiveHour,
+    state.lastUpdatedEpochMs
+  );
+  const sevenDayState = fallbackAuthenticatedWindowState(
+    state.authenticatedWindows?.sevenDay,
+    state.authenticatedWindows?.sevenDay,
+    state.sevenDay,
+    state.lastUpdatedEpochMs
+  );
+  const fiveHour = annotateAuthenticatedFallbackWindow(
+    state.fiveHour,
+    fiveHourState?.availability,
+    fiveHourState?.lastLiveEpochMs
+  );
+  const sevenDay = annotateAuthenticatedFallbackWindow(
+    state.sevenDay,
+    sevenDayState?.availability,
+    sevenDayState?.lastLiveEpochMs
+  );
   const meters = annotateAuthenticatedFallbackMeters(state.meters);
   const labels = unique([
     fiveHour?.sourceLabel,
@@ -165,18 +387,29 @@ function annotateAuthenticatedFallbackWindows(state: ProviderUsageState): Provid
   };
 }
 
-function annotateAuthenticatedFallbackWindow(window: LimitWindow | undefined): LimitWindow | undefined {
+function annotateAuthenticatedFallbackWindow(
+  window: LimitWindow | undefined,
+  availability?: AuthenticatedQuotaWindowAvailability,
+  lastLiveEpochMs?: number
+): LimitWindow | undefined {
   if (!window) {
     return undefined;
   }
-  if (window.sourceKind !== 'authenticated') {
+  if (availability !== 'cached' && availability !== 'stale') {
+    if (window.sourceKind !== 'authenticated') {
+      return window;
+    }
+    availability = 'cached';
+  }
+  if (window.sourceKind !== 'authenticated' && window.sourceKind !== 'cache' && window.sourceKind !== 'stale') {
     return window;
   }
 
   return annotateExpiredFallbackWindow({
     ...window,
-    sourceKind: 'cache',
-    sourceLabel: 'cached quota snapshot',
+    sourceKind: availability === 'stale' ? 'stale' : 'cache',
+    sourceLabel: availability === 'stale' ? 'stale cached quota snapshot' : 'cached quota snapshot',
+    sourceUpdatedEpochMs: window.sourceUpdatedEpochMs ?? lastLiveEpochMs,
     sourceAuthorityRank: AUTHORITY_RANK.authenticated - 1
   });
 }

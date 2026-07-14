@@ -514,7 +514,7 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 .usage-glance-list{
   display:grid;
   grid-column:1/-1;
-  grid-template-columns:minmax(80px,160px) 22px minmax(56px,1fr) 36px minmax(76px,96px) 22px minmax(56px,1fr) 36px minmax(76px,96px) max-content;
+  grid-template-columns:minmax(80px,160px) 22px minmax(56px,1fr) 36px minmax(76px,96px) 22px minmax(56px,1fr) 36px minmax(76px,96px);
   row-gap:4px;
   align-items:stretch
 }
@@ -528,17 +528,6 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
   background:var(--vscode-sideBar-background,rgba(127,127,127,.04));
   align-content:center
-}
-.usage-glance-row.stale > .usage-glance-cell{
-  border-top-style:dashed;
-  border-bottom-style:dashed;
-  opacity:.8
-}
-.usage-glance-row.stale > .usage-glance-label{
-  border-left-style:dashed
-}
-.usage-glance-row.stale > .usage-glance-badge{
-  border-right-style:dashed
 }
 .usage-glance-label{
   border-left:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
@@ -555,7 +544,9 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   font-size:11px;
   font-weight:650;
   color:var(--vscode-descriptionForeground);
-  text-align:right
+  text-align:right;
+  white-space:nowrap;
+  overflow:hidden
 }
 .usage-glance-bar{
   width:100%;
@@ -570,33 +561,90 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 .usage-glance-win-value{
   font-family:var(--vscode-editor-font-family,monospace);
   font-size:12px;
-  text-align:right
+  text-align:right;
+  white-space:nowrap
 }
 .usage-glance-win-reset{
   font-size:11px;
   color:var(--vscode-descriptionForeground);
   white-space:nowrap;
   overflow:hidden;
-  text-overflow:ellipsis
+  text-overflow:ellipsis;
+  text-align:right;
+  padding-left:8px
 }
-.usage-glance-badge{
+.usage-glance-col-5h-reset{
   border-right:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
   border-radius:0 4px 4px 0;
-  font-size:11px;
-  color:var(--vscode-descriptionForeground);
-  white-space:nowrap;
-  text-align:right;
-  padding-left:8px;
   padding-right:12px
 }
-.usage-glance-badge.stale{
-  color:var(--vscode-charts-yellow,#e5c07b)
+.quota-issues-section{
+  grid-column:1/-1;
+  margin-top:12px
+}
+.quota-issues-section .usage-section-head{
+  margin-bottom:6px
+}
+.quota-issues-list{
+  display:grid;
+  gap:4px
+}
+.quota-issue-row{
+  display:grid;
+  grid-template-columns:minmax(80px,140px) 34px 68px minmax(0,1fr);
+  gap:8px;
+  align-items:center;
+  min-width:0;
+  padding:5px 8px;
+  border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
+  border-radius:4px;
+  background:var(--vscode-sideBar-background,rgba(127,127,127,.04));
+  font-size:11px
+}
+.quota-issue-header{
+  padding:0 8px;
+  border:0;
+  background:transparent;
+  color:var(--vscode-descriptionForeground);
+  font-size:10px;
+  font-weight:650
+}
+.quota-issue-source,
+.quota-issue-window{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+.quota-issue-window{
+  color:var(--vscode-descriptionForeground)
+}
+.quota-issue-state{
+  color:var(--vscode-descriptionForeground);
+  font-size:11px;
+  font-weight:650;
+  text-align:left;
+  white-space:nowrap
+}
+.quota-issue-state.missing{
+  color:var(--vscode-inputValidation-errorForeground,var(--vscode-foreground))
+}
+.quota-issue-state.stale{
+  color:var(--vscode-inputValidation-warningForeground,var(--vscode-foreground))
+}
+.quota-issue-details{
+  min-width:0;
+  overflow-wrap:anywhere
 }
 @container (max-width:520px){
   .usage-glance-list{
-    grid-template-columns:minmax(60px,120px) 22px 36px minmax(64px,80px) 22px 36px minmax(64px,80px) max-content
+    grid-template-columns:minmax(60px,120px) 22px 36px minmax(64px,80px) 22px 36px minmax(64px,80px)
   }
   .usage-glance-bar-cell{display:none}
+  .quota-issue-row{
+    grid-template-columns:minmax(72px,112px) 30px 62px minmax(0,1fr);
+    gap:6px
+  }
 }
 .usage-empty{
   grid-column:1/-1;

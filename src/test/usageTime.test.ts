@@ -4,6 +4,7 @@ import {
   formatCountdown,
   formatRelativeTime,
   formatAgeLabel,
+  formatDetailedAgeLabel,
   formatCoarseAgeLabel,
   formatEpochToIso,
   formatEpochSecondsToIso,
@@ -102,6 +103,19 @@ describe('formatAgeLabel', () => {
 
   it('returns compact days only', () => {
     assert.match(formatAgeLabel(Date.now() - 2 * 86400 * 1000, true), /^\d+d$/);
+  });
+});
+
+describe('formatDetailedAgeLabel', () => {
+  it('returns undefined without a trustworthy timestamp', () => {
+    assert.equal(formatDetailedAgeLabel(undefined), undefined);
+  });
+
+  it('uses natural words without an ago suffix', () => {
+    assert.equal(formatDetailedAgeLabel(Date.now()), 'just now');
+    assert.equal(formatDetailedAgeLabel(Date.now() - 5 * 60 * 1000), '5 minutes');
+    assert.equal(formatDetailedAgeLabel(Date.now() - 3 * 3600 * 1000), '3 hours');
+    assert.equal(formatDetailedAgeLabel(Date.now() - 5 * 86400 * 1000), '5 days');
   });
 });
 

@@ -51,6 +51,18 @@ export function formatAgeLabel(epochMs: number | undefined, compact?: boolean): 
   return `${days}d${hours % 24}h`;
 }
 
+export function formatDetailedAgeLabel(epochMs: number | undefined): string | undefined {
+  if (typeof epochMs !== 'number' || !Number.isFinite(epochMs) || epochMs <= 0) return undefined;
+  const ageMs = Math.max(0, Date.now() - epochMs);
+  const minutes = Math.floor(ageMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
 export function formatCoarseAgeLabel(epochMs: number | undefined): string | undefined {
   if (!epochMs) return undefined;
   const diffMin = Math.round((Date.now() - epochMs) / 60000);

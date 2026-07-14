@@ -98,6 +98,26 @@ describe('buildRemoteStatusBarItems', () => {
     assert.equal(items[0].remoteQuotaData?.stale, false);
   });
 
+  it('keeps WATCHER quota values but omits a missing reset countdown', () => {
+    const snapshot = makeSnapshot('WATCHER', 'codex', 35, 78);
+    snapshot.snapshot.providerUsage![0].fiveHourResetAtEpochSeconds = undefined;
+
+    const items = buildRemoteStatusBarItems(
+      [snapshot],
+      ['WATCHER/codex'],
+      emptyAliasMap,
+      'standard',
+      { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
+    );
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].remoteQuotaData?.sevenDayRemainingPercent, 65);
+    assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, 22);
+    assert.equal(items[0].remoteQuotaData?.fiveHourResetEpochSeconds, undefined);
+    assert.match(items[0].text, /22%/);
+    assert.doesNotMatch(items[0].text, /\?/);
+  });
+
   it('uses fallback source label when sourceId is missing from normalizedSources', () => {
     const items = buildRemoteStatusBarItems(
       [makeSnapshot('WATCHER', 'codex', 35, 78)],

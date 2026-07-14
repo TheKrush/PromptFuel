@@ -1,11 +1,20 @@
-import { LimitWindow, ProviderName, ProviderUsageState, SourceConfigEntry, UsageTracing } from '../types';
+import {
+  AuthenticatedQuotaWindowAvailability,
+  AuthenticatedQuotaWindowObservation,
+  AuthenticatedQuotaWindowState,
+  LimitWindow,
+  ProviderName,
+  ProviderUsageState,
+  SourceConfigEntry,
+  UsageTracing
+} from '../types';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { ClaudeUsageHistory } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
 import type { CodexCorrelatedHistory } from '../providers/codexCorrelatedDayBucketScanner';
 import { sumCostIfComplete } from '../display/apiEquivalentCost';
 import type { RemoteUsageProjection } from '../snapshot/remoteUsageProjection';
-import { formatEpochToIso, formatEpochSecondsToIso, formatRelativeTime } from '../usageTime';
+import { formatDetailedAgeLabel, formatEpochToIso, formatEpochSecondsToIso, formatRelativeTime } from '../usageTime';
 import { quotaLevelForRemaining } from '../display/format';
 
 import {
@@ -71,6 +80,10 @@ export interface UsageDashboardWindow {
   resetIso?: string;
   resetLabel?: string;
   available: boolean;
+  freshness?: AuthenticatedQuotaWindowAvailability;
+  warning?: Exclude<AuthenticatedQuotaWindowObservation, 'valid'>;
+  health?: 'missing' | 'stale';
+  healthDetail?: string;
   source?: UsageDashboardSourceInfo;
 }
 
@@ -436,34 +449,56 @@ function buildProviderTabs(
 }
 
 function buildProvider(state: ProviderUsageState, normalizedSources?: Record<string, SourceConfigEntry>): UsageDashboardProvider {
+  const windows = [
+    buildWindow('sevenDay', '7d', state.sevenDay, dashboardAuthenticatedWindowState(state.sevenDay, state.authenticatedWindows?.sevenDay), state),
+    buildWindow('fiveHour', '5h', state.fiveHour, dashboardAuthenticatedWindowState(state.fiveHour, state.authenticatedWindows?.fiveHour), state),
+    ...(state.meters ?? [])
+      .filter(meter => meter.window.usedPercentage !== undefined)
+      .map(meter => buildMeterWindow(meter))
+  ];
+  const hasLiveWindow = windows.some(window => window.available && window.freshness === 'live');
+  const hasUnavailableSibling = windows.some(window => Boolean(window.warning));
+
   return {
     provider: state.provider,
     label: normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex'),
-    stale: Boolean(state.stale),
+    stale: Boolean(state.stale) && !hasLiveWindow,
     source: state.source,
-    status: formatProviderStatus(state.authenticatedStatus),
+    status: hasLiveWindow && hasUnavailableSibling ? 'partial' : formatProviderStatus(state.authenticatedStatus),
     error: state.error ?? (state.authenticatedStatus && !AUTH_DISABLED_STATUSES.has(state.authenticatedStatus) ? state.authenticatedError : undefined),
     lastUpdatedIso: formatEpochToIso(state.lastUpdatedEpochMs),
     lastAuthenticatedRefreshIso: formatEpochToIso(state.lastAuthenticatedRefreshEpochMs),
     nextAuthenticatedRefreshIso: formatEpochToIso(state.nextAuthenticatedRefreshEpochMs),
-    windows: [
-      buildWindow('sevenDay', '7d', state.sevenDay),
-      buildWindow('fiveHour', '5h', state.fiveHour),
-      ...(state.meters ?? [])
-        .filter(meter => meter.window.usedPercentage !== undefined)
-        .map(meter => buildMeterWindow(meter))
-    ]
+    windows
   };
+}
+
+function dashboardAuthenticatedWindowState(
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
+): AuthenticatedQuotaWindowState | undefined {
+  if (!authenticatedWindow || !window) {
+    return authenticatedWindow;
+  }
+  return window.sourceKind === 'authenticated' || window.sourceKind === 'cache' || window.sourceKind === 'stale'
+    ? authenticatedWindow
+    : undefined;
 }
 
 function buildWindow(
   key: string,
   label: string,
-  window: LimitWindow | undefined
+  window: LimitWindow | undefined,
+  authenticatedWindow?: AuthenticatedQuotaWindowState,
+  state?: ProviderUsageState
 ): UsageDashboardWindow {
-  const usedPercent = normalizePercent(window?.usedPercentage);
+  const value = dashboardWindowForPresentation(state, key, window, authenticatedWindow);
+  const usedPercent = normalizePercent(value?.usedPercentage);
   const remainingPercent = usedPercent === undefined ? undefined : clamp(100 - usedPercent, 0, 100);
   const level = remainingPercent === undefined ? undefined : quotaLevelForRemaining(remainingPercent);
+  const freshness = authenticatedWindow ? dashboardWindowFreshness(value, authenticatedWindow, state) : undefined;
+  const health = dashboardWindowHealth(value, authenticatedWindow, freshness, state);
+  const healthDetail = dashboardWindowHealthDetail(health, value, authenticatedWindow, state);
 
   return {
     key,
@@ -471,10 +506,78 @@ function buildWindow(
     usedPercent,
     remainingPercent,
     level: level === 'unavailable' ? undefined : level,
-    resetIso: formatEpochSecondsToIso(window?.resetsAtEpochSeconds),
-    resetLabel: formatRelativeTime(window?.resetsAtEpochSeconds),
-    available: usedPercent !== undefined
+    resetIso: formatEpochSecondsToIso(value?.resetsAtEpochSeconds),
+    resetLabel: formatRelativeTime(value?.resetsAtEpochSeconds),
+    available: usedPercent !== undefined,
+    ...(freshness ? { freshness } : {}),
+    ...(authenticatedWindow && authenticatedWindow.observation !== 'valid' ? { warning: authenticatedWindow.observation } : {}),
+    ...(health ? { health } : {}),
+    ...(healthDetail ? { healthDetail } : {})
   };
+}
+
+function dashboardWindowHealth(
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined,
+  freshness: AuthenticatedQuotaWindowAvailability | undefined,
+  state: ProviderUsageState | undefined
+): UsageDashboardWindow['health'] {
+  if (freshness === 'stale' && normalizePercent(window?.usedPercentage) !== undefined) {
+    return 'stale';
+  }
+  if (!window || normalizePercent(window.usedPercentage) === undefined || (authenticatedWindow && authenticatedWindow.observation !== 'valid')) {
+    return 'missing';
+  }
+  return !authenticatedWindow && state?.stale ? 'stale' : undefined;
+}
+
+function dashboardWindowHealthDetail(
+  health: UsageDashboardWindow['health'],
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined,
+  state: ProviderUsageState | undefined
+): string | undefined {
+  if (health === 'missing') {
+    const remainingPercent = normalizePercent(window?.usedPercentage);
+    return remainingPercent === undefined
+      ? 'Live quota unavailable.'
+      : `Live quota unavailable; showing ${Math.round(clamp(100 - remainingPercent, 0, 100))}% fallback.`;
+  }
+  if (health === 'stale') {
+    const age = formatDetailedAgeLabel(
+      authenticatedWindow?.lastLiveEpochMs
+        ?? window?.sourceUpdatedEpochMs
+    );
+    return age ? `Last updated ${age === 'just now' ? age : `${age} ago`}.` : 'Quota value is stale.';
+  }
+  return undefined;
+}
+
+function dashboardWindowFreshness(
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState,
+  state: ProviderUsageState | undefined
+): AuthenticatedQuotaWindowAvailability {
+  if (window?.sourceKind === 'authenticated'
+      && authenticatedWindow.observation === 'valid'
+      && state?.authenticatedStatus === 'success') {
+    return 'live';
+  }
+  return authenticatedWindow.availability;
+}
+
+function dashboardWindowForPresentation(
+  state: ProviderUsageState | undefined,
+  key: string,
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
+): LimitWindow | undefined {
+  if (window || state?.provider !== 'codex' || key !== 'fiveHour') {
+    return window;
+  }
+  return authenticatedWindow && authenticatedWindow.observation !== 'valid'
+    ? { usedPercentage: 0 }
+    : undefined;
 }
 
 function buildMeterWindow(meter: NonNullable<ProviderUsageState['meters']>[number]): UsageDashboardWindow {

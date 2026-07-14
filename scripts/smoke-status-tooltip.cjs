@@ -2,11 +2,15 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { formatStatus } = require('../out/display/format.js');
 
 function assertCompactTooltipContract(result, label) {
   assert.ok(result.tooltip.length > 0, `${label}: combined tooltip exists`);
   assert.doesNotMatch(result.tooltip, /\*\*Models\*\*|Models \(|API est\.|\*\*Details\*\*|- Source:|- Freshness:/, `${label}: compact tooltip omits debug/model sections`);
+  assert.doesNotMatch(result.tooltip, /snap|snapshot|cached|stale|unavailable|live window not supplied/i, `${label}: compact tooltip omits state and provenance prose`);
+  assert.doesNotMatch(result.tooltip, /<span[^>]*(?:title|aria-label)=/, `${label}: quota rows have no final indicator elements`);
   for (const provider of result.providers) {
     assert.ok(provider.tooltip.length > 0, `${label}: provider tooltip exists`);
     assert.doesNotMatch(provider.tooltip, /\*\*Models\*\*|Models \(|API est\.|\*\*Details\*\*|- Source:|- Freshness:/, `${label}: provider tooltip omits debug/model sections`);
@@ -30,6 +34,12 @@ function baseOptions(now = Date.now()) {
     statusMode: 'remaining',
     nextResetRefreshEpochMs: now + 120_000
   };
+}
+
+function assertDefaultStatusBarBackground(label) {
+  const repoRoot = path.resolve(__dirname, '..');
+  const statusBarSource = fs.readFileSync(path.join(repoRoot, 'src', 'statusBar.ts'), 'utf8');
+  assert.doesNotMatch(statusBarSource, /\.backgroundColor\s*=|statusBarItem\.warning(?:Background|Foreground)/, `${label}: status item never assigns an issue-driven background`);
 }
 
 function main() {
@@ -83,7 +93,70 @@ function main() {
 
     assert.equal(result.severity, 'normal');
     assert.equal(result.providers.length, 0);
+    assert.equal(result.text, 'VM Codex remote quota', 'fresh remote status text remains separate and unchanged');
+    assert.doesNotMatch(result.tooltip, /snap|snapshot/i, 'fresh snapshot provenance does not add visible tooltip prose or a warning');
+    assert.match(result.tooltip, /\| VM Codex \| 7d [^\n]*\|$/m, 'normal imported row ends at the reset-time column');
     assertCompactTooltipContract(result, 'remote quota');
+  }
+
+  {
+    const result = formatStatus([], opts, [{
+      provider: 'codex',
+      text: 'VM Codex unavailable-window quota',
+      tooltip: '## VM Codex',
+      severity: 'normal',
+      remoteQuotaData: {
+        label: 'VM Codex',
+        sevenDayRemainingPercent: 80,
+        fiveHourRemainingPercent: undefined,
+        sevenDayResetEpochSeconds: sevenDayReset,
+        stale: false
+      }
+    }]);
+    const unavailableRow = result.tooltip.split('\n').find(line => line.includes('| VM Codex | 5h |')) || '';
+    assert.equal(result.text, 'VM Codex unavailable-window quota', 'remote status text remains independent of tooltip fallback presentation');
+    assert.doesNotMatch(unavailableRow, /[!⚠▲△?]|<span/, 'fresh unavailable remote row has no state marker or unknown-reset question mark');
+    assert.match(unavailableRow, /\| — \| \| — \| \|$/, 'fresh unavailable remote row uses compact placeholders in the standard columns');
+    assertDefaultStatusBarBackground('missing imported Codex five-hour data');
+  }
+
+  {
+    const result = formatStatus([], opts, [{
+      provider: 'codex',
+      text: 'VM Codex remote quota',
+      tooltip: '## VM Codex',
+      severity: 'normal',
+      remoteQuotaData: {
+        label: 'VM Codex',
+        sevenDayRemainingPercent: 80,
+        fiveHourRemainingPercent: 70,
+        sevenDayResetEpochSeconds: sevenDayReset,
+        fiveHourResetEpochSeconds: fiveHourReset,
+        stale: true,
+        snapshotAgeLabel: 'old'
+      }
+    }]);
+    assert.doesNotMatch(result.tooltip, /snap|snapshot|stale|cached|⚠|▲|△/i, 'stale imported state adds no compact tooltip noise');
+    assert.equal(result.localLiveQuotaAttention, false, 'stale imported state does not trigger local attention');
+    assertDefaultStatusBarBackground('stale imported quota');
+  }
+
+  {
+    const result = formatStatus([], opts, [{
+      provider: 'codex',
+      text: 'VM Codex stale unavailable-window quota',
+      tooltip: '## VM Codex',
+      severity: 'normal',
+      remoteQuotaData: {
+        label: 'VM Codex',
+        sevenDayRemainingPercent: 80,
+        fiveHourRemainingPercent: undefined,
+        sevenDayResetEpochSeconds: sevenDayReset,
+        stale: true
+      }
+    }]);
+    const unavailableRow = result.tooltip.split('\n').find(line => line.includes('| VM Codex | 5h |')) || '';
+    assert.doesNotMatch(unavailableRow, /[!⚠▲△?]|<span|snap|snapshot|stale|unavailable/i, 'stale unavailable remote row keeps the same compact columns without state prose');
   }
 
   {
@@ -99,6 +172,80 @@ function main() {
   }
 
   {
+    const rawProviderError = 'untrusted raw provider response detail';
+    const result = formatStatus([{
+      provider: 'codex',
+      source: 'live authenticated refresh',
+      authenticatedStatus: 'success',
+      authenticatedError: rawProviderError,
+      sevenDay: { usedPercentage: 0, resetsAtEpochSeconds: sevenDayReset, sourceKind: 'authenticated' },
+      fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache', sourceUpdatedEpochMs: now - 60_000 },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: now },
+        fiveHour: { observation: 'malformed', availability: 'cached', lastLiveEpochMs: now - 60_000 }
+      }
+    }], opts);
+
+    assert.doesNotMatch(result.text, /[!⚠▲△?]/, 'window-specific fallback adds no compact issue marker');
+    assert.equal(result.localLiveQuotaAttention, true, 'window-specific fallback enables the one local attention state');
+    assert.equal((result.tooltip.match(/Some live quota data is incomplete\. Open the dashboard for details\./g) ?? []).length, 1, 'tooltip contains one concise attention summary');
+    assert.doesNotMatch(result.tooltip, /cached value|live window unreadable|<span[^>]*(?:title|aria-label)=/i, 'tooltip rows contain no state explanation or indicator element');
+    assert.doesNotMatch(result.tooltip, new RegExp(rawProviderError), 'tooltip excludes raw provider errors');
+    assert.equal(result.providers[0].severity, 'normal', 'healthy sibling quota does not inherit a provider-wide warning');
+    assertDefaultStatusBarBackground('partial authenticated quota success');
+  }
+
+  {
+    const result = formatStatus([{
+      provider: 'claude',
+      source: 'local statusLine/hook state',
+      stale: true,
+      sevenDay: { usedPercentage: 75, resetsAtEpochSeconds: sevenDayReset },
+      fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: fiveHourReset }
+    }], opts);
+
+    assert.match(result.text, /25%/, 'stale local quota text remains visible');
+    assertDefaultStatusBarBackground('stale local quota');
+  }
+
+  {
+    const result = formatStatus([{
+      provider: 'codex',
+      source: 'live authenticated refresh',
+      authenticatedStatus: 'network_error',
+      sevenDay: { usedPercentage: 30, resetsAtEpochSeconds: sevenDayReset, sourceKind: 'cache' },
+      fiveHour: { usedPercentage: 40, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache' }
+    }], opts);
+
+    assert.equal(result.localLiveQuotaAttention, true, 'authenticated provider failure remains available to the tooltip state');
+    assert.match(result.tooltip, /Some live quota data is incomplete\. Open the dashboard for details\./, 'authenticated provider failure retains concise tooltip context');
+    assertDefaultStatusBarBackground('authenticated provider error');
+  }
+
+
+  {
+    const result = formatStatus([{
+      provider: 'codex',
+      source: 'live authenticated refresh',
+      stale: true,
+      authenticatedStatus: 'success',
+      sevenDay: { usedPercentage: 66, resetsAtEpochSeconds: sevenDayReset, sourceKind: 'authenticated' },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'cached', lastLiveEpochMs: now },
+        fiveHour: { observation: 'absent', availability: 'unavailable' }
+      }
+    }], opts);
+
+    assert.match(result.text, /34%/, 'live weekly quota remains visible');
+    assert.match(result.text, /100%/, 'missing five-hour quota uses the presentation fallback');
+    assert.doesNotMatch(result.text, /\?/, 'missing five-hour quota does not add an unknown reset countdown');
+    assert.doesNotMatch(result.text, /[!⚠▲△]/, 'status text contains no per-window issue marker');
+    assert.equal(result.localLiveQuotaAttention, true, 'missing five-hour data enables the one local attention state');
+    assert.match(result.tooltip, /\| — \|  \|$/m, 'missing reset is an em dash in the standard reset column with no indicator column');
+    assertDefaultStatusBarBackground('missing stale local Codex five-hour quota');
+  }
+
+  {
     const result = formatStatus([{
       provider: 'claude',
       source: 'local statusLine/hook state',
@@ -108,6 +255,8 @@ function main() {
     }], opts);
 
     assertCompactTooltipContract(result, 'fresh local quota');
+    assert.match(result.text, /^Claude .*25% · .*70%$/, 'healthy status text keeps provider, windows, countdowns, dots, and percentages');
+    assertDefaultStatusBarBackground('healthy status output');
   }
 
   {

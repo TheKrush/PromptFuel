@@ -560,6 +560,8 @@ describe('snapshotReader', () => {
       assert.equal(dp.label, 'Claude');
       assert.equal(dp.machineLabel, 'desktop');
       assert.equal(dp.stale, false);
+      assert.equal(dp.windows.find(w => w.key === 'fiveHour')?.health, undefined);
+      assert.equal(dp.windows.find(w => w.key === 'sevenDay')?.health, undefined);
       assert.equal(dp.windows.find(w => w.key === 'fiveHour')?.resetIso, new Date(1_800_000_000 * 1000).toISOString());
       assert.equal(dp.windows.find(w => w.key === 'sevenDay')?.resetIso, new Date(1_900_000_000 * 1000).toISOString());
     });
@@ -592,12 +594,16 @@ describe('snapshotReader', () => {
         sourceLabel: 'Codex',
         stale: false,
         source: 'localSession',
-        sourceConfidence: 'apiEquivalentEstimate'
+        sourceConfidence: 'apiEquivalentEstimate',
+        sevenDayUsedPercent: 20,
+        fiveHourUsedPercent: 35
       }, 'vm-source', true);
 
       assert.equal(dp.provider, 'codex');
       assert.equal(dp.stale, true);
       assert.ok(dp.source?.includes('stale snapshot'));
+      assert.equal(dp.windows.find(w => w.key === 'sevenDay')?.health, 'stale');
+      assert.equal(dp.windows.find(w => w.key === 'fiveHour')?.health, 'stale');
     });
 
     it('maps snapshot remaining-percent to the same six-level scale as status bar dots', () => {

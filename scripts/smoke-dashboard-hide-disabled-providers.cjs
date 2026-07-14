@@ -365,13 +365,14 @@ function main() {
     assert.match(panelScript, /setUsageLoading\(true\)/, 'refresh path dims existing dashboard frames instead of blanking them');
     assert.doesNotMatch(panelScript, /Refreshing today section/, 'refresh path no longer blanks the Today section');
     assert.match(panelScript, /data-glance-col="provider"/, 'At-a-glance rows emit a stable provider column marker');
-    assert.match(panelScript, /data-glance-col="status"/, 'At-a-glance rows emit a stable status column marker');
+    assert.doesNotMatch(panelScript, /data-glance-col="status"|usage-glance-badge/, 'At-a-glance rows omit the redundant provider-status column');
+    assert.doesNotMatch(panelScript, /data-glance-window|usage-glance-window/, 'At-a-glance has no health-era window-container markers');
     assert.match(panelScript, /data-glance-col="' \+ prefix \+ '-label"[\s\S]*data-glance-col="' \+ prefix \+ '-reset"/, 'At-a-glance window cells emit stable column markers');
     assert.match(panelScript, /glanceWindowByKey\(windows, 'sevenDay'\)[\s\S]*glanceWindowByKey\(windows, 'fiveHour'\)/, 'At-a-glance rows render quota windows in fixed 7d then 5h order');
     assert.match(styles, /usage-section-provider-grid[\s\S]*minmax\(min\(100%,560px\),1fr\)/, 'provider comparison grid stacks before provider cards become too narrow');
     assert.match(styles, /usage-section-provider-card[\s\S]*container-type:inline-size/, 'provider cards establish a container for tile wrapping');
-    assert.match(styles, /usage-glance-list[\s\S]*grid-template-columns:minmax\(80px,160px\)[\s\S]*max-content/, 'At-a-glance list owns one shared ten-column grid');
-    assert.match(styles, /usage-glance-row[\s\S]*display:contents/, 'At-a-glance rows share parent grid columns');
+    assert.match(styles, /usage-glance-list[\s\S]*grid-template-columns:minmax\(80px,160px\) 22px minmax\(56px,1fr\) 36px minmax\(76px,96px\) 22px minmax\(56px,1fr\) 36px minmax\(76px,96px\)/, 'At-a-glance restores one aligned provider, 7d, and 5h measurement grid');
+    assert.match(styles, /usage-glance-row[\s\S]*display:contents/, 'At-a-glance rows participate directly in the shared measurement grid');
     assert.match(styles, /usage-metric-grid[\s\S]*minmax\(min\(100%,150px\),1fr\)/, 'metric grids keep a readable tile minimum');
     assert.match(styles, /@container \(max-width:639px\)[\s\S]*usage-metric-grid[\s\S]*repeat\(2,minmax\(min\(100%,150px\),1fr\)\)/, 'medium provider-card widths use two metric columns');
     assert.match(styles, /@container \(max-width:360px\)[\s\S]*usage-metric-grid[\s\S]*grid-template-columns:1fr/, 'narrow provider-card widths use one metric column');

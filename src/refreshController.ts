@@ -5,6 +5,7 @@ import { buildStatusHoverModelBreakdown, type HistoryModelUsage, STATUS_HOVER_MO
 import { logPromptFuel } from './logger';
 import { mergeAuthenticatedFailure, mergeAuthenticatedQuotaSuccess, mergeLocalAndAuthenticated, type QuotaMergeOptions } from './quota/merge';
 import {
+  type AuthenticatedQuotaFetchOutcome,
   fetchAuthenticatedQuota,
   readAuthenticatedQuotaCache,
   writeAuthenticatedQuotaCache
@@ -94,10 +95,10 @@ const refreshState = {
 let resetRefreshTimer: NodeJS.Timeout | undefined;
 let scheduledResetRefreshEpochMs: number | undefined;
 
-let _onStatusUpdate: ((text: string, tooltip: string) => void) | undefined;
+let _onStatusUpdate: ((text: string, tooltip: string, localLiveQuotaAttention: boolean) => void) | undefined;
 
 export function initRefreshController(deps: {
-  onStatusUpdate: (text: string, tooltip: string) => void;
+  onStatusUpdate: (text: string, tooltip: string, localLiveQuotaAttention: boolean) => void;
 }): void {
   _onStatusUpdate = deps.onStatusUpdate;
 }
@@ -116,6 +117,32 @@ export function clearResetRefreshTimer(): void {
 
 function logSwallowedError(context: string, err: unknown): void {
   logPromptFuel(`${context} failed`, err);
+}
+
+function logAuthenticatedQuotaOutcome(outcome: AuthenticatedQuotaFetchOutcome): void {
+  const statusCategory = httpStatusCategory(outcome.state.authenticatedHttpStatus);
+  const sourceKind = outcome.state.sourceKind ?? 'unknown';
+  const fiveHour = authenticatedWindowDiagnostic(outcome.state, 'fiveHour');
+  const sevenDay = authenticatedWindowDiagnostic(outcome.state, 'sevenDay');
+  logPromptFuel(
+    `Authenticated refresh completed provider=${outcome.provider} outcome=${outcome.success ? 'success' : outcome.state.authenticatedStatus ?? 'failure'}`
+    + ` http=${statusCategory} source=${sourceKind} 5h=${fiveHour} 7d=${sevenDay}`
+  );
+}
+
+function authenticatedWindowDiagnostic(state: ProviderUsageState, key: 'fiveHour' | 'sevenDay'): string {
+  const windowState = state.authenticatedWindows?.[key];
+  if (windowState) {
+    return `${windowState.observation}/${windowState.availability}`;
+  }
+  return state[key] ? 'valid/unclassified' : 'unknown/unavailable';
+}
+
+function httpStatusCategory(statusCode: number | undefined): string {
+  if (!statusCode || statusCode < 100) {
+    return 'none';
+  }
+  return `${Math.floor(statusCode / 100)}xx`;
 }
 
 
@@ -350,14 +377,16 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
         authState.lastBypassAttemptEpochMs[provider] = now;
       }
 
+      logPromptFuel(`Authenticated refresh started provider=${provider}`);
       const outcome = await fetchAuthenticatedQuota(provider);
+      logAuthenticatedQuotaOutcome(outcome);
       if (outcome.success) {
         const nextRefresh = Date.now() + cfg.refreshIntervalMinutes * 60 * 1000;
         authState.nextPollEpochMs[provider] = nextRefresh;
         authState.backoffEpochMs[provider] = 0;
         authState.consecutiveFailures[provider] = 0;
         outcome.state.nextAuthenticatedRefreshEpochMs = nextRefresh;
-        authState.cache[provider] = outcome.state;
+        authState.cache[provider] = mergeAuthenticatedQuotaSuccess(authState.cache[provider], outcome.state, mergeOptions);
         statesByProvider[provider] = mergeAuthenticatedQuotaSuccess(statesByProvider[provider], outcome.state, mergeOptions);
       } else {
         const failures = (authState.consecutiveFailures[provider] ?? 0) + 1;
@@ -373,7 +402,12 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
         authState.cache[provider] = mergeAuthenticatedFailure(authState.cache[provider], outcome.state, backoffUntilNext, mergeOptions);
       }
     }
-    await writeAuthenticatedQuotaCache(cfg.stateDirectory, authState.cache).catch(err => logSwallowedError('authenticated cache write', err));
+    try {
+      await writeAuthenticatedQuotaCache(cfg.stateDirectory, authState.cache);
+      logPromptFuel('Authenticated cache write completed');
+    } catch {
+      logPromptFuel('Authenticated cache write failed');
+    }
   } else {
     for (const provider of cfg.enabledProviders) {
       statesByProvider[provider] = annotateAuthenticatedDisabled(
@@ -590,5 +624,9 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     normalizedSources: cfg.normalizedSources
   }, remoteStatusBarItems);
 
-  _onStatusUpdate?.(formatted.text, `${formatted.tooltip}\n\nClick to open PromptFuel dashboard`);
+  _onStatusUpdate?.(
+    formatted.text,
+    `${formatted.tooltip}\n\nClick to open PromptFuel dashboard`,
+    formatted.localLiveQuotaAttention
+  );
 }

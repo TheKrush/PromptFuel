@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { derivePresentableQuotaWindowState, type FormatOptions } from '../display/format';
+import { derivePresentableQuotaWindowState, formatStatus, type FormatOptions } from '../display/format';
 import {
   mergeAuthenticatedFailure,
   mergeAuthenticatedQuotaSuccess,
@@ -9,8 +9,8 @@ import {
 import { getAuthenticatedRefreshGate } from '../quota/refreshPolicy';
 import { getNextResetRefreshPlan } from '../quota/resetRefresh';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
-import { CLAUDE_OPUS_USAGE_METER_ID } from '../providers/authenticatedQuota';
-import type { ProviderName, ProviderUsageState } from '../types';
+import { authenticatedWindowStatesFromObservations, CLAUDE_OPUS_USAGE_METER_ID } from '../providers/authenticatedQuota';
+import type { AuthenticatedQuotaWindowObservation, ProviderName, ProviderUsageState } from '../types';
 
 const now = Date.now();
 const fiveHourReset = Math.floor((now + 90 * 60 * 1000) / 1000);
@@ -32,6 +32,14 @@ function liveState(provider: ProviderName = 'codex', overrides: Partial<Provider
     stale: false,
     ...overrides
   };
+}
+
+function observedWindows(
+  fiveHour: AuthenticatedQuotaWindowObservation,
+  sevenDay: AuthenticatedQuotaWindowObservation,
+  timestamp: number
+) {
+  return authenticatedWindowStatesFromObservations({ fiveHour, sevenDay }, timestamp);
 }
 
 function localState(provider: ProviderName = 'codex', overrides: Partial<ProviderUsageState> = {}): ProviderUsageState {
@@ -110,6 +118,375 @@ describe('quota fallback regression coverage', () => {
     assert.equal(sevenDay.freshness, 'live');
     assert.equal(dashboardWindow(merged, 'fiveHour').remainingPercent, 65);
     assert.equal(dashboardWindow(merged, 'sevenDay').remainingPercent, 80);
+  });
+
+  it('merges Codex primary observations independently without giving a fallback sibling a live timestamp', () => {
+    const priorFiveHourLive = now - 5 * 60_000;
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset },
+      sevenDay: { usedPercentage: 20, resetsAtEpochSeconds: sevenDayReset },
+      lastUpdatedEpochMs: priorFiveHourLive,
+      lastAuthenticatedRefreshEpochMs: priorFiveHourLive,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live', lastLiveEpochMs: priorFiveHourLive },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: priorFiveHourLive }
+      }
+    }));
+    const healthySevenDayRefresh = now + 1_000;
+    const partial = mergeAuthenticatedQuotaSuccess(cached, liveState('codex', {
+      fiveHour: undefined,
+      sevenDay: { usedPercentage: 100, resetsAtEpochSeconds: sevenDayReset },
+      lastUpdatedEpochMs: healthySevenDayRefresh,
+      lastAuthenticatedRefreshEpochMs: healthySevenDayRefresh,
+      authenticatedWindows: observedWindows('absent', 'valid', healthySevenDayRefresh)
+    }));
+
+    assert.equal(partial.fiveHour?.usedPercentage, 35);
+    assert.equal(partial.fiveHour?.sourceKind, 'cache');
+    assert.equal(partial.sevenDay?.usedPercentage, 100);
+    assert.equal(partial.sevenDay?.sourceKind, 'authenticated');
+    assert.deepEqual(partial.authenticatedWindows?.fiveHour, {
+      observation: 'absent',
+      availability: 'cached',
+      lastLiveEpochMs: priorFiveHourLive
+    });
+    assert.deepEqual(partial.authenticatedWindows?.sevenDay, {
+      observation: 'valid',
+      availability: 'live',
+      lastLiveEpochMs: healthySevenDayRefresh
+    });
+    assert.equal(partial.lastAuthenticatedRefreshEpochMs, healthySevenDayRefresh);
+    assert.equal(partial.stale, false);
+
+    const fiveHour = derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions());
+    const sevenDay = derivePresentableQuotaWindowState(partial, partial.sevenDay, formatOptions());
+    assert.equal(fiveHour.freshness, 'cached');
+    assert.equal(fiveHour.warning, 'absent');
+    assert.equal(sevenDay.freshness, 'live');
+    assert.equal(sevenDay.warning, undefined);
+    assert.equal(dashboardWindow(partial, 'fiveHour').warning, 'absent');
+    assert.equal(dashboardWindow(partial, 'fiveHour').freshness, 'cached');
+    assert.equal(dashboardWindow(partial, 'sevenDay').warning, undefined);
+    assert.equal(dashboardWindow(partial, 'sevenDay').remainingPercent, 0);
+
+    const repeatedPartial = mergeAuthenticatedQuotaSuccess(partial, liveState('codex', {
+      fiveHour: undefined,
+      sevenDay: { usedPercentage: 40, resetsAtEpochSeconds: sevenDayReset },
+      lastUpdatedEpochMs: healthySevenDayRefresh + 1_000,
+      lastAuthenticatedRefreshEpochMs: healthySevenDayRefresh + 1_000,
+      authenticatedWindows: observedWindows('malformed', 'valid', healthySevenDayRefresh + 1_000)
+    }));
+    assert.equal(repeatedPartial.authenticatedWindows?.fiveHour?.lastLiveEpochMs, priorFiveHourLive);
+    assert.equal(repeatedPartial.authenticatedWindows?.fiveHour?.availability, 'cached');
+    assert.equal(repeatedPartial.authenticatedWindows?.fiveHour?.observation, 'malformed');
+
+    const recovered = mergeAuthenticatedQuotaSuccess(repeatedPartial, liveState('codex', {
+      fiveHour: { usedPercentage: 0, resetsAtEpochSeconds: fiveHourReset },
+      sevenDay: { usedPercentage: 40, resetsAtEpochSeconds: sevenDayReset },
+      lastUpdatedEpochMs: healthySevenDayRefresh + 2_000,
+      lastAuthenticatedRefreshEpochMs: healthySevenDayRefresh + 2_000,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live', lastLiveEpochMs: healthySevenDayRefresh + 2_000 },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: healthySevenDayRefresh + 2_000 }
+      }
+    }));
+    assert.equal(recovered.authenticatedWindows?.fiveHour?.availability, 'live');
+    assert.equal(derivePresentableQuotaWindowState(recovered, recovered.fiveHour, formatOptions()).warning, undefined);
+    assert.equal(recovered.fiveHour?.usedPercentage, 0);
+    assert.equal(dashboardWindow(recovered, 'fiveHour').remainingPercent, 100);
+  });
+
+  it('does not relabel retained non-authenticated Codex windows as authenticated fallbacks', () => {
+    for (const observation of ['absent', 'null', 'malformed', 'disabled', 'unsupported'] as const) {
+      const refreshEpochMs = now + 2_000;
+      const current = localState('codex', {
+        fiveHour: {
+          usedPercentage: 80,
+          resetsAtEpochSeconds: fiveHourReset,
+          sourceKind: 'localSession',
+          sourceLabel: 'local session quota',
+          sourceUpdatedEpochMs: now - 10_000
+        },
+        sevenDay: undefined,
+        sourceKind: 'localSession'
+      });
+      const partial = mergeAuthenticatedQuotaSuccess(current, liveState('codex', {
+        fiveHour: undefined,
+        sevenDay: { usedPercentage: 0, resetsAtEpochSeconds: sevenDayReset },
+        lastUpdatedEpochMs: refreshEpochMs,
+        lastAuthenticatedRefreshEpochMs: refreshEpochMs,
+        authenticatedWindows: observedWindows(observation, 'valid', refreshEpochMs)
+      }));
+
+      assert.equal(partial.fiveHour?.usedPercentage, 80);
+      assert.equal(partial.fiveHour?.sourceKind, 'localSession');
+      assert.equal(partial.fiveHour?.sourceUpdatedEpochMs, now - 10_000);
+      assert.deepEqual(partial.authenticatedWindows?.fiveHour, {
+        observation,
+        availability: 'unavailable'
+      });
+      assert.equal(partial.authenticatedWindows?.fiveHour?.lastLiveEpochMs, undefined);
+      assert.equal(partial.sevenDay?.usedPercentage, 0);
+      assert.equal(partial.sevenDay?.sourceKind, 'authenticated');
+      assert.equal(partial.authenticatedWindows?.sevenDay?.availability, 'live');
+
+      const presentable = derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions());
+      assert.equal(presentable.freshness, 'local');
+      assert.equal(presentable.warning, undefined);
+      assert.equal(dashboardWindow(partial, 'fiveHour').freshness, undefined);
+      assert.equal(dashboardWindow(partial, 'fiveHour').warning, undefined);
+      assert.equal(dashboardWindow(partial, 'sevenDay').freshness, 'live');
+    }
+  });
+
+  it('does not relabel a retained status-line window as an authenticated fallback', () => {
+    const partial = mergeAuthenticatedQuotaSuccess(localState('codex', {
+      fiveHour: {
+        usedPercentage: 55,
+        resetsAtEpochSeconds: fiveHourReset,
+        sourceKind: 'statusLine',
+        sourceLabel: 'status line quota',
+        sourceUpdatedEpochMs: now - 15_000
+      },
+      sevenDay: undefined,
+      sourceKind: 'statusLine',
+      source: 'Codex statusLine quota'
+    }), liveState('codex', {
+      fiveHour: undefined,
+      sevenDay: { usedPercentage: 25, resetsAtEpochSeconds: sevenDayReset },
+      authenticatedWindows: observedWindows('malformed', 'valid', now)
+    }));
+
+    assert.equal(partial.fiveHour?.sourceKind, 'statusLine');
+    assert.deepEqual(partial.authenticatedWindows?.fiveHour, {
+      observation: 'malformed',
+      availability: 'unavailable'
+    });
+    assert.equal(derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions()).freshness, 'local');
+    assert.equal(derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions()).warning, undefined);
+    assert.equal(dashboardWindow(partial, 'fiveHour').freshness, undefined);
+    assert.equal(dashboardWindow(partial, 'fiveHour').warning, undefined);
+  });
+
+  it('presents a broken Codex five-hour window as attention-signaled 100% without fabricating internal quota', () => {
+    const partial = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      fiveHour: undefined,
+      sevenDay: { usedPercentage: 25, resetsAtEpochSeconds: sevenDayReset },
+      authenticatedWindows: observedWindows('null', 'valid', now)
+    }));
+
+    const presentable = derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions(), 'fiveHour');
+    const fiveHour = dashboardWindow(partial, 'fiveHour');
+    const sevenDay = dashboardWindow(partial, 'sevenDay');
+    assert.equal(partial.fiveHour, undefined);
+    assert.deepEqual(partial.authenticatedWindows?.fiveHour, { observation: 'null', availability: 'unavailable' });
+    assert.equal(presentable.value?.usedPercentage, 0);
+    assert.equal(presentable.severity, 'normal');
+    assert.equal(presentable.freshness, 'unavailable');
+    assert.equal(presentable.warning, 'null');
+    assert.equal(fiveHour.usedPercent, 0);
+    assert.equal(fiveHour.remainingPercent, 100);
+    assert.equal(fiveHour.available, true);
+    assert.equal(fiveHour.freshness, 'unavailable');
+    assert.equal(fiveHour.warning, 'null');
+    assert.equal(sevenDay.available, true);
+    assert.equal(sevenDay.warning, undefined);
+
+    const formatted = formatStatus([partial], { displayMode: 'compact', statusMode: 'remaining' });
+    assert.match(formatted.text, /100%/);
+    assert.doesNotMatch(formatted.text, /[!⚠▲△?]/);
+    assert.equal(formatted.localLiveQuotaAttention, true);
+    assert.match(formatted.tooltip, /\*\*100%\*\*/);
+    assert.equal((formatted.tooltip.match(/Some live quota data is incomplete\. Open the dashboard for details\./g) ?? []).length, 1);
+    assert.doesNotMatch(formatted.tooltip, /returned null|unavailable|<span[^>]*(?:title|aria-label)=/i);
+
+    const codexSevenDay = dashboardWindow({
+      provider: 'codex',
+      sevenDay: undefined,
+      authenticatedWindows: { sevenDay: { observation: 'null', availability: 'unavailable' } }
+    }, 'sevenDay');
+    const claudeFiveHour = dashboardWindow({
+      provider: 'claude',
+      fiveHour: undefined,
+      authenticatedWindows: { fiveHour: { observation: 'null', availability: 'unavailable' } }
+    }, 'fiveHour');
+    assert.equal(codexSevenDay.available, false);
+    assert.equal(codexSevenDay.remainingPercent, undefined);
+    assert.equal(claudeFiveHour.available, false);
+    assert.equal(claudeFiveHour.remainingPercent, undefined);
+  });
+
+  it('presents a successful live seven-day sibling as partial instead of globally stale', () => {
+    const state = liveState('codex', {
+      stale: true,
+      fiveHour: undefined,
+      sevenDay: {
+        usedPercentage: 66,
+        resetsAtEpochSeconds: sevenDayReset,
+        sourceKind: 'authenticated'
+      },
+      authenticatedStatus: 'success',
+      authenticatedWindows: {
+        fiveHour: { observation: 'absent', availability: 'unavailable' },
+        sevenDay: { observation: 'valid', availability: 'cached', lastLiveEpochMs: now }
+      }
+    });
+
+    const dashboard = buildUsageDashboardModel({ states: [state] });
+    const provider = dashboard.providers[0];
+    const sevenDay = provider.windows.find(window => window.key === 'sevenDay');
+    const fiveHour = provider.windows.find(window => window.key === 'fiveHour');
+    const formatted = formatStatus([state], { displayMode: 'standard', statusMode: 'remaining' });
+
+    assert.equal(provider.stale, false);
+    assert.equal(provider.status, 'partial');
+    assert.equal(sevenDay?.remainingPercent, 34);
+    assert.equal(sevenDay?.freshness, 'live');
+    assert.equal(sevenDay?.warning, undefined);
+    assert.equal(sevenDay?.health, undefined);
+    assert.equal(fiveHour?.remainingPercent, 100);
+    assert.equal(fiveHour?.freshness, 'unavailable');
+    assert.equal(fiveHour?.warning, 'absent');
+    assert.equal(fiveHour?.health, 'missing');
+    assert.equal(derivePresentableQuotaWindowState(state, state.sevenDay, formatOptions(), 'sevenDay').freshness, 'live');
+    assert.match(formatted.text, /34%/);
+    assert.match(formatted.text, /100%/);
+    assert.doesNotMatch(formatted.text, /[!⚠▲△?]/);
+    assert.equal(formatted.localLiveQuotaAttention, true);
+  });
+
+  it('uses the stale displayed window timestamp rather than a recent provider refresh attempt', () => {
+    const staleWindowEpochMs = now - 5 * 86400 * 1000;
+    const window = dashboardWindow(liveState('codex', {
+      fiveHour: {
+        usedPercentage: 35,
+        resetsAtEpochSeconds: fiveHourReset,
+        sourceKind: 'cache',
+        sourceUpdatedEpochMs: staleWindowEpochMs
+      },
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'http_error',
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'stale', lastLiveEpochMs: staleWindowEpochMs }
+      }
+    }), 'fiveHour');
+
+    assert.equal(window.health, 'stale');
+    assert.equal(window.healthDetail, 'Last updated 5 days ago.');
+    assert.doesNotMatch(window.healthDetail ?? '', /just now|ago ago/);
+  });
+
+  it('formats stale dashboard age details with one natural suffix', () => {
+    const cases = [
+      { ageMs: 0, expected: 'Last updated just now.' },
+      { ageMs: 5 * 60_000, expected: 'Last updated 5 minutes ago.' },
+      { ageMs: 3 * 3600_000, expected: 'Last updated 3 hours ago.' },
+      { ageMs: 5 * 86400_000, expected: 'Last updated 5 days ago.' }
+    ];
+
+    for (const { ageMs, expected } of cases) {
+      const timestamp = Date.now() - ageMs;
+      const window = dashboardWindow(liveState('codex', {
+        fiveHour: {
+          usedPercentage: 35,
+          resetsAtEpochSeconds: fiveHourReset,
+          sourceKind: 'cache',
+          sourceUpdatedEpochMs: timestamp
+        },
+        authenticatedStatus: 'http_error',
+        authenticatedWindows: {
+          fiveHour: { observation: 'valid', availability: 'stale', lastLiveEpochMs: timestamp }
+        }
+      }), 'fiveHour');
+
+      assert.equal(window.healthDetail, expected);
+      assert.doesNotMatch(window.healthDetail ?? '', /just now ago|ago ago/);
+    }
+  });
+
+  it('does not fabricate a stale age from a provider refresh attempt without a window timestamp', () => {
+    const window = dashboardWindow(liveState('codex', {
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache' },
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'http_error',
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'stale' }
+      }
+    }), 'fiveHour');
+
+    assert.equal(window.health, 'stale');
+    assert.equal(window.healthDetail, 'Quota value is stale.');
+  });
+
+  it('recovers only the healthy Codex window while retaining the sibling warning and timestamp', () => {
+    const fiveHourLive = now - 5 * 60_000;
+    const sevenDayLive = now - 25 * 60_000;
+    const initial = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      lastUpdatedEpochMs: fiveHourLive,
+      lastAuthenticatedRefreshEpochMs: fiveHourLive,
+      sevenDay: { usedPercentage: 20, resetsAtEpochSeconds: sevenDayReset, sourceUpdatedEpochMs: sevenDayLive },
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live', lastLiveEpochMs: fiveHourLive },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: sevenDayLive }
+      }
+    }));
+    const brokenBoth = mergeAuthenticatedQuotaSuccess(initial, liveState('codex', {
+      fiveHour: undefined,
+      sevenDay: undefined,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedWindows: observedWindows('absent', 'disabled', now)
+    }));
+    const recoveredAt = now + 1_000;
+    const recoveredFiveHour = mergeAuthenticatedQuotaSuccess(brokenBoth, liveState('codex', {
+      fiveHour: { usedPercentage: 0, resetsAtEpochSeconds: fiveHourReset },
+      sevenDay: undefined,
+      lastUpdatedEpochMs: recoveredAt,
+      lastAuthenticatedRefreshEpochMs: recoveredAt,
+      authenticatedWindows: observedWindows('valid', 'disabled', recoveredAt)
+    }));
+
+    assert.deepEqual(recoveredFiveHour.authenticatedWindows?.fiveHour, {
+      observation: 'valid', availability: 'live', lastLiveEpochMs: recoveredAt
+    });
+    assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').warning, undefined);
+    assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').freshness, 'live');
+    assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').health, undefined);
+    assert.equal(recoveredFiveHour.fiveHour?.usedPercentage, 0);
+    assert.deepEqual(recoveredFiveHour.authenticatedWindows?.sevenDay, {
+      observation: 'disabled', availability: 'stale', lastLiveEpochMs: sevenDayLive
+    });
+    assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').warning, 'disabled');
+    assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').freshness, 'stale');
+    assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').health, 'stale');
+    assert.equal(recoveredFiveHour.authenticatedStatus, 'success');
+  });
+
+  it('keeps an older retained Codex sibling visibly stale while its healthy sibling refreshes live', () => {
+    const staleFiveHourLive = now - 25 * 60_000;
+    const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      lastUpdatedEpochMs: staleFiveHourLive,
+      lastAuthenticatedRefreshEpochMs: staleFiveHourLive,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live', lastLiveEpochMs: staleFiveHourLive },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: staleFiveHourLive }
+      }
+    }));
+    const partial = mergeAuthenticatedQuotaSuccess(cached, liveState('codex', {
+      fiveHour: undefined,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedWindows: observedWindows('unsupported', 'valid', now)
+    }));
+
+    assert.equal(partial.authenticatedWindows?.fiveHour?.availability, 'stale');
+    assert.equal(dashboardWindow(partial, 'fiveHour').freshness, 'stale');
+    assert.equal(dashboardWindow(partial, 'fiveHour').warning, 'unsupported');
+    assert.equal(dashboardWindow(partial, 'fiveHour').health, 'stale');
+    assert.equal(dashboardWindow(partial, 'sevenDay').freshness, 'live');
+    assert.equal(dashboardWindow(partial, 'sevenDay').health, undefined);
   });
 
   it('HTTP and network failures preserve cached or local quota', () => {
@@ -588,15 +965,19 @@ describe('quota fallback regression coverage', () => {
   it('dashboard marks present windows without usable percentage unavailable', () => {
     const dashboard = buildUsageDashboardModel({ states: [{
       provider: 'codex',
-      fiveHour: { resetsAtEpochSeconds: fiveHourReset },
+      fiveHour: { resetsAtEpochSeconds: fiveHourReset, sourceKind: 'stale' },
       sevenDay: { usedPercentage: 57, resetsAtEpochSeconds: sevenDayReset },
       source: 'local Codex session snapshot',
       lastUpdatedEpochMs: now,
-      authenticatedStatus: 'skipped'
+      authenticatedStatus: 'skipped',
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'stale', lastLiveEpochMs: now - 25 * 60_000 }
+      }
     }] });
     const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
 
     assert.equal(fiveHour?.available, false);
+    assert.equal(fiveHour?.health, 'missing');
   });
 });
 

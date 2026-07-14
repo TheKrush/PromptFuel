@@ -29,7 +29,15 @@ function logSwallowedError(context: string, err: unknown): void {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   setInternalStateDirectory(context.globalStorageUri.fsPath);
-  logPromptFuel('Activation started.');
+  const extensionMode = context.extensionMode === vscode.ExtensionMode.Development
+    ? 'development'
+    : context.extensionMode === vscode.ExtensionMode.Test
+      ? 'test'
+      : 'production';
+  const extensionVersion = typeof context.extension.packageJSON.version === 'string'
+    ? context.extension.packageJSON.version
+    : 'unknown';
+  logPromptFuel(`Activation started mode=${extensionMode} version=${extensionVersion}.`);
   combinedStatusItem = createStatusBarItem(1, 'PromptFuel loading...');
   context.subscriptions.push(combinedStatusItem);
 
@@ -41,7 +49,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   initRefreshController({
-    onStatusUpdate: (text, tooltip) => applyStatusBarItem(combinedStatusItem, text, tooltip)
+    onStatusUpdate: (text, tooltip) => applyStatusBarItem(
+      combinedStatusItem,
+      text,
+      tooltip
+    )
   });
 
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.refresh', () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true })));

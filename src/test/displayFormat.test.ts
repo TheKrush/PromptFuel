@@ -87,6 +87,89 @@ describe('display formatting', () => {
     assert.equal(text, `C ${quotaIndicatorForRemaining(65)}65% \u00B7 ${quotaIndicatorForRemaining(22)}22%`);
   });
 
+  it('uses one local attention state for a retained broken primary window without adding compact issue symbols', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const rawError = 'provider-specific internal response details';
+    const result = formatStatus([{
+      provider: 'codex',
+      sourceKind: 'authenticated',
+      source: 'live authenticated refresh',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      authenticatedStatus: 'success',
+      authenticatedError: rawError,
+      sevenDay: { usedPercentage: 0, resetsAtEpochSeconds: reset, sourceKind: 'authenticated' },
+      fiveHour: { usedPercentage: 30, resetsAtEpochSeconds: reset, sourceKind: 'cache', sourceUpdatedEpochMs: Date.now() - 60_000 },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: Date.now() },
+        fiveHour: { observation: 'malformed', availability: 'cached', lastLiveEpochMs: Date.now() - 60_000 }
+      }
+    }], baseOptions());
+
+    assert.doesNotMatch(result.text, /[!⚠▲△?]/);
+    assert.equal(result.localLiveQuotaAttention, true);
+    assert.equal(
+      result.tooltip.split('Some live quota data is incomplete. Open the dashboard for details.').length - 1,
+      1
+    );
+    assert.doesNotMatch(result.tooltip, /cached value|stale cached value|live window unreadable|unavailable/i);
+    assert.doesNotMatch(result.tooltip, new RegExp(rawError));
+    assert.equal(result.providers[0]?.severity, 'normal');
+  });
+
+  it('does not bind authenticated fallback wording to a retained local window by identity or label', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const localTimestamp = Date.now() - 60_000;
+    const result = formatStatus([{
+      provider: 'codex',
+      sourceKind: 'localSession',
+      source: 'local Codex session snapshot',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 0, resetsAtEpochSeconds: reset, sourceKind: 'authenticated' },
+      fiveHour: {
+        usedPercentage: 30,
+        resetsAtEpochSeconds: reset,
+        sourceKind: 'localSession',
+        sourceUpdatedEpochMs: localTimestamp
+      },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: Date.now() },
+        fiveHour: { observation: 'malformed', availability: 'cached', lastLiveEpochMs: localTimestamp }
+      }
+    }], baseOptions());
+
+    assert.doesNotMatch(result.text, /!/);
+    assert.doesNotMatch(result.tooltip, /cached value|stale cached value|live window unreadable/i);
+    assert.equal(result.localLiveQuotaAttention, false);
+  });
+
+  it('does not treat imported snapshot staleness as local live-quota attention', () => {
+    const result = formatStatus(makeState(25, 50), baseOptions(), [{
+      provider: 'codex',
+      text: 'Remote Codex 75% · 50%',
+      tooltip: '',
+      severity: 'warning',
+      remoteQuotaData: {
+        label: 'Remote Codex',
+        sevenDayRemainingPercent: 75,
+        fiveHourRemainingPercent: 50,
+        stale: true
+      }
+    }]);
+
+    assert.equal(result.localLiveQuotaAttention, false);
+    assert.doesNotMatch(result.tooltip, /snap|snapshot|cached|stale|unavailable|live window not supplied/i);
+  });
+
+  it('does not describe a generic local provider error as incomplete live quota', () => {
+    const state = makeState(25, 50)[0];
+    const result = formatStatus([{ ...state, error: 'local history read failed' }], baseOptions());
+
+    assert.equal(result.localLiveQuotaAttention, false);
+    assert.doesNotMatch(result.tooltip, /Some live quota data is incomplete/);
+  });
+
   it('shows raw 5h percent in status bar when 7d is near exhausted', () => {
     const opts = baseOptions();
     // 7d at 99% used (1% remaining, previously the blocked threshold), 5h at 17% used (83% remaining)

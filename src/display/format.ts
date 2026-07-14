@@ -1,4 +1,15 @@
-import { DisplayMode, LimitWindow, ProviderName, ProviderUsageState, QuotaSourceKind, SourceConfigEntry } from '../types';
+import {
+  AuthenticatedQuotaWindowAvailability,
+  AuthenticatedQuotaWindowKey,
+  AuthenticatedQuotaWindowObservation,
+  AuthenticatedQuotaWindowState,
+  DisplayMode,
+  LimitWindow,
+  ProviderName,
+  ProviderUsageState,
+  QuotaSourceKind,
+  SourceConfigEntry
+} from '../types';
 import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime } from '../usageTime';
 
 export interface ModelBreakdownEntry {
@@ -23,7 +34,7 @@ export interface FormatOptions {
 export type StatusSeverity = 'normal' | 'low' | 'warning' | 'critical';
 export type QuotaIndicatorLevel = 'purple' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'unavailable';
 export type PresentableQuotaSeverity = StatusSeverity | 'unavailable';
-export type PresentableQuotaFreshness = 'live' | 'cached' | 'local' | 'stale' | 'unknown';
+export type PresentableQuotaFreshness = 'live' | 'cached' | 'local' | 'stale' | 'unavailable' | 'unknown';
 export type PresentableQuotaIncident =
   | 'auth_expired'
   | 'network_error'
@@ -41,6 +52,7 @@ export interface PresentableQuotaWindowState {
   severity: PresentableQuotaSeverity;
   freshness: PresentableQuotaFreshness;
   incident?: PresentableQuotaIncident;
+  warning?: AuthenticatedQuotaWindowObservation;
 }
 
 export interface RemoteQuotaRow {
@@ -61,16 +73,34 @@ export interface FormattedProviderStatus {
   remoteQuotaData?: RemoteQuotaRow;
 }
 
+export interface FormattedStatus {
+  text: string;
+  tooltip: string;
+  severity: StatusSeverity;
+  providers: FormattedProviderStatus[];
+  localLiveQuotaAttention: boolean;
+}
+
+const LIVE_QUOTA_ATTENTION_SUMMARY = 'Some live quota data is incomplete. Open the dashboard for details.';
+
 export function derivePresentableQuotaWindowState(
   state: ProviderUsageState,
   window: LimitWindow | undefined,
-  options: FormatOptions
+  options: FormatOptions,
+  windowKey?: AuthenticatedQuotaWindowKey
 ): PresentableQuotaWindowState {
+  const label = windowKey === 'fiveHour' ? '5h' : windowKey === 'sevenDay' ? '7d' : undefined;
+  const value = quotaWindowForPresentation(state, label, window);
+  const authenticatedWindow = authenticatedWindowStateFor(state, window)
+    ?? authenticatedWindowStateForLabel(state, label);
   return {
-    value: window,
-    severity: window && window.usedPercentage !== undefined ? windowSeverity(window) : 'unavailable',
-    freshness: quotaFreshnessForWindow(state, window),
-    incident: providerIncident(state)
+    value,
+    severity: value && value.usedPercentage !== undefined ? windowSeverity(value) : 'unavailable',
+    freshness: authenticatedWindow
+      ? presentableFreshness(authenticatedWindowAvailabilityForPresentation(state, value, authenticatedWindow))
+      : quotaFreshnessForWindow(state, value),
+    incident: providerIncident(state),
+    ...(authenticatedWindow && authenticatedWindow.observation !== 'valid' ? { warning: authenticatedWindow.observation } : {})
   };
 }
 
@@ -78,14 +108,15 @@ export function formatStatus(
   states: ProviderUsageState[],
   options: FormatOptions,
   remoteSources?: FormattedProviderStatus[]
-): { text: string; tooltip: string; severity: StatusSeverity; providers: FormattedProviderStatus[] } {
+): FormattedStatus {
   const active = states.filter(state => Boolean(state) && isStatusBarSourceVisible(state, options));
   if (active.length === 0 && (!remoteSources || remoteSources.length === 0)) {
     return {
       text: '$(circle-slash) AI usage unavailable',
       tooltip: 'No usage providers are enabled or reporting.',
       severity: 'warning',
-      providers: []
+      providers: [],
+      localLiveQuotaAttention: false
     };
   }
 
@@ -111,12 +142,19 @@ export function formatStatus(
   const remoteQuotaRows = remoteSources
     ? remoteSources.map(r => r.remoteQuotaData).filter((d): d is RemoteQuotaRow => d !== undefined)
     : [];
+  const localLiveQuotaAttention = active.some(hasActionableLocalQuotaIssue);
 
   return {
     text,
-    tooltip: formatCombinedTooltip(active, options, remoteQuotaRows.length > 0 ? remoteQuotaRows : undefined),
+    tooltip: formatCombinedTooltip(
+      active,
+      options,
+      remoteQuotaRows.length > 0 ? remoteQuotaRows : undefined,
+      localLiveQuotaAttention
+    ),
     severity,
-    providers
+    providers,
+    localLiveQuotaAttention
   };
 }
 
@@ -136,13 +174,12 @@ function formatProviderStatus(state: ProviderUsageState, options: FormatOptions)
   const severity = providerAlertSeverity(state, options, resolved);
   const sourceTag = resolved.showSourceInline ? formatSourceInline(state) : '';
   const inlineSource = sourceTag ? ` ${sourceTag}` : '';
-  const inlineStale = resolved.showStaleInline && state.stale ? ' stale' : '';
   const unavailable = windows.length > 0 ? windows.join(resolved.windowSeparator) : 'unavailable';
   const prefix = resolved.showEmoji ? `${providerQuotaEmoji(state, resolved)} ` : '';
   const text =
     state.error && windows.length === 0
-      ? `${prefix}${label} unavailable${inlineSource}${inlineStale}`.trim()
-      : `${prefix}${label} ${unavailable}${inlineSource}${inlineStale}`.trim();
+      ? `${prefix}${label} unavailable${inlineSource}`.trim()
+      : `${prefix}${label} ${unavailable}${inlineSource}`.trim();
 
   return {
     provider: state.provider,
@@ -215,14 +252,14 @@ function formatProviderWindows(
 function getDisplayedWindows(
   state: ProviderUsageState,
   resolved: ResolvedDisplayParts
-): Array<{ label: string; value: LimitWindow | undefined }> {
-  const windows: Array<{ label: string; value: LimitWindow | undefined }> = [];
+): Array<{ key?: AuthenticatedQuotaWindowKey; label: string; value: LimitWindow | undefined }> {
+  const windows: Array<{ key?: AuthenticatedQuotaWindowKey; label: string; value: LimitWindow | undefined }> = [];
   if (resolved.sevenDayFirst) {
-    if (resolved.showSevenDay) windows.push({ label: '7d', value: state.sevenDay });
-    if (resolved.showFiveHour) windows.push({ label: '5h', value: state.fiveHour });
+    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: quotaWindowForPresentation(state, '7d', state.sevenDay) });
+    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: quotaWindowForPresentation(state, '5h', state.fiveHour) });
   } else {
-    if (resolved.showFiveHour) windows.push({ label: '5h', value: state.fiveHour });
-    if (resolved.showSevenDay) windows.push({ label: '7d', value: state.sevenDay });
+    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: quotaWindowForPresentation(state, '5h', state.fiveHour) });
+    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: quotaWindowForPresentation(state, '7d', state.sevenDay) });
   }
 
   for (const meter of state.meters ?? []) {
@@ -244,7 +281,7 @@ function formatWindow(
   const prefix = resolved.showWindowLabels && !resolved.countdownBeforeValue ? `${label} ` : '';
   if (!window || window.usedPercentage === undefined) {
     const indicator = resolved.showWindowEmoji ? quotaIndicatorForRemaining(undefined, true) : '';
-    return `${prefix}${indicator}?`;
+    return `${prefix}${indicator}—`;
   }
 
   const used = clamp(window.usedPercentage, 0, 100);
@@ -279,6 +316,10 @@ function formatInlineReset(
     return '';
   }
 
+  if (!epochSeconds) {
+    return '';
+  }
+
   const value = formatCountdownValue(epochSeconds);
   return countdownBeforeValue ? value : `(${value})`;
 }
@@ -289,7 +330,7 @@ function providerAlertSeverity(
   resolved = resolveDisplayParts(options)
 ): StatusSeverity {
   const displayedWindows = getDisplayedWindows(state, resolved)
-    .map(window => derivePresentableQuotaWindowState(state, window.value, options));
+    .map(window => derivePresentableQuotaWindowState(state, window.value, options, window.key));
   const critical = displayedWindows.some(window => window.severity === 'critical');
 
   if (critical) {
@@ -389,9 +430,14 @@ function renderProgressBarColored(remainingPercent: number, severity: StatusSeve
 function formatCombinedTooltip(
   states: ProviderUsageState[],
   options: FormatOptions,
-  remoteRows?: RemoteQuotaRow[]
+  remoteRows?: RemoteQuotaRow[],
+  localLiveQuotaAttention = false
 ): string {
   const lines = ['## PromptFuel', '', ...formatCombinedQuotaSummaryLines(states, options, remoteRows)];
+
+  if (localLiveQuotaAttention) {
+    lines.push('', LIVE_QUOTA_ATTENTION_SUMMARY);
+  }
 
   const freshness = formatFreshnessLine(states);
   if (freshness) {
@@ -410,8 +456,8 @@ function formatCombinedQuotaSummaryLines(
   const rows = [
     '**Quota**',
     '',
-    '|  |  |  |  |  |  |  |  |',
-    '|:---|:---:|:---:|---:|:---|:---|:---|:---|'
+    '|  |  |  |  |  |  |  |',
+    '|:---|:---:|:---:|---:|:---|:---|:---|'
   ];
 
   for (const state of states) {
@@ -426,24 +472,19 @@ function formatCombinedQuotaSummaryLines(
 
   if (remoteRows && remoteRows.length > 0) {
     for (const row of remoteRows) {
-      const snapNote = row.stale
-        ? 'snap ⚠ stale'
-        : `snap ${row.snapshotAgeLabel ?? ''}`.trimEnd();
       rows.push(formatCombinedRemoteQuotaRow(
         row.label,
         '7d',
         row.sevenDayRemainingPercent,
         row.sevenDayResetEpochSeconds,
-        options,
-        snapNote
+        options
       ));
       rows.push(formatCombinedRemoteQuotaRow(
         row.label,
         '5h',
         row.fiveHourRemainingPercent,
         row.fiveHourResetEpochSeconds,
-        options,
-        snapNote
+        options
       ));
     }
   }
@@ -456,11 +497,10 @@ function formatCombinedRemoteQuotaRow(
   windowLabel: '7d' | '5h',
   remainingPercent: number | undefined,
   resetEpochSeconds: number | undefined,
-  options: FormatOptions,
-  snapshotNote: string
+  options: FormatOptions
 ): string {
   if (remainingPercent === undefined) {
-    return `| ${label} | ${windowLabel} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | | ${snapshotNote} |`;
+    return `| ${label} | ${windowLabel} | ${quotaIndicatorForRemaining(undefined, true)} | — | | — | |`;
   }
   const clamped = clamp(remainingPercent, 0, 100);
   const severity = remainingSeverity(clamped);
@@ -469,7 +509,7 @@ function formatCombinedRemoteQuotaRow(
   const bar = renderProgressBarColored(clamped, severity);
   const countdown = formatTableCountdown(resetEpochSeconds);
   const resetTime = formatTableResetTime(resetEpochSeconds);
-  return `| ${label} | ${windowLabel} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} | ${snapshotNote} |`;
+  return `| ${label} | ${windowLabel} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} |`;
 }
 
 function remainingSeverity(remaining: number): StatusSeverity {
@@ -495,21 +535,22 @@ function formatCombinedQuotaWindowRow(
   window: LimitWindow | undefined,
   options: FormatOptions
 ): string {
+  const value = quotaWindowForPresentation(state, label, window);
   const provider = providerDisplayName(state, options);
-  if (!window || window.usedPercentage === undefined) {
-    return `| ${provider} | ${label} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | | |`;
+  if (!value || value.usedPercentage === undefined) {
+    return `| ${provider} | ${label} | ${quotaIndicatorForRemaining(undefined, true)} | — | | — | |`;
   }
 
-  const used = clamp(window.usedPercentage, 0, 100);
+  const used = clamp(value.usedPercentage, 0, 100);
   const remaining = clamp(100 - used, 0, 100);
-  const severity = windowSeverity(window);
+  const severity = windowSeverity(value);
   const emoji = quotaIndicatorForRemaining(remaining);
   const pct = formatWindowPercent(remaining, true, true);
   const bar = renderProgressBarColored(remaining, severity);
-  const countdown = formatTableCountdown(window.resetsAtEpochSeconds);
-  const resetTime = formatTableResetTime(window.resetsAtEpochSeconds);
+  const countdown = formatTableCountdown(value.resetsAtEpochSeconds);
+  const resetTime = formatTableResetTime(value.resetsAtEpochSeconds);
 
-  return `| ${provider} | ${label} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} | |`;
+  return `| ${provider} | ${label} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} |`;
 }
 
 function formatProviderTooltip(state: ProviderUsageState, options: FormatOptions): string {
@@ -564,16 +605,6 @@ export function formatRemoteProviderTooltip(input: RemoteProviderTooltipInput): 
   };
 
   lines.push('', ...formatQuotaSummaryLines(fakeState, formatOptions));
-
-  if (input.snapshotEpochMs && input.snapshotEpochMs > 0) {
-    let freshnessLine = `Updated ${formatAgeLabel(input.snapshotEpochMs)} ago`;
-    if (input.stale) {
-      freshnessLine += ' · ⚠ stale';
-    }
-    lines.push('', freshnessLine);
-  } else if (input.snapshotAgeLabel) {
-    lines.push('', input.stale ? `Snapshot stale · ${input.snapshotAgeLabel}` : `Snapshot ${input.snapshotAgeLabel} ago`);
-  }
 
   return lines.join('\n');
 }
@@ -643,27 +674,28 @@ function formatQuotaWindowRow(
   label: string,
   window: LimitWindow | undefined,
   options: FormatOptions,
-  _state: ProviderUsageState
+  state: ProviderUsageState
 ): string {
-  if (!window || window.usedPercentage === undefined) {
-    return `| ${label} | ${quotaIndicatorForRemaining(undefined, true)} | unavailable | | | |`;
+  const value = quotaWindowForPresentation(state, label, window);
+  if (!value || value.usedPercentage === undefined) {
+    return `| ${label} | ${quotaIndicatorForRemaining(undefined, true)} | — | | — | |`;
   }
 
-  const used = clamp(window.usedPercentage, 0, 100);
+  const used = clamp(value.usedPercentage, 0, 100);
   const remaining = clamp(100 - used, 0, 100);
-  const severity = windowSeverity(window);
+  const severity = windowSeverity(value);
   const emoji = quotaIndicatorForRemaining(remaining);
   const pct = formatWindowPercent(remaining, true, true);
   const bar = renderProgressBarColored(remaining, severity);
-  const countdown = formatTableCountdown(window.resetsAtEpochSeconds);
-  const resetTime = formatTableResetTime(window.resetsAtEpochSeconds);
+  const countdown = formatTableCountdown(value.resetsAtEpochSeconds);
+  const resetTime = formatTableResetTime(value.resetsAtEpochSeconds);
 
   return `| ${label} | ${emoji} | **${pct}** | ${bar} | ${countdown} | ${resetTime} |`;
 }
 
 function formatTableCountdown(epochSeconds: number | undefined): string {
   if (!epochSeconds) {
-    return 'unknown';
+    return '—';
   }
 
   const diff = epochSeconds * 1000 - Date.now();
@@ -881,6 +913,130 @@ function quotaFreshnessForWindow(
       return 'stale';
     default:
       return state.stale ? 'stale' : 'unknown';
+  }
+}
+
+function authenticatedWindowStateFor(
+  state: ProviderUsageState,
+  window: LimitWindow | undefined
+): AuthenticatedQuotaWindowState | undefined {
+  if (!window || !isAuthenticatedDerivedWindow(window)) {
+    return undefined;
+  }
+  if (window === state.fiveHour) {
+    return state.authenticatedWindows?.fiveHour;
+  }
+  if (window === state.sevenDay) {
+    return state.authenticatedWindows?.sevenDay;
+  }
+  return undefined;
+}
+
+function presentableFreshness(availability: AuthenticatedQuotaWindowAvailability): PresentableQuotaFreshness {
+  switch (availability) {
+    case 'live':
+    case 'cached':
+    case 'stale':
+    case 'unavailable':
+      return availability;
+    default:
+      return 'unknown';
+  }
+}
+
+function authenticatedWindowAvailabilityForPresentation(
+  state: ProviderUsageState,
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState
+): AuthenticatedQuotaWindowAvailability {
+  if (window?.sourceKind === 'authenticated'
+      && authenticatedWindow.observation === 'valid'
+      && state.authenticatedStatus === 'success') {
+    return 'live';
+  }
+  return authenticatedWindow.availability;
+}
+
+function quotaWindowForPresentation(
+  state: ProviderUsageState,
+  label: string | undefined,
+  window: LimitWindow | undefined
+): LimitWindow | undefined {
+  if (window || state.provider !== 'codex' || label !== '5h') {
+    return window;
+  }
+
+  const observation = state.authenticatedWindows?.fiveHour;
+  return observation && observation.observation !== 'valid'
+    ? { usedPercentage: 0 }
+    : undefined;
+}
+
+function hasActionableLocalQuotaIssue(state: ProviderUsageState): boolean {
+  if (formatWindowWarningNote(state, state.sevenDay, '7d')
+      || formatWindowWarningNote(state, state.fiveHour, '5h')) {
+    return true;
+  }
+
+  return state.authenticatedStatus === 'auth_expired'
+    || state.authenticatedStatus === 'network_error'
+    || state.authenticatedStatus === 'http_error'
+    || state.authenticatedStatus === 'parse_error'
+    || state.authenticatedStatus === 'backoff';
+}
+
+function formatWindowWarningNote(state: ProviderUsageState, window: LimitWindow | undefined, label?: string): string | undefined {
+  const authenticatedWindow = authenticatedWindowStateFor(state, window)
+    ?? authenticatedWindowStateForLabel(state, label);
+  if (!authenticatedWindow || authenticatedWindow.observation === 'valid') {
+    return undefined;
+  }
+
+  const prefix = authenticatedWindow.availability === 'cached'
+    ? 'cached value'
+    : authenticatedWindow.availability === 'stale'
+      ? 'stale cached value'
+      : 'unavailable';
+  return `${prefix}; live window ${formatWindowObservation(authenticatedWindow.observation)}`;
+}
+
+function authenticatedWindowStateForLabel(
+  state: ProviderUsageState,
+  label: string | undefined
+): AuthenticatedQuotaWindowState | undefined {
+  if (label === '5h') {
+    return state.fiveHour && !isAuthenticatedDerivedWindow(state.fiveHour)
+      ? undefined
+      : state.authenticatedWindows?.fiveHour;
+  }
+  if (label === '7d') {
+    return state.sevenDay && !isAuthenticatedDerivedWindow(state.sevenDay)
+      ? undefined
+      : state.authenticatedWindows?.sevenDay;
+  }
+  return undefined;
+}
+
+function isAuthenticatedDerivedWindow(window: LimitWindow): boolean {
+  return window.sourceKind === 'authenticated'
+    || window.sourceKind === 'cache'
+    || window.sourceKind === 'stale';
+}
+
+function formatWindowObservation(observation: AuthenticatedQuotaWindowObservation): string {
+  switch (observation) {
+    case 'absent':
+      return 'not supplied';
+    case 'null':
+      return 'returned null';
+    case 'unsupported':
+      return 'unsupported';
+    case 'disabled':
+      return 'disabled';
+    case 'malformed':
+      return 'unreadable';
+    default:
+      return 'unavailable';
   }
 }
 

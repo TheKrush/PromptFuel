@@ -357,7 +357,7 @@ function main() {
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange, usageCardsByKey: usageCardsByKey }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange, usageCardsByKey: usageCardsByKey }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -433,7 +433,7 @@ function main() {
       provider: 'claude',
       label: 'Claude',
       windows: [
-        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 84, resetIso: '2026-06-04T12:00:00.000Z' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 84, resetIso: '2026-06-04T12:00:00.000Z', health: 'missing' },
         { key: 'sevenDay', label: '7d', available: true, remainingPercent: 42, resetIso: '2026-06-05T12:00:00.000Z' }
       ]
     },
@@ -446,22 +446,184 @@ function main() {
       ]
     }
   ]);
-  const expectedGlanceColumns = ['provider', '7d-label', '7d-bar', '7d-percent', '7d-reset', '5h-label', '5h-bar', '5h-percent', '5h-reset', 'status'];
+  const expectedGlanceColumns = ['provider', '7d-label', '7d-bar', '7d-percent', '7d-reset', '5h-label', '5h-bar', '5h-percent', '5h-reset'];
   assert.equal(glanceRowCount(glanceHtml), 2, 'At-a-glance fixture renders one row per provider/source');
-  assert.deepEqual(glanceRowColumns(glanceHtml)[0], expectedGlanceColumns, 'At-a-glance rows render the shared ten-column structure');
-  assert.deepEqual(glanceRowColumns(glanceHtml)[1], expectedGlanceColumns, 'At-a-glance rows keep the ten-column structure when a window is missing');
+  assert.deepEqual(glanceRowColumns(glanceHtml)[0], expectedGlanceColumns, 'At-a-glance rows render the shared window structure without a status column');
+  assert.deepEqual(glanceRowColumns(glanceHtml)[1], expectedGlanceColumns, 'At-a-glance rows keep the window structure when a window is missing');
   assert.match(glanceHtml, /usage-glance-col-7d-bar/, 'At-a-glance markup includes stable 7d bar column class');
   assert.match(glanceHtml, /usage-glance-col-5h-reset/, 'At-a-glance markup includes stable 5h reset column class');
   assert.match(glanceHtml, /data-glance-col="7d-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 7d bar cell');
   assert.match(glanceHtml, /data-glance-col="5h-bar"[^>]*>[\s\S]*?usage-progress/, 'progress bar markup stays inside the 5h bar cell');
-  assert.match(glanceHtml, /data-glance-col="status">[^<]+<\/div>/, 'status text is inside the status cell');
+  assert.doesNotMatch(glanceHtml, /data-glance-col="status"|usage-glance-badge/, 'At-a-glance omits the redundant provider-status column');
+  assert.doesNotMatch(glanceHtml, /usage-glance-row[^>]*\b(?:degraded|warning|missing|stale)\b/, 'provider rows never inherit child-window health classes');
+  assert.doesNotMatch(glanceHtml, /source-chip quota-health|>Missing<|>Stale<|>current<|>partial</i, 'At-a-glance rows contain only measurements, never health or provider-status presentation');
+  assert.match(glanceHtml, /data-glance-col="7d-label">7d<\/span>/, '7d label cell contains only the fixed window label');
+  assert.match(glanceHtml, /data-glance-col="5h-label">5h<\/span>/, '5h label cell contains only the fixed window label');
+  assert.match(glanceHtml, /data-glance-col="5h-percent">84%<\/span>/, 'window percentage remains free of an appended marker');
+  const cachedWindowHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(
+    { key: 'fiveHour', label: '5h', available: true, remainingPercent: 84, freshness: 'cached' },
+    '5h'
+  );
+  const staleWindowHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(
+    { key: 'sevenDay', label: '7d', available: true, remainingPercent: 42, health: 'stale' },
+    '7d'
+  );
+  const liveWindowHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(
+    { key: 'sevenDay', label: '7d', available: true, remainingPercent: 42, freshness: 'live' },
+    '7d'
+  );
+  const missingSevenDayHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(undefined, '7d');
+  const missingFiveHourHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(undefined, '5h');
+  assert.match(missingSevenDayHtml, /data-glance-col="7d-label">7d<\/span>/, 'missing 7d object retains the fixed label');
+  assert.match(missingFiveHourHtml, /data-glance-col="5h-label">5h<\/span>/, 'missing 5h object retains the fixed label');
+  assert.doesNotMatch(missingSevenDayHtml + missingFiveHourHtml, /source-chip quota-health|tabindex=|aria-label=/, 'missing windows remain ordinary, non-focusable measurement cells');
+  assert.doesNotMatch(cachedWindowHtml, /quota-health/, 'fresh cached windows render no health chip');
+  assert.match(cachedWindowHtml, /data-glance-col="5h-label">5h<\/span>/, 'cached window label cell remains label-only');
+  assert.match(cachedWindowHtml, /data-glance-col="5h-percent">84%<\/span>/, 'cached percentage has no marker');
+  assert.doesNotMatch(cachedWindowHtml, /Cached quota value|freshness|provenance/i, 'fresh cached windows expose no provenance health treatment');
+  assert.doesNotMatch(staleWindowHtml, /source-chip quota-health|tabindex=|aria-label=/, 'stale windows remain ordinary, non-focusable measurement cells');
+  assert.match(staleWindowHtml, /data-glance-col="7d-label">7d<\/span>/, 'stale window label cell remains label-only');
+  assert.match(staleWindowHtml, /data-glance-col="7d-percent">42%<\/span>/, 'stale percentage has no marker');
+  assert.doesNotMatch(liveWindowHtml, /quota-health|tabindex=|aria-label=/, 'live windows remain normal and non-focusable');
+  assert.doesNotMatch(cachedWindowHtml + staleWindowHtml + liveWindowHtml, />[!CS⚠▲△]<|%[!CS⚠▲△]/, 'window labels and values contain no state glyphs or letters');
+
+  const healthyIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
+    provider: 'codex', label: 'Codex', windows: [
+      { key: 'sevenDay', label: '7d', available: true, remainingPercent: 42, freshness: 'cached' },
+      { key: 'fiveHour', label: '5h', available: true, remainingPercent: 84 }
+    ]
+  }]);
+  assert.equal(healthyIssuesHtml, '', 'healthy visible windows render no Quota issues heading, container, or spacing');
+  const missingIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
+    provider: 'codex', label: 'Codex', windows: [
+      { key: 'sevenDay', label: '7d', available: true, remainingPercent: 34 },
+      { key: 'fiveHour', label: '5h', available: true, remainingPercent: 100, health: 'missing', healthDetail: 'Live quota unavailable; showing 100% fallback.' }
+    ]
+  }]);
+  assert.match(missingIssuesHtml, /Quota issues[\s\S]*Codex[\s\S]*5h[\s\S]*>Missing<[\s\S]*Live quota unavailable; showing 100% fallback\./, 'one missing window renders one concise, accessible issue row');
+  assert.match(missingIssuesHtml, /class="quota-issue-state missing">Missing<\//, 'one missing window renders a plain Missing state cell');
+  assert.doesNotMatch(missingIssuesHtml, /source-chip|tabindex=|aria-label=/, 'Quota issues state text is neither a chip nor a focus target');
+
+  const provenanceModel = buildUsageDashboardModel({
+    states: [{
+      provider: 'codex',
+      sourceKind: 'localSession',
+      source: 'local Codex session snapshot',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      fiveHour: {
+        usedPercentage: 30,
+        resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 3600,
+        sourceKind: 'localSession',
+        sourceUpdatedEpochMs: Date.now() - 60_000
+      },
+      sevenDay: {
+        usedPercentage: 0,
+        resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 86_400,
+        sourceKind: 'authenticated',
+        sourceUpdatedEpochMs: Date.now()
+      },
+      authenticatedWindows: {
+        fiveHour: { observation: 'malformed', availability: 'cached', lastLiveEpochMs: Date.now() - 60_000 },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: Date.now() }
+      }
+    }],
+    enabledProviders: ['codex']
+  });
+  const provenanceProvider = provenanceModel.providers[0];
+  const provenanceFiveHour = provenanceProvider.windows.find(window => window.key === 'fiveHour');
+  const provenanceSevenDay = provenanceProvider.windows.find(window => window.key === 'sevenDay');
+  assert.ok(provenanceFiveHour, 'provenance fixture keeps the retained local-session 5h window in the dashboard model');
+  assert.ok(provenanceSevenDay, 'provenance fixture keeps the independent live authenticated 7d window in the dashboard model');
+  assert.equal(provenanceFiveHour.available, true, 'retained local-session 5h value remains numerically available');
+  assert.equal(provenanceFiveHour.remainingPercent, 70, 'retained local-session 5h value keeps its numeric percentage');
+  assert.equal(provenanceFiveHour.freshness, undefined, 'retained local-session 5h value has no authenticated freshness');
+  assert.equal(provenanceFiveHour.warning, undefined, 'retained local-session 5h value has no authenticated warning');
+  assert.equal(provenanceSevenDay.remainingPercent, 100, 'live authenticated 7d value remains independently available');
+  assert.equal(provenanceSevenDay.freshness, 'live', 'live authenticated 7d value remains independently live');
+  assert.equal(provenanceSevenDay.warning, undefined, 'live authenticated 7d value remains unmarked');
+
+  const provenanceFiveHourHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(provenanceFiveHour, '5h');
+  const provenanceSevenDayHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(provenanceSevenDay, '7d');
+  const provenanceRowHtml = sandbox.__combinedDashboardTest.renderGlanceList(provenanceModel.providers);
+  assert.match(provenanceFiveHourHtml, /70%/, 'real glance-window renderer keeps the retained local-session 5h numeric value visible');
+  assert.doesNotMatch(provenanceFiveHourHtml, /quota-health/, 'real glance-window renderer does not mark retained local-session 5h');
+  assert.doesNotMatch(provenanceFiveHourHtml, /Cached value|Stale cached value|live window/i, 'retained local-session 5h emits no cached or failed-live accessible/title wording');
+  assert.match(provenanceSevenDayHtml, /100%/, 'real glance-window renderer keeps the independent live authenticated 7d numeric value visible');
+  assert.doesNotMatch(provenanceSevenDayHtml, /quota-health/, 'real glance-window renderer leaves live authenticated 7d normal');
+  assert.doesNotMatch(provenanceRowHtml, /Cached value|Stale cached value|live window/i, 'real glance-row renderer does not attach authenticated fallback wording to the retained local-session value');
+
+  ['localSession', 'statusLine', 'hook'].forEach(function(sourceKind) {
+    const sourceModel = buildUsageDashboardModel({
+      states: [{
+        provider: 'codex',
+        sourceKind: sourceKind,
+        source: sourceKind + ' fixture',
+        stale: false,
+        sevenDay: { usedPercentage: 20, sourceKind: sourceKind },
+        fiveHour: { usedPercentage: 40, sourceKind: sourceKind }
+      }],
+      enabledProviders: ['codex']
+    });
+    const sourceHtml = sandbox.__combinedDashboardTest.renderGlanceList(sourceModel.providers);
+    assert.doesNotMatch(sourceHtml, /quota-health/, sourceKind + ' provenance does not create a health chip');
+  });
+
+  const freshSnapshotHtml = sandbox.__combinedDashboardTest.renderGlanceList([{
+    provider: 'codex',
+    label: 'Codex WATCHER',
+    machineLabel: 'WATCHER',
+    windows: [
+      { key: 'sevenDay', label: '7d', available: true, remainingPercent: 55 },
+      { key: 'fiveHour', label: '5h', available: true, remainingPercent: 80 }
+    ]
+  }]);
+  assert.doesNotMatch(freshSnapshotHtml, /quota-health|snapshot|imported/i, 'fresh imported values render without a health chip or provenance marker');
+  assert.equal(sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
+    provider: 'codex', label: 'Codex WATCHER', machineLabel: 'WATCHER', windows: [
+      { key: 'sevenDay', label: '7d', available: true, remainingPercent: 55 },
+      { key: 'fiveHour', label: '5h', available: true, remainingPercent: 80, freshness: 'cached' }
+    ]
+  }]), '', 'fresh imported or cached values create no issue section');
+
+  const partialModel = buildUsageDashboardModel({
+    states: [{
+      provider: 'codex',
+      source: 'live authenticated refresh',
+      stale: true,
+      authenticatedStatus: 'success',
+      sevenDay: { usedPercentage: 66, sourceKind: 'authenticated' },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'cached', lastLiveEpochMs: Date.now() },
+        fiveHour: { observation: 'absent', availability: 'unavailable' }
+      }
+    }],
+    enabledProviders: ['codex']
+  });
+  const partialProvider = partialModel.providers[0];
+  const partialHtml = sandbox.__combinedDashboardTest.renderGlanceList(partialModel.providers);
+  assert.equal(partialProvider.stale, false, 'one live authenticated window prevents provider-wide stale presentation');
+  assert.equal(partialProvider.status, 'partial', 'live plus unavailable sibling uses partial provider status');
+  assert.equal(partialProvider.windows.find(window => window.key === 'sevenDay').freshness, 'live', 'valid authenticated success normalizes 7d presentation to live');
+  assert.doesNotMatch(partialHtml, /data-glance-col="status"|>partial<|>stale<|>current</, 'provider status words are omitted');
+  assert.match(partialHtml, /data-glance-col="7d-percent">34%<\/span>/, 'live 7d value has no cached or stale marker');
+  assert.match(partialHtml, /data-glance-col="5h-percent">100%<\/span>/, 'missing 5h keeps its truthful 100% presentation fallback without a glyph');
+  assert.match(partialHtml, /data-glance-col="5h-reset"><\/span>/, 'missing 5h has no reset countdown or health decoration');
+  assert.doesNotMatch(partialHtml, /source-chip quota-health|tabindex=|aria-label=/, 'At-a-glance does not retain health-only focus targets');
+  const overviewPartialIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(
+    sandbox.__combinedDashboardTest.scopeProvidersByTab(partialModel.providers, 'overview')
+  );
+  const providerPartialIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(
+    sandbox.__combinedDashboardTest.scopeProvidersByTab(partialModel.providers, 'codex')
+  );
+  assert.match(overviewPartialIssuesHtml, /quota-issue-state missing">Missing<[\s\S]*Live quota unavailable; showing 100% fallback\./, 'Overview places the missing fallback issue below the measurement grid');
+  assert.match(providerPartialIssuesHtml, /quota-issue-state missing">Missing</, 'Codex tab keeps its own missing issue');
   const glanceStaleHtml = sandbox.__combinedDashboardTest.renderGlanceList([
     {
       provider: 'claude',
       label: 'Claude',
-      stale: true,
       windows: [
-        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 30, resetIso: '2026-06-05T12:00:00.000Z' },
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 30, resetIso: '2026-06-05T12:00:00.000Z', health: 'stale' },
         { key: 'fiveHour', label: '5h', available: true, remainingPercent: 60, resetIso: '2026-06-04T12:00:00.000Z' }
       ]
     },
@@ -478,15 +640,41 @@ function main() {
       label: 'Codex snapshot',
       machineLabel: 'snapshot',
       windows: [
-        { key: 'sevenDay', label: '7d', available: false },
-        { key: 'fiveHour', label: '5h', available: false }
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 55, health: 'stale' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 80, health: 'stale' }
       ]
     }
   ]);
-  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[0], expectedGlanceColumns, 'stale Claude row keeps the ten-column slot structure');
-  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[1], expectedGlanceColumns, 'Codex current row keeps the ten-column slot structure alongside a stale row');
-  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[2], expectedGlanceColumns, 'Codex snapshot row keeps the ten-column slot structure');
-  assert.match(glanceStaleHtml, /usage-glance-row stale/, 'stale row renders the stale modifier class');
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[0], expectedGlanceColumns, 'stale Claude row keeps the window slot structure');
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[1], expectedGlanceColumns, 'Codex current row keeps the window slot structure alongside a stale row');
+  assert.deepEqual(glanceRowColumns(glanceStaleHtml)[2], expectedGlanceColumns, 'Codex imported row keeps the window slot structure');
+  assert.doesNotMatch(glanceStaleHtml, /source-chip quota-health|>Stale</, 'stale windows do not decorate At-a-glance rows');
+  const staleIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([
+    {
+      provider: 'claude', label: 'Claude', windows: [
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 30, health: 'stale', healthDetail: 'Last updated 5d ago.' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 60 }
+      ]
+    },
+    {
+      provider: 'codex', label: 'Codex WATCHER', windows: [
+        { key: 'sevenDay', label: '7d', available: true, remainingPercent: 55, health: 'stale', healthDetail: 'Last updated 5d ago.' },
+        { key: 'fiveHour', label: '5h', available: true, remainingPercent: 80, health: 'stale', healthDetail: 'Last updated 5d ago.' }
+      ]
+    }
+  ]);
+  assert.equal((staleIssuesHtml.match(/quota-issue-state stale/g) || []).length, 3, 'stale windows create one independent plain Stale state each');
+  assert.match(staleIssuesHtml, /Codex WATCHER[\s\S]*7d[\s\S]*>Stale<[\s\S]*Codex WATCHER[\s\S]*5h[\s\S]*>Stale</, 'stale rows retain provider order and seven-day before five-hour ordering');
+  assert.doesNotMatch(staleIssuesHtml, /source-chip|tabindex=|aria-label=/, 'Stale issue states stay plain visible text without chip behavior');
+  assert.doesNotMatch(staleIssuesHtml, /snapshot|imported|cached|remote/i, 'stale issue details never expose provenance');
+  const claudeScopedIssues = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(
+    sandbox.__combinedDashboardTest.scopeProvidersByTab([
+      { provider: 'claude', label: 'Claude', windows: [{ key: 'sevenDay', label: '7d', health: 'stale', healthDetail: 'Quota value is stale.' }] },
+      { provider: 'codex', label: 'Codex', windows: [{ key: 'fiveHour', label: '5h', health: 'missing', healthDetail: 'Live quota unavailable.' }] }
+    ], 'claude')
+  );
+  assert.match(claudeScopedIssues, /Claude[\s\S]*Stale/, 'Claude tab includes its scoped issue');
+  assert.doesNotMatch(claudeScopedIssues, /Codex|Missing/, 'Claude tab does not leak Codex issues');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
   const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
   const combinedOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, selectedCombinedChart, '1M');
@@ -972,8 +1160,21 @@ function main() {
   assert.match(styles, /usage-history-bar-segment\.codex:not\(\.model\)[\s\S]*repeating-linear-gradient/, 'Codex fallback provider bars use hatch treatment');
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
-  assert.doesNotMatch(styles, /\.usage-glance-row\.stale > \.usage-glance-cell\{[^}]*\bborder-style:dashed/, 'stale glance cell rule does not use bare border-style which creates unwanted side borders');
-  assert.match(styles, /\.usage-glance-row\.stale > \.usage-glance-cell\{[^}]*border-top-style:dashed/, 'stale glance rows target only top and bottom border sides');
+  assert.doesNotMatch(styles, /\.usage-glance-row\.stale|\.usage-glance-badge|\.usage-glance-window\.(?:degraded|warning|freshness|missing|stale)/, 'provider-wide and full-window health styles are removed');
+  assert.doesNotMatch(styles, /\.source-chip\.quota-health/, 'Quota issues remove the obsolete health-chip CSS');
+  assert.match(styles, /\.quota-issue-state\{[^}]*text-align:left[^}]*white-space:nowrap/, 'Quota issue state remains compact, left-aligned text');
+  assert.match(styles, /\.quota-issue-state\.missing\{[^}]*inputValidation-error/, 'Missing state uses a subtle theme-aware text color');
+  assert.match(styles, /\.quota-issue-state\.stale\{[^}]*inputValidation-warning/, 'Stale state uses a subtle theme-aware text color');
+  assert.doesNotMatch(styles, /\.quota-issue-state(?:\.missing|\.stale)?\{[^}]*(?:border|background|border-radius|padding)/, 'Quota issue state text has no chip border, fill, radius, or padding');
+  assert.doesNotMatch(styles, /\.quota-issue-state[^\{]*:focus/, 'Quota issue state has no chip-specific focus styling');
+  assert.match(styles, /\.source-chip\{[^}]*padding:[^}]*border-radius:[^}]*border:/, 'shared source-chip styling remains available to other dashboard surfaces');
+  assert.match(scriptSource, /source-chip ' \+ cfg\.cls[\s\S]*tabindex="0"/, 'other dashboard source chips retain their interactive markup');
+  assert.match(styles, /\.usage-glance-win-label\{[^}]*white-space:nowrap[^}]*overflow:hidden/, 'fixed quota-label cells contain their non-wrapping labels');
+  assert.match(styles, /\.usage-glance-list\{[^}]*grid-template-columns:minmax\(80px,160px\) 22px/, 'At-a-glance restores one shared aligned measurement grid');
+  assert.match(styles, /\.usage-glance-row\{[^}]*display:contents/, 'provider rows participate in the shared aligned grid without wrapper columns');
+  assert.doesNotMatch(styles, /usage-glance-reset-text|usage-glance-window/, 'At-a-glance has no chip-placement wrapper or reset-text styling');
+  assert.match(styles, /\.quota-issue-row\{[^}]*grid-template-columns:[^}]*minmax\(0,1fr\)/, 'Quota issues reserve the flexible column for wrapping details');
+  assert.match(styles, /\.quota-issue-details\{[^}]*overflow-wrap:anywhere/, 'Quota issue details wrap safely at narrow widths');
 
   console.log('PASS: usage dashboard rendering smoke tests passed.');
 }

@@ -2,7 +2,17 @@ import * as fs from 'node:fs/promises';
 import * as https from 'node:https';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { AuthenticatedQuotaStatus, LimitWindow, ProviderName, ProviderUsageState, UsageMeter, UsageMeterScope } from '../types';
+import {
+  AuthenticatedQuotaStatus,
+  AuthenticatedQuotaWindowKey,
+  AuthenticatedQuotaWindowObservation,
+  AuthenticatedQuotaWindowState,
+  LimitWindow,
+  ProviderName,
+  ProviderUsageState,
+  UsageMeter,
+  UsageMeterScope
+} from '../types';
 import { isStale } from '../usageTime';
 import { USER_AGENT } from '../version';
 
@@ -13,7 +23,16 @@ const MAX_RESPONSE_BYTES = 128 * 1024;
 const FIVE_HOUR_SECONDS = 18_000;
 const SEVEN_DAY_SECONDS = 604_800;
 const KNOWN_CLAUDE_PRIMARY_KEYS = new Set(['five_hour', 'seven_day', 'seven_day_opus']);
-const KNOWN_CODEX_PRIMARY_KEYS = new Set(['primary_window', 'primary', 'secondary_window', 'secondary']);
+const CODEX_PRIMARY_WINDOW_ALIASES: ReadonlyArray<{
+  alias: string;
+  fallbackKey: AuthenticatedQuotaWindowKey;
+}> = [
+  { alias: 'primary_window', fallbackKey: 'fiveHour' },
+  { alias: 'primary', fallbackKey: 'fiveHour' },
+  { alias: 'secondary_window', fallbackKey: 'sevenDay' },
+  { alias: 'secondary', fallbackKey: 'sevenDay' }
+];
+const KNOWN_CODEX_PRIMARY_KEYS = new Set(CODEX_PRIMARY_WINDOW_ALIASES.map(({ alias }) => alias));
 
 export const CLAUDE_OPUS_USAGE_METER_ID = 'claude-seven-day-opus';
 
@@ -21,6 +40,7 @@ export interface ParsedProviderQuota {
   fiveHour?: LimitWindow;
   sevenDay?: LimitWindow;
   meters?: UsageMeter[];
+  primaryWindowObservations?: Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowObservation>>;
 }
 
 export interface AuthenticatedQuotaFetchOutcome {
@@ -44,12 +64,29 @@ export async function readAuthenticatedQuotaCache(stateDirectory: string): Promi
     const parsed = JSON.parse(raw) as { providers?: ProviderUsageState[] };
     const result: Partial<Record<ProviderName, ProviderUsageState>> = {};
     for (const state of parsed.providers ?? []) {
-      if (state.provider === 'claude' || state.provider === 'codex') {
+      if (state.provider === 'claude') {
+        const { authenticatedWindows: _authenticatedWindows, ...legacyClaudeState } = state;
         result[state.provider] = {
-          ...state,
+          ...legacyClaudeState,
           meters: cachedMetersForState(state),
           stale: isStale(state.lastUpdatedEpochMs ?? state.lastAuthenticatedRefreshEpochMs),
           source: state.source ?? 'stale cached authenticated quota'
+        };
+        continue;
+      }
+
+      if (state.provider === 'codex') {
+        const authenticatedWindows = cachedAuthenticatedWindowStates(state);
+        const stale = isStale(state.lastUpdatedEpochMs ?? state.lastAuthenticatedRefreshEpochMs);
+        result[state.provider] = {
+          ...state,
+          fiveHour: cacheWindow(state.fiveHour, authenticatedWindows.fiveHour),
+          sevenDay: cacheWindow(state.sevenDay, authenticatedWindows.sevenDay),
+          meters: cachedMetersForState(state),
+          sourceKind: stale ? 'stale' : 'cache',
+          stale,
+          source: stale ? 'stale cached authenticated quota' : 'cached authenticated quota',
+          ...(Object.keys(authenticatedWindows).length > 0 ? { authenticatedWindows } : {})
         };
       }
     }
@@ -110,7 +147,7 @@ async function fetchClaudeQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
     return authFailure(provider, 'parse_error', 'Claude usage response did not include recognizable 5h/7d or generic meter windows.');
   }
 
-  return success(provider, quota.fiveHour, quota.sevenDay, quota.meters, response.statusCode);
+  return buildAuthenticatedQuotaSuccessOutcome(provider, quota, response.statusCode);
 }
 
 async function fetchCodexQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
@@ -147,29 +184,30 @@ async function fetchCodexQuota(): Promise<AuthenticatedQuotaFetchOutcome> {
     return authFailure(provider, 'parse_error', 'Codex usage response did not include recognizable 5h/7d or generic meter windows.');
   }
 
-  return success(provider, quota.fiveHour, quota.sevenDay, quota.meters, response.statusCode);
+  return buildAuthenticatedQuotaSuccessOutcome(provider, quota, response.statusCode);
 }
 
-function success(
+export function buildAuthenticatedQuotaSuccessOutcome(
   provider: ProviderName,
-  fiveHour: LimitWindow | undefined,
-  sevenDay: LimitWindow | undefined,
-  meters: UsageMeter[] | undefined,
-  statusCode: number | undefined
+  quota: ParsedProviderQuota,
+  statusCode: number | undefined,
+  nowEpochMs = Date.now()
 ): AuthenticatedQuotaFetchOutcome {
-  const now = Date.now();
   return {
     provider,
     success: true,
     state: {
       provider,
-      fiveHour,
-      sevenDay,
-      meters,
+      fiveHour: quota.fiveHour,
+      sevenDay: quota.sevenDay,
+      meters: quota.meters,
       sourceKind: 'authenticated',
       source: 'live authenticated refresh',
-      lastUpdatedEpochMs: now,
-      lastAuthenticatedRefreshEpochMs: now,
+      lastUpdatedEpochMs: nowEpochMs,
+      lastAuthenticatedRefreshEpochMs: nowEpochMs,
+      ...(quota.primaryWindowObservations
+        ? { authenticatedWindows: authenticatedWindowStatesFromObservations(quota.primaryWindowObservations, nowEpochMs) }
+        : {}),
       authenticatedStatus: 'success',
       authenticatedHttpStatus: statusCode,
       stale: false
@@ -339,10 +377,11 @@ export function parseCodexQuotaPayload(body: Record<string, unknown> | undefined
   }
 
   const rateLimit = asRecord(body.rate_limit) ?? asRecord(body.rate_limits);
-  const primaryWindow = asRecord(rateLimit?.primary_window) ?? asRecord(rateLimit?.primary);
-  const secondaryWindow = asRecord(rateLimit?.secondary_window) ?? asRecord(rateLimit?.secondary);
-  const fiveHour = parseCodexWindow(primaryWindow, FIVE_HOUR_SECONDS);
-  const sevenDay = parseCodexWindow(secondaryWindow, SEVEN_DAY_SECONDS);
+  const candidates = collectCodexPrimaryWindowCandidates(rateLimit);
+  const fiveHourResult = parseCodexPrimaryWindow(candidates, 'fiveHour', FIVE_HOUR_SECONDS);
+  const sevenDayResult = parseCodexPrimaryWindow(candidates, 'sevenDay', SEVEN_DAY_SECONDS);
+  const fiveHour = fiveHourResult.window;
+  const sevenDay = sevenDayResult.window;
   const meters = collectUsageMeters(
     Object.entries(rateLimit ?? {}).map(([key, value]) => {
       if (KNOWN_CODEX_PRIMARY_KEYS.has(key)) {
@@ -359,7 +398,11 @@ export function parseCodexQuotaPayload(body: Record<string, unknown> | undefined
   return {
     fiveHour,
     sevenDay,
-    ...(meters ? { meters } : {})
+    ...(meters ? { meters } : {}),
+    primaryWindowObservations: {
+      fiveHour: fiveHourResult.observation,
+      sevenDay: sevenDayResult.observation
+    }
   };
 }
 
@@ -416,8 +459,164 @@ function sanitizeAuthenticatedState(state: ProviderUsageState): ProviderUsageSta
     authenticatedStatus: state.authenticatedStatus,
     authenticatedHttpStatus: state.authenticatedHttpStatus,
     authenticatedError: state.authenticatedError,
+    authenticatedWindows: state.authenticatedWindows,
     stale: state.stale,
     diagnosticSeverity: state.diagnosticSeverity
+  };
+}
+
+interface ParsedCodexPrimaryWindow {
+  window?: LimitWindow;
+  observation: AuthenticatedQuotaWindowObservation;
+}
+
+interface CodexPrimaryWindowCandidate {
+  value: unknown;
+  logicalKey?: AuthenticatedQuotaWindowKey;
+}
+
+function collectCodexPrimaryWindowCandidates(
+  rateLimit: Record<string, unknown> | undefined
+): CodexPrimaryWindowCandidate[] {
+  return CODEX_PRIMARY_WINDOW_ALIASES
+    .filter(({ alias }) => Object.prototype.hasOwnProperty.call(rateLimit ?? {}, alias))
+    .map(({ alias, fallbackKey }) => {
+      const value = rateLimit?.[alias];
+      const record = asRecord(value);
+      if (!record) {
+        return { value, logicalKey: fallbackKey };
+      }
+
+      const durationSeconds = parseUsageMeterWindowSeconds(record);
+      if (durationSeconds === FIVE_HOUR_SECONDS) {
+        return { value, logicalKey: 'fiveHour' as const };
+      }
+      if (durationSeconds === SEVEN_DAY_SECONDS) {
+        return { value, logicalKey: 'sevenDay' as const };
+      }
+      if (durationSeconds !== undefined || hasCodexWindowDurationMetadata(record)) {
+        return { value };
+      }
+
+      return { value, logicalKey: fallbackKey };
+    });
+}
+
+function parseCodexPrimaryWindow(
+  candidates: CodexPrimaryWindowCandidate[],
+  logicalKey: AuthenticatedQuotaWindowKey,
+  expectedSeconds: number
+): ParsedCodexPrimaryWindow {
+  const values = candidates
+    .filter(candidate => candidate.logicalKey === logicalKey)
+    .map(candidate => candidate.value);
+
+  if (values.length === 0) {
+    return { observation: 'absent' };
+  }
+
+  const records = values.map(asRecord).filter((value): value is Record<string, unknown> => Boolean(value));
+  if (records.some(window => asBoolean(window.unsupported) === true || asBoolean(window.supported) === false)) {
+    return { observation: 'unsupported' };
+  }
+  if (records.some(window => asBoolean(window.disabled) === true || asBoolean(window.enabled) === false)) {
+    return { observation: 'disabled' };
+  }
+
+  for (const value of values) {
+    const window = parseCodexWindow(asRecord(value), expectedSeconds);
+    if (window?.usedPercentage !== undefined) {
+      return { window, observation: 'valid' };
+    }
+  }
+  if (values.some(value => value === null)) {
+    return { observation: 'null' };
+  }
+
+  return { observation: 'malformed' };
+}
+
+function hasCodexWindowDurationMetadata(window: Record<string, unknown>): boolean {
+  return ['limit_window_seconds', 'window_seconds', 'windowSeconds', 'window_minutes']
+    .some(field => Object.prototype.hasOwnProperty.call(window, field));
+}
+
+export function authenticatedWindowStatesFromObservations(
+  observations: NonNullable<ParsedProviderQuota['primaryWindowObservations']>,
+  nowEpochMs: number
+): Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> {
+  return {
+    fiveHour: authenticatedWindowStateFromObservation(observations.fiveHour ?? 'absent', nowEpochMs),
+    sevenDay: authenticatedWindowStateFromObservation(observations.sevenDay ?? 'absent', nowEpochMs)
+  };
+}
+
+function authenticatedWindowStateFromObservation(
+  observation: AuthenticatedQuotaWindowObservation,
+  nowEpochMs: number
+): AuthenticatedQuotaWindowState {
+  if (observation === 'valid') {
+    return { observation, availability: 'live', lastLiveEpochMs: nowEpochMs };
+  }
+  return { observation, availability: 'unavailable' };
+}
+
+function cachedAuthenticatedWindowStates(
+  state: ProviderUsageState
+): Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> {
+  const fiveHour = cachedAuthenticatedWindowState(state.authenticatedWindows?.fiveHour, state.fiveHour, state.lastUpdatedEpochMs);
+  const sevenDay = cachedAuthenticatedWindowState(state.authenticatedWindows?.sevenDay, state.sevenDay, state.lastUpdatedEpochMs);
+  return {
+    ...(fiveHour ? { fiveHour } : {}),
+    ...(sevenDay ? { sevenDay } : {})
+  };
+}
+
+function cachedAuthenticatedWindowState(
+  existing: AuthenticatedQuotaWindowState | undefined,
+  window: LimitWindow | undefined,
+  legacyLastUpdatedEpochMs: number | undefined
+): AuthenticatedQuotaWindowState | undefined {
+  if (!existing && !window) {
+    return undefined;
+  }
+
+  if (!window) {
+    return existing
+      ? {
+        observation: existing.observation,
+        availability: 'unavailable',
+        ...(existing.lastLiveEpochMs !== undefined ? { lastLiveEpochMs: existing.lastLiveEpochMs } : {})
+      }
+      : undefined;
+  }
+
+  const lastLiveEpochMs = existing?.lastLiveEpochMs
+    ?? window.sourceUpdatedEpochMs
+    ?? legacyLastUpdatedEpochMs;
+
+  return {
+    observation: existing?.observation ?? 'valid',
+    availability: isStale(lastLiveEpochMs) ? 'stale' : 'cached',
+    ...(lastLiveEpochMs ? { lastLiveEpochMs } : {})
+  };
+}
+
+function cacheWindow(
+  window: LimitWindow | undefined,
+  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
+): LimitWindow | undefined {
+  if (!window) {
+    return undefined;
+  }
+
+  const stale = authenticatedWindow?.availability === 'stale';
+
+  return {
+    ...window,
+    sourceKind: stale ? 'stale' : 'cache',
+    sourceLabel: stale ? 'stale cached quota snapshot' : 'cached quota snapshot',
+    sourceUpdatedEpochMs: window.sourceUpdatedEpochMs ?? authenticatedWindow?.lastLiveEpochMs
   };
 }
 

@@ -609,6 +609,7 @@ export function snapshotProviderToDashboardProvider(
 ): UsageDashboardProvider {
   const sevenDayReset = resolveResetEpoch(snapProvider, 'sevenDay');
   const fiveHourReset = resolveResetEpoch(snapProvider, 'fiveHour');
+  const stale = snapshotStale || snapProvider.stale;
   const windows: UsageDashboardWindow[] = [
     snapProvider.sevenDayUsedPercent !== undefined
       ? buildSnapshotSevenDayWindow(snapProvider.sevenDayUsedPercent, sevenDayReset)
@@ -617,9 +618,10 @@ export function snapshotProviderToDashboardProvider(
       ? buildSnapshotWindow('fiveHour', '5h', snapProvider.fiveHourUsedPercent, fiveHourReset)
       : { key: 'fiveHour', label: '5h', available: false },
     ...(snapProvider.meters ?? []).map(meter => buildSnapshotMeterWindow(meter))
-  ];
-
-  const stale = snapshotStale || snapProvider.stale;
+  ].map(window => ({
+    ...window,
+    health: !window.available ? 'missing' : stale ? 'stale' : undefined
+  }));
 
   return {
     provider: snapProvider.provider === 'claude' ? 'claude' : snapProvider.provider === 'codex' ? 'codex' : 'codex',

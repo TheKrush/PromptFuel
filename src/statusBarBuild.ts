@@ -59,7 +59,7 @@ export function buildRemoteStatusBarItems(
       if (hasFiveHour) {
         const remaining = Math.max(0, 100 - (fiveHour as number));
         const emoji = quotaIndicatorForRemaining(remaining);
-        if (displayMode === 'standard') {
+        if (displayMode === 'standard' && fiveHourResetEpoch) {
           windows.push(`${formatCountdown(fiveHourResetEpoch)} ${emoji}${Math.round(remaining)}%`);
         } else {
           windows.push(`${emoji}${Math.round(remaining)}%`);
