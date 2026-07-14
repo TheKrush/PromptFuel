@@ -225,4 +225,20 @@ describe('buildRemoteStatusBarItems', () => {
     assert.equal(items[0].severity, 'warning');
     assert.equal(items[0].remoteQuotaData?.stale, true);
   });
+
+  it('uses the containing snapshot freshness instead of a carried provider stale flag', () => {
+    const freshSnapshot = makeSnapshot('WATCHER', 'codex', 35, 78);
+    freshSnapshot.snapshot.providerUsage![0].stale = true;
+
+    const items = buildRemoteStatusBarItems(
+      [freshSnapshot],
+      ['WATCHER/codex'],
+      emptyAliasMap,
+      'compact',
+      { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
+    );
+
+    assert.equal(items[0].severity, 'normal');
+    assert.equal(items[0].remoteQuotaData?.stale, false);
+  });
 });

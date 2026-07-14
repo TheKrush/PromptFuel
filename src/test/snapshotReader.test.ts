@@ -606,6 +606,46 @@ describe('snapshotReader', () => {
       assert.equal(dp.windows.find(w => w.key === 'fiveHour')?.health, 'stale');
     });
 
+    it('uses snapshot generatedAt freshness instead of a carried provider stale flag', () => {
+      const snapshot = makeSnapshot({
+        generatedAtEpochMs: Date.now() - 30 * 60_000,
+        providerUsage: [{
+          ...makeSnapshot().providerUsage![0],
+          stale: true,
+          lastUpdatedEpochMs: Date.now() - 25 * 60 * 60_000
+        }]
+      });
+      const providers = buildSelectedRemoteSourceProviders([{
+        snapshot,
+        filePath: path.join(tmpDir, 'desktop-latest.json'),
+        stale: false
+      }], new Set(['desktop/claude']), {});
+
+      assert.equal(providers.length, 1);
+      assert.equal(providers[0].stale, false);
+      assert.equal(providers[0].windows.find(window => window.key === 'sevenDay')?.health, undefined);
+      assert.equal(providers[0].windows.find(window => window.key === 'fiveHour')?.health, undefined);
+    });
+
+    it('keeps an old generated snapshot stale despite a recent provider timestamp', () => {
+      const snapshot = makeSnapshot({
+        generatedAtEpochMs: Date.now() - SNAPSHOT_STALE_THRESHOLD_MS - 60_000,
+        providerUsage: [{
+          ...makeSnapshot().providerUsage![0],
+          stale: false,
+          lastUpdatedEpochMs: Date.now()
+        }]
+      });
+      const providers = buildSelectedRemoteSourceProviders([{
+        snapshot,
+        filePath: path.join(tmpDir, 'desktop-latest.json'),
+        stale: true
+      }], new Set(['desktop/claude']), {});
+
+      assert.equal(providers[0].stale, true);
+      assert.equal(providers[0].windows.find(window => window.key === 'sevenDay')?.health, 'stale');
+    });
+
     it('maps snapshot remaining-percent to the same six-level scale as status bar dots', () => {
       const testCases: Array<{ usedPercent: number; expectedLevel: string }> = [
         { usedPercent: 0, expectedLevel: 'purple' },

@@ -71,9 +71,7 @@ export function buildRemoteStatusBarItems(
         ? `${statusBarLabel} ${windows.join(windowSeparator)}`
         : `${statusBarLabel} unavailable`;
 
-      const snapshotAgeMs = typeof sp.lastUpdatedEpochMs === 'number' && sp.lastUpdatedEpochMs > 0
-        ? sp.lastUpdatedEpochMs
-        : vs.snapshot.generatedAtEpochMs;
+      const snapshotAgeMs = vs.snapshot.generatedAtEpochMs;
       const ageStr = formatAgeLabel(snapshotAgeMs, true);
 
       const tooltip = formatRemoteProviderTooltip({
@@ -83,7 +81,7 @@ export function buildRemoteStatusBarItems(
         fiveHourRemainingPercent: hasFiveHour ? Math.max(0, 100 - (fiveHour as number)) : undefined,
         sevenDayResetEpochSeconds: sevenDayResetEpoch,
         fiveHourResetEpochSeconds: fiveHourResetEpoch,
-        stale: snapshotStale || sp.stale,
+        stale: snapshotStale,
         staleReason: vs.staleReason,
         snapshotAgeLabel: ageStr,
         snapshotEpochMs: snapshotAgeMs
@@ -100,7 +98,7 @@ export function buildRemoteStatusBarItems(
           fiveHourRemainingPercent: hasFiveHour ? Math.max(0, 100 - (fiveHour as number)) : undefined,
           sevenDayResetEpochSeconds: sevenDayResetEpoch,
           fiveHourResetEpochSeconds: fiveHourResetEpoch,
-          stale: snapshotStale || sp.stale,
+          stale: snapshotStale,
           snapshotAgeLabel: ageStr
         }
       });

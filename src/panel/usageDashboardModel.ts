@@ -14,7 +14,7 @@ import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBu
 import type { CodexCorrelatedHistory } from '../providers/codexCorrelatedDayBucketScanner';
 import { sumCostIfComplete } from '../display/apiEquivalentCost';
 import type { RemoteUsageProjection } from '../snapshot/remoteUsageProjection';
-import { formatDetailedAgeLabel, formatEpochToIso, formatEpochSecondsToIso, formatRelativeTime } from '../usageTime';
+import { formatDetailedAgeLabel, formatEpochToIso, formatEpochSecondsToIso, formatRelativeTime, isStale } from '../usageTime';
 import { quotaLevelForRemaining } from '../display/format';
 
 import {
@@ -528,6 +528,9 @@ function dashboardWindowHealth(
   if (!window || normalizePercent(window.usedPercentage) === undefined || (authenticatedWindow && authenticatedWindow.observation !== 'valid')) {
     return 'missing';
   }
+  if (!authenticatedWindow && window.sourceUpdatedEpochMs !== undefined) {
+    return isStale(window.sourceUpdatedEpochMs) ? 'stale' : undefined;
+  }
   return !authenticatedWindow && state?.stale ? 'stale' : undefined;
 }
 
@@ -558,6 +561,18 @@ function dashboardWindowFreshness(
   authenticatedWindow: AuthenticatedQuotaWindowState,
   state: ProviderUsageState | undefined
 ): AuthenticatedQuotaWindowAvailability {
+  const lastLiveEpochMs = authenticatedWindow.lastLiveEpochMs ?? window?.sourceUpdatedEpochMs;
+  if (lastLiveEpochMs !== undefined) {
+    if (isStale(lastLiveEpochMs)) {
+      return 'stale';
+    }
+    if (window?.sourceKind === 'authenticated'
+        && authenticatedWindow.observation === 'valid'
+        && state?.authenticatedStatus === 'success') {
+      return 'live';
+    }
+    return authenticatedWindow.availability === 'live' ? 'live' : 'cached';
+  }
   if (window?.sourceKind === 'authenticated'
       && authenticatedWindow.observation === 'valid'
       && state?.authenticatedStatus === 'success') {

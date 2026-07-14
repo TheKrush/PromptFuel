@@ -605,11 +605,13 @@ export interface GroupedRemoteProvider {
 export function snapshotProviderToDashboardProvider(
   snapProvider: SnapshotProviderUsageV2,
   machineLabel: string,
-  snapshotStale = false
+  snapshotStale = false,
+  snapshotGeneratedAtEpochMs?: number
 ): UsageDashboardProvider {
   const sevenDayReset = resolveResetEpoch(snapProvider, 'sevenDay');
   const fiveHourReset = resolveResetEpoch(snapProvider, 'fiveHour');
-  const stale = snapshotStale || snapProvider.stale;
+  const snapshotEpochMs = snapshotGeneratedAtEpochMs ?? snapProvider.lastUpdatedEpochMs;
+  const stale = snapshotStale;
   const windows: UsageDashboardWindow[] = [
     snapProvider.sevenDayUsedPercent !== undefined
       ? buildSnapshotSevenDayWindow(snapProvider.sevenDayUsedPercent, sevenDayReset)
@@ -627,9 +629,9 @@ export function snapshotProviderToDashboardProvider(
     provider: snapProvider.provider === 'claude' ? 'claude' : snapProvider.provider === 'codex' ? 'codex' : 'codex',
     label: snapProvider.sourceLabel,
     stale,
-    source: `Snapshot from ${machineLabel} ${formatStaleTime(snapProvider.lastUpdatedEpochMs ?? Date.now())}${snapshotStale ? ' (stale snapshot)' : ''}`,
-    lastUpdatedIso: typeof snapProvider.lastUpdatedEpochMs === 'number' && snapProvider.lastUpdatedEpochMs > 0
-      ? new Date(snapProvider.lastUpdatedEpochMs).toISOString()
+    source: `Snapshot from ${machineLabel} ${formatStaleTime(snapshotEpochMs ?? Date.now())}${snapshotStale ? ' (stale snapshot)' : ''}`,
+    lastUpdatedIso: typeof snapshotEpochMs === 'number' && snapshotEpochMs > 0
+      ? new Date(snapshotEpochMs).toISOString()
       : undefined,
     windows,
     machineLabel
@@ -643,7 +645,7 @@ export function buildRemoteProvidersFromSnapshots(
   return snapshots.map(vs => {
     const machineLabel = vs.snapshot.machineLabel;
     const providers = (vs.snapshot.providerUsage ?? [])
-      .map(sp => snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale));
+      .map(sp => snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs));
 
     const hasSelectedSources = selectedSources !== undefined && (vs.snapshot.providerUsage ?? []).some(sp =>
       selectedSources.has(`${machineLabel}/${sp.provider}`)
@@ -677,7 +679,7 @@ export function buildSelectedRemoteSourceProviders(
       if (!selectedSources.has(sourceId)) {
         continue;
       }
-      const dp = snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale);
+      const dp = snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs);
       dp.label = formatSourceLabel(sp.provider, machineLabel, aliasMap);
       providers.push(dp);
     }
@@ -703,7 +705,7 @@ export function buildSanitizedHistorySources(
         machineLabel: vs.snapshot.machineLabel,
         schemaVersion,
         quotaOnly: false,
-        stale: vs.stale || sp.stale
+        stale: vs.stale
       };
 
       if (sp.fiveHourResetAtEpochSeconds !== undefined) {

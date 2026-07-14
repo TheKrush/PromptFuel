@@ -494,6 +494,20 @@ function main() {
     ]
   }]);
   assert.equal(healthyIssuesHtml, '', 'healthy visible windows render no Quota issues heading, container, or spacing');
+  const freshCarriedStaleModel = buildUsageDashboardModel({
+    states: [{
+      provider: 'claude',
+      stale: true,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 20, sourceUpdatedEpochMs: Date.now() - 60_000 },
+      fiveHour: { usedPercentage: 35, sourceUpdatedEpochMs: Date.now() - 60_000 }
+    }]
+  });
+  assert.equal(
+    sandbox.__combinedDashboardTest.renderQuotaIssuesSection(freshCarriedStaleModel.providers),
+    '',
+    'fresh per-window timestamps suppress stale issues carried at provider level'
+  );
   const missingIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
     provider: 'codex', label: 'Codex', windows: [
       { key: 'sevenDay', label: '7d', available: true, remainingPercent: 34 },

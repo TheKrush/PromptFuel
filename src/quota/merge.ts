@@ -163,7 +163,10 @@ export function mergeAuthenticatedFailure(
     authenticatedWindows: fallbackAuthenticatedWindowStates(state, fallback),
     authenticatedBackoffUntilEpochMs: backoffUntil,
     diagnostics: state.diagnostics,
-    stale: fallback.stale || (hasCachedQuota(fallback) && isStale(fallback.lastUpdatedEpochMs)),
+    stale: mergedQuotaIsStale(
+      [fallback.fiveHour, fallback.sevenDay, ...(fallback.meters ?? []).map(meter => meter.window)],
+      fallback.stale
+    ),
     diagnosticSeverity: state.diagnosticSeverity ?? failure.diagnosticSeverity,
     error: hasQuota ? undefined : state.error ?? failure.authenticatedError,
     lastUpdatedEpochMs: state.lastUpdatedEpochMs
@@ -427,11 +430,6 @@ function annotateAuthenticatedFallbackMeters(meters: UsageMeter[] | undefined): 
     .filter((meter): meter is UsageMeter => Boolean(meter));
 
   return annotated.length > 0 ? annotated : undefined;
-}
-
-function hasCachedQuota(state: ProviderUsageState): boolean {
-  return [state.fiveHour, state.sevenDay, ...(state.meters ?? []).map(meter => meter.window)]
-    .some(window => window?.sourceKind === 'cache');
 }
 
 function chooseQuotaWindow(local: LimitWindow | undefined, authenticated: LimitWindow | undefined): MergeWindowResult {
@@ -811,7 +809,10 @@ function mergedQuotaIsStale(windows: Array<LimitWindow | undefined>, fallback: b
   if (present.length === 0) {
     return fallback;
   }
-  return present.every(window => window.sourceKind === 'cache' || window.sourceKind === 'stale');
+  const timestamps = present
+    .map(window => window.sourceUpdatedEpochMs)
+    .filter((timestamp): timestamp is number => typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0);
+  return timestamps.length > 0 ? timestamps.every(timestamp => isStale(timestamp)) : fallback;
 }
 
 function localWindowIgnored(window: LimitWindow): string | undefined {

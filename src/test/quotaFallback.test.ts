@@ -379,8 +379,7 @@ describe('quota fallback regression coverage', () => {
 
   it('formats stale dashboard age details with one natural suffix', () => {
     const cases = [
-      { ageMs: 0, expected: 'Last updated just now.' },
-      { ageMs: 5 * 60_000, expected: 'Last updated 5 minutes ago.' },
+      { ageMs: 25 * 60_000, expected: 'Last updated 25 minutes ago.' },
       { ageMs: 3 * 3600_000, expected: 'Last updated 3 hours ago.' },
       { ageMs: 5 * 86400_000, expected: 'Last updated 5 days ago.' }
     ];
@@ -418,6 +417,78 @@ describe('quota fallback regression coverage', () => {
 
     assert.equal(window.health, 'stale');
     assert.equal(window.healthDetail, 'Quota value is stale.');
+  });
+
+  it('derives ordinary window health from each window timestamp before a carried stale flag', () => {
+    const freshTimestamp = now - 60_000;
+    const oldTimestamp = now - 25 * 60_000;
+    const fresh = dashboardWindow({
+      provider: 'claude',
+      stale: true,
+      lastUpdatedEpochMs: now,
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceUpdatedEpochMs: freshTimestamp }
+    }, 'fiveHour');
+    const old = dashboardWindow({
+      provider: 'claude',
+      stale: false,
+      lastUpdatedEpochMs: now,
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceUpdatedEpochMs: oldTimestamp }
+    }, 'fiveHour');
+
+    assert.equal(fresh.health, undefined);
+    assert.equal(old.health, 'stale');
+    assert.equal(old.healthDetail, 'Last updated 25 minutes ago.');
+  });
+
+  it('keeps normal 7d and 5h stale decisions isolated from provider-level refresh time', () => {
+    const freshTimestamp = now - 60_000;
+    const oldTimestamp = now - 25 * 60_000;
+    const first = buildUsageDashboardModel({ states: [{
+      provider: 'claude',
+      stale: true,
+      lastUpdatedEpochMs: now,
+      sevenDay: { usedPercentage: 20, resetsAtEpochSeconds: sevenDayReset, sourceUpdatedEpochMs: freshTimestamp },
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceUpdatedEpochMs: oldTimestamp }
+    }] }).providers[0];
+    const second = buildUsageDashboardModel({ states: [{
+      provider: 'claude',
+      stale: true,
+      lastUpdatedEpochMs: now,
+      sevenDay: { usedPercentage: 20, resetsAtEpochSeconds: sevenDayReset, sourceUpdatedEpochMs: oldTimestamp },
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceUpdatedEpochMs: freshTimestamp }
+    }] }).providers[0];
+
+    assert.equal(first.windows.find(window => window.key === 'sevenDay')?.health, undefined);
+    assert.equal(first.windows.find(window => window.key === 'fiveHour')?.health, 'stale');
+    assert.equal(second.windows.find(window => window.key === 'sevenDay')?.health, 'stale');
+    assert.equal(second.windows.find(window => window.key === 'fiveHour')?.health, undefined);
+  });
+
+  it('keeps an explicit stale flag as conservative evidence when an ordinary window has no timestamp', () => {
+    const window = dashboardWindow({
+      provider: 'claude',
+      stale: true,
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset }
+    }, 'fiveHour');
+
+    assert.equal(window.health, 'stale');
+    assert.equal(window.healthDetail, 'Quota value is stale.');
+  });
+
+  it('uses a fresh cached Codex window last-live timestamp over a carried stale availability', () => {
+    const timestamp = now - 60_000;
+    const window = dashboardWindow({
+      provider: 'codex',
+      stale: true,
+      authenticatedStatus: 'http_error',
+      fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache', sourceUpdatedEpochMs: timestamp },
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'stale', lastLiveEpochMs: timestamp }
+      }
+    }, 'fiveHour');
+
+    assert.equal(window.freshness, 'cached');
+    assert.equal(window.health, undefined);
   });
 
   it('recovers only the healthy Codex window while retaining the sibling warning and timestamp', () => {
@@ -1104,7 +1175,7 @@ describe('authenticated refresh failure fallback stale semantics', () => {
     assert.equal(fallback.stale, true);
   });
 
-  it('a state already flagged stale remains stale even with a recent timestamp', () => {
+  it('a recent cached timestamp supersedes a state already flagged stale', () => {
     const cached = mergeAuthenticatedQuotaSuccess(undefined, liveState('claude', {
       lastUpdatedEpochMs: now - 92_000,
       lastAuthenticatedRefreshEpochMs: now - 92_000
@@ -1113,7 +1184,7 @@ describe('authenticated refresh failure fallback stale semantics', () => {
 
     const fallback = mergeAuthenticatedFailure(alreadyStale, failure('claude', 'network_error'), backoffUntil);
 
-    assert.equal(fallback.stale, true);
+    assert.equal(fallback.stale, false);
   });
 
   it('a successful authenticated refresh clears stale state', () => {
