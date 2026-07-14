@@ -436,6 +436,87 @@ describe('quota fallback regression coverage', () => {
     assert.doesNotMatch(window.healthDetail ?? '', /Last updated/);
   });
 
+  it('does not manufacture successful window freshness from provider timestamps', () => {
+    const merged = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      fiveHour: {
+        usedPercentage: 35,
+        resetsAtEpochSeconds: fiveHourReset
+      },
+      sevenDay: undefined,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      stale: false,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live' },
+        sevenDay: { observation: 'absent', availability: 'unavailable' }
+      }
+    }));
+
+    assert.equal(merged.fiveHour?.usedPercentage, 35);
+    assert.equal(merged.fiveHour?.sourceUpdatedEpochMs, undefined);
+    assert.deepEqual(merged.authenticatedWindows?.fiveHour, {
+      observation: 'valid',
+      availability: 'stale'
+    });
+
+    const dashboard = dashboardWindow(merged, 'fiveHour');
+    assert.equal(dashboard.health, 'stale');
+    assert.equal(dashboard.healthDetail, 'Quota value is stale.');
+    assert.doesNotMatch(dashboard.healthDetail ?? '', /Last updated/);
+
+    const presentable = derivePresentableQuotaWindowState(merged, merged.fiveHour, formatOptions(), 'fiveHour');
+    assert.equal(presentable.freshness, 'stale');
+  });
+
+  it('classifies successful windows from their own timestamp instead of provider time or carried flags', () => {
+    const freshTimestamp = now - 60_000;
+    const oldTimestamp = now - 25 * 60_000;
+    const fresh = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      fiveHour: {
+        usedPercentage: 35,
+        resetsAtEpochSeconds: fiveHourReset,
+        sourceUpdatedEpochMs: freshTimestamp
+      },
+      sevenDay: undefined,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'stale' },
+        sevenDay: { observation: 'absent', availability: 'unavailable' }
+      }
+    }));
+    const old = mergeAuthenticatedQuotaSuccess(undefined, liveState('codex', {
+      fiveHour: {
+        usedPercentage: 35,
+        resetsAtEpochSeconds: fiveHourReset,
+        sourceUpdatedEpochMs: oldTimestamp
+      },
+      sevenDay: undefined,
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live' },
+        sevenDay: { observation: 'absent', availability: 'unavailable' }
+      }
+    }));
+
+    assert.deepEqual(fresh.authenticatedWindows?.fiveHour, {
+      observation: 'valid',
+      availability: 'live',
+      lastLiveEpochMs: freshTimestamp
+    });
+    assert.equal(dashboardWindow(fresh, 'fiveHour').health, undefined);
+    assert.equal(derivePresentableQuotaWindowState(fresh, fresh.fiveHour, formatOptions(), 'fiveHour').freshness, 'live');
+
+    assert.deepEqual(old.authenticatedWindows?.fiveHour, {
+      observation: 'valid',
+      availability: 'stale',
+      lastLiveEpochMs: oldTimestamp
+    });
+    assert.equal(dashboardWindow(old, 'fiveHour').health, 'stale');
+    assert.equal(derivePresentableQuotaWindowState(old, old.fiveHour, formatOptions(), 'fiveHour').freshness, 'stale');
+  });
+
   it('does not let failure recovery manufacture a missing per-window timestamp', () => {
     const failed = mergeAuthenticatedFailure({
       provider: 'codex',

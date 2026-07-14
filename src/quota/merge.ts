@@ -197,14 +197,12 @@ function mergeAuthenticatedPrimaryWindow(
 
   if (observation.observation === 'valid' && liveWindow) {
     const lastLiveEpochMs = liveWindow.sourceUpdatedEpochMs
-      ?? observation.lastLiveEpochMs
-      ?? authenticated.lastAuthenticatedRefreshEpochMs
-      ?? authenticated.lastUpdatedEpochMs;
+      ?? observation.lastLiveEpochMs;
     return {
       window: liveWindow,
       state: {
         observation: 'valid',
-        availability: 'live',
+        availability: isStale(lastLiveEpochMs) ? 'stale' : 'live',
         ...(lastLiveEpochMs ? { lastLiveEpochMs } : {})
       }
     };

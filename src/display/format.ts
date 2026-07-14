@@ -10,7 +10,7 @@ import {
   QuotaSourceKind,
   SourceConfigEntry
 } from '../types';
-import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime } from '../usageTime';
+import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime, isStale } from '../usageTime';
 
 export interface ModelBreakdownEntry {
   label: string;
@@ -947,12 +947,19 @@ function authenticatedWindowAvailabilityForPresentation(
   window: LimitWindow | undefined,
   authenticatedWindow: AuthenticatedQuotaWindowState
 ): AuthenticatedQuotaWindowAvailability {
-  if (window?.sourceKind === 'authenticated'
-      && authenticatedWindow.observation === 'valid'
-      && state.authenticatedStatus === 'success') {
-    return 'live';
+  const lastLiveEpochMs = authenticatedWindow.lastLiveEpochMs ?? window?.sourceUpdatedEpochMs;
+  if (lastLiveEpochMs !== undefined) {
+    if (isStale(lastLiveEpochMs)) {
+      return 'stale';
+    }
+    if (window?.sourceKind === 'authenticated'
+        && authenticatedWindow.observation === 'valid'
+        && state.authenticatedStatus === 'success') {
+      return 'live';
+    }
+    return authenticatedWindow.availability === 'live' ? 'live' : 'cached';
   }
-  return authenticatedWindow.availability;
+  return authenticatedWindow.observation === 'valid' ? 'stale' : authenticatedWindow.availability;
 }
 
 function hasActionableLocalQuotaIssue(state: ProviderUsageState): boolean {
