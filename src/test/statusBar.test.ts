@@ -53,6 +53,48 @@ function makeLocalState(provider: 'claude' | 'codex', sevenDayUsedPercent: numbe
   };
 }
 
+describe('formatStatus window availability', () => {
+  it('omits a missing local window while retaining a genuine observed 100 percent window', () => {
+    const partial = formatStatus([{
+      provider: 'codex',
+      sevenDay: { usedPercentage: 66 },
+      authenticatedWindows: {
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: Date.now() },
+        fiveHour: { observation: 'absent', availability: 'unavailable' }
+      }
+    }], compactOptions());
+
+    assert.match(partial.text, /34%/);
+    assert.doesNotMatch(partial.text, /100%|5h|\u2014/);
+    assert.doesNotMatch(partial.text, /\u00B7\s*$/);
+
+    const genuineFull = formatStatus([{
+      provider: 'codex',
+      fiveHour: { usedPercentage: 0 },
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live', lastLiveEpochMs: Date.now() }
+      }
+    }], compactOptions());
+
+    assert.match(genuineFull.text, /100%/);
+  });
+
+  it('renders the existing provider-level unavailable text without empty window placeholders', () => {
+    const result = formatStatus([{
+      provider: 'codex',
+      authenticatedWindows: {
+        sevenDay: { observation: 'absent', availability: 'unavailable' },
+        fiveHour: { observation: 'absent', availability: 'unavailable' }
+      }
+    }], compactOptions());
+
+    assert.equal(result.text, 'X unavailable');
+    assert.doesNotMatch(result.text, /%|\u2014|\u00B7/);
+    assert.match(result.tooltip, /\| Codex \| 7d [^\n]*\| \u2014 \|/);
+    assert.match(result.tooltip, /\| Codex \| 5h [^\n]*\| \u2014 \|/);
+  });
+});
+
 describe('buildRemoteStatusBarItems', () => {
   it('builds imported source quota data from normalizedSources in compact mode', () => {
     const items = buildRemoteStatusBarItems(
@@ -116,6 +158,25 @@ describe('buildRemoteStatusBarItems', () => {
     assert.equal(items[0].remoteQuotaData?.fiveHourResetEpochSeconds, undefined);
     assert.match(items[0].text, /22%/);
     assert.doesNotMatch(items[0].text, /\?/);
+  });
+
+  it('omits a missing WATCHER window without leaving a separator', () => {
+    const snapshot = makeSnapshot('WATCHER', 'codex', 35, 78);
+    snapshot.snapshot.providerUsage![0].fiveHourUsedPercent = undefined;
+    snapshot.snapshot.providerUsage![0].fiveHourResetAtEpochSeconds = undefined;
+
+    const items = buildRemoteStatusBarItems(
+      [snapshot],
+      ['WATCHER/codex'],
+      emptyAliasMap,
+      'compact',
+      { 'WATCHER/codex': { enabled: true, label: 'Codex \u00B7 WATCHER', shortLabel: 'XW', statusBar: true } }
+    );
+
+    assert.equal(items.length, 1);
+    assert.match(items[0].text, /65%/);
+    assert.doesNotMatch(items[0].text, /22%|\u00B7\s*$/);
+    assert.equal(items[0].remoteQuotaData?.fiveHourRemainingPercent, undefined);
   });
 
   it('uses fallback source label when sourceId is missing from normalizedSources', () => {

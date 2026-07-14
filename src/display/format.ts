@@ -90,7 +90,7 @@ export function derivePresentableQuotaWindowState(
   windowKey?: AuthenticatedQuotaWindowKey
 ): PresentableQuotaWindowState {
   const label = windowKey === 'fiveHour' ? '5h' : windowKey === 'sevenDay' ? '7d' : undefined;
-  const value = quotaWindowForPresentation(state, label, window);
+  const value = window;
   const authenticatedWindow = authenticatedWindowStateFor(state, window)
     ?? authenticatedWindowStateForLabel(state, label);
   return {
@@ -243,10 +243,9 @@ function formatProviderWindows(
   resolved: ResolvedDisplayParts
 ): string[] {
   const displayedWindows = getDisplayedWindows(state, resolved);
-  if (!displayedWindows.some(window => isUsableWindow(window.value))) {
-    return [];
-  }
-  return displayedWindows.map(window => formatWindow(window.label, window.value, options, resolved, state));
+  return displayedWindows
+    .filter(window => isUsableWindow(window.value))
+    .map(window => formatWindow(window.label, window.value, options, resolved, state));
 }
 
 function getDisplayedWindows(
@@ -255,11 +254,11 @@ function getDisplayedWindows(
 ): Array<{ key?: AuthenticatedQuotaWindowKey; label: string; value: LimitWindow | undefined }> {
   const windows: Array<{ key?: AuthenticatedQuotaWindowKey; label: string; value: LimitWindow | undefined }> = [];
   if (resolved.sevenDayFirst) {
-    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: quotaWindowForPresentation(state, '7d', state.sevenDay) });
-    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: quotaWindowForPresentation(state, '5h', state.fiveHour) });
+    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: state.sevenDay });
+    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: state.fiveHour });
   } else {
-    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: quotaWindowForPresentation(state, '5h', state.fiveHour) });
-    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: quotaWindowForPresentation(state, '7d', state.sevenDay) });
+    if (resolved.showFiveHour) windows.push({ key: 'fiveHour', label: '5h', value: state.fiveHour });
+    if (resolved.showSevenDay) windows.push({ key: 'sevenDay', label: '7d', value: state.sevenDay });
   }
 
   for (const meter of state.meters ?? []) {
@@ -535,7 +534,7 @@ function formatCombinedQuotaWindowRow(
   window: LimitWindow | undefined,
   options: FormatOptions
 ): string {
-  const value = quotaWindowForPresentation(state, label, window);
+  const value = window;
   const provider = providerDisplayName(state, options);
   if (!value || value.usedPercentage === undefined) {
     return `| ${provider} | ${label} | ${quotaIndicatorForRemaining(undefined, true)} | — | | — | |`;
@@ -656,14 +655,14 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
   const rows = [
     '|  |  |  |  |  |  |',
     '|:---|:---:|---:|:---:|:---|:---|',
-    formatQuotaWindowRow('7d', state.sevenDay, options, state)
+    formatQuotaWindowRow('7d', state.sevenDay, options)
   ];
 
-  rows.push(formatQuotaWindowRow('5h', state.fiveHour, options, state));
+  rows.push(formatQuotaWindowRow('5h', state.fiveHour, options));
 
   for (const meter of state.meters ?? []) {
     if (isUsableWindow(meter.window)) {
-      rows.push(formatQuotaWindowRow(meter.label, meter.window, options, state));
+      rows.push(formatQuotaWindowRow(meter.label, meter.window, options));
     }
   }
 
@@ -673,10 +672,9 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
 function formatQuotaWindowRow(
   label: string,
   window: LimitWindow | undefined,
-  options: FormatOptions,
-  state: ProviderUsageState
+  options: FormatOptions
 ): string {
-  const value = quotaWindowForPresentation(state, label, window);
+  const value = window;
   if (!value || value.usedPercentage === undefined) {
     return `| ${label} | ${quotaIndicatorForRemaining(undefined, true)} | — | | — | |`;
   }
@@ -955,21 +953,6 @@ function authenticatedWindowAvailabilityForPresentation(
     return 'live';
   }
   return authenticatedWindow.availability;
-}
-
-function quotaWindowForPresentation(
-  state: ProviderUsageState,
-  label: string | undefined,
-  window: LimitWindow | undefined
-): LimitWindow | undefined {
-  if (window || state.provider !== 'codex' || label !== '5h') {
-    return window;
-  }
-
-  const observation = state.authenticatedWindows?.fiveHour;
-  return observation && observation.observation !== 'valid'
-    ? { usedPercentage: 0 }
-    : undefined;
 }
 
 function hasActionableLocalQuotaIssue(state: ProviderUsageState): boolean {

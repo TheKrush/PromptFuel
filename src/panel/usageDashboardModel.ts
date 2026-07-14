@@ -492,7 +492,7 @@ function buildWindow(
   authenticatedWindow?: AuthenticatedQuotaWindowState,
   state?: ProviderUsageState
 ): UsageDashboardWindow {
-  const value = dashboardWindowForPresentation(state, key, window, authenticatedWindow);
+  const value = window;
   const usedPercent = normalizePercent(value?.usedPercentage);
   const remainingPercent = usedPercent === undefined ? undefined : clamp(100 - usedPercent, 0, 100);
   const level = remainingPercent === undefined ? undefined : quotaLevelForRemaining(remainingPercent);
@@ -533,10 +533,7 @@ function dashboardWindowHealthDetail(
   authenticatedWindow: AuthenticatedQuotaWindowState | undefined
 ): string | undefined {
   if (health === 'missing') {
-    const remainingPercent = normalizePercent(window?.usedPercentage);
-    return remainingPercent === undefined
-      ? 'Live quota unavailable.'
-      : `Live quota unavailable; showing ${Math.round(clamp(100 - remainingPercent, 0, 100))}% fallback.`;
+    return 'Live quota unavailable.';
   }
   if (health === 'stale') {
     const age = formatDetailedAgeLabel(
@@ -566,20 +563,6 @@ function dashboardWindowFreshness(
     return authenticatedWindow.availability === 'live' ? 'live' : 'cached';
   }
   return authenticatedWindow.observation === 'valid' ? 'stale' : authenticatedWindow.availability;
-}
-
-function dashboardWindowForPresentation(
-  state: ProviderUsageState | undefined,
-  key: string,
-  window: LimitWindow | undefined,
-  authenticatedWindow: AuthenticatedQuotaWindowState | undefined
-): LimitWindow | undefined {
-  if (window || state?.provider !== 'codex' || key !== 'fiveHour') {
-    return window;
-  }
-  return authenticatedWindow && authenticatedWindow.observation !== 'valid'
-    ? { usedPercentage: 0 }
-    : undefined;
 }
 
 function buildMeterWindow(meter: NonNullable<ProviderUsageState['meters']>[number]): UsageDashboardWindow {

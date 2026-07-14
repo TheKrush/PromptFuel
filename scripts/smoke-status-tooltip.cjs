@@ -237,11 +237,13 @@ function main() {
     }], opts);
 
     assert.match(result.text, /34%/, 'live weekly quota remains visible');
-    assert.match(result.text, /100%/, 'missing five-hour quota uses the presentation fallback');
+    assert.doesNotMatch(result.text, /100%|5h|\u2014/, 'missing five-hour quota is omitted from compact status text');
+    assert.doesNotMatch(result.text, /\u00B7\s*$/, 'missing five-hour quota leaves no dangling separator');
     assert.doesNotMatch(result.text, /\?/, 'missing five-hour quota does not add an unknown reset countdown');
     assert.doesNotMatch(result.text, /[!⚠▲△]/, 'status text contains no per-window issue marker');
     assert.equal(result.localLiveQuotaAttention, true, 'missing five-hour data enables the one local attention state');
-    assert.match(result.tooltip, /\| — \|  \|$/m, 'missing reset is an em dash in the standard reset column with no indicator column');
+    const missingRow = result.tooltip.split('\n').find(line => line.includes('| Codex | 5h |')) || '';
+    assert.match(missingRow, /\| \u2014 \| \| \u2014 \| \|$/, 'tooltip retains the missing five-hour row with compact placeholders');
     assertDefaultStatusBarBackground('missing stale local Codex five-hour quota');
   }
 

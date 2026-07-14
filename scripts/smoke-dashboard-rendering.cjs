@@ -528,10 +528,10 @@ function main() {
   const missingIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection([{
     provider: 'codex', label: 'Codex', windows: [
       { key: 'sevenDay', label: '7d', available: true, remainingPercent: 34 },
-      { key: 'fiveHour', label: '5h', available: true, remainingPercent: 100, health: 'missing', healthDetail: 'Live quota unavailable; showing 100% fallback.' }
+      { key: 'fiveHour', label: '5h', available: false, health: 'missing', healthDetail: 'Live quota unavailable.' }
     ]
   }]);
-  assert.match(missingIssuesHtml, /Quota issues[\s\S]*Codex[\s\S]*5h[\s\S]*>Missing<[\s\S]*Live quota unavailable; showing 100% fallback\./, 'one missing window renders one concise, accessible issue row');
+  assert.match(missingIssuesHtml, /Quota issues[\s\S]*Codex[\s\S]*5h[\s\S]*>Missing<[\s\S]*Live quota unavailable\./, 'one missing window renders one concise, accessible issue row');
   assert.match(missingIssuesHtml, /class="quota-issue-state missing">Missing<\//, 'one missing window renders a plain Missing state cell');
   assert.doesNotMatch(missingIssuesHtml, /source-chip|tabindex=|aria-label=/, 'Quota issues state text is neither a chip nor a focus target');
 
@@ -636,18 +636,32 @@ function main() {
   assert.equal(partialProvider.stale, false, 'one live authenticated window prevents provider-wide stale presentation');
   assert.equal(partialProvider.status, 'partial', 'live plus unavailable sibling uses partial provider status');
   assert.equal(partialProvider.windows.find(window => window.key === 'sevenDay').freshness, 'live', 'valid authenticated success normalizes 7d presentation to live');
+  const missingLocalFiveHour = partialProvider.windows.find(window => window.key === 'fiveHour');
+  assert.equal(missingLocalFiveHour.available, false, 'missing local 5h remains unavailable in the dashboard model');
+  assert.equal(missingLocalFiveHour.remainingPercent, undefined, 'missing local 5h has no synthetic percentage');
+  assert.equal(missingLocalFiveHour.level, undefined, 'missing local 5h has no quota color level');
+  assert.equal(missingLocalFiveHour.resetIso, undefined, 'missing local 5h has no fabricated reset timestamp');
   assert.doesNotMatch(partialHtml, /data-glance-col="status"|>partial<|>stale<|>current</, 'provider status words are omitted');
   assert.match(partialHtml, /data-glance-col="7d-percent">34%<\/span>/, 'live 7d value has no cached or stale marker');
-  assert.match(partialHtml, /data-glance-col="5h-percent">100%<\/span>/, 'missing 5h keeps its truthful 100% presentation fallback without a glyph');
+  assert.match(partialHtml, /data-glance-col="5h-percent">\u2014<\/span>/, 'missing local 5h renders an em dash rather than a synthetic percentage');
+  assert.match(partialHtml, /data-glance-col="5h-bar"[^>]*>[\s\S]*?usage-progress-fill" style="width:0%"/, 'missing local 5h renders an empty neutral progress bar');
+  assert.doesNotMatch(partialHtml, /data-glance-col="5h-percent">100%<\/span>/, 'missing local 5h has no synthetic percentage');
   assert.match(partialHtml, /data-glance-col="5h-reset"><\/span>/, 'missing 5h has no reset countdown or health decoration');
   assert.doesNotMatch(partialHtml, /source-chip quota-health|tabindex=|aria-label=/, 'At-a-glance does not retain health-only focus targets');
+  const missingSnapshotFiveHourHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(
+    { key: 'fiveHour', label: '5h', available: false },
+    '5h'
+  );
+  const missingLocalFiveHourHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(missingLocalFiveHour, '5h');
+  assert.doesNotMatch(missingLocalFiveHourHtml, /level-(?:purple|blue|green|yellow|orange|red)/, 'missing local 5h has no colored fill');
+  assert.equal(missingLocalFiveHourHtml, missingSnapshotFiveHourHtml, 'missing local and snapshot 5h windows share the same presentation');
   const overviewPartialIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(
     sandbox.__combinedDashboardTest.scopeProvidersByTab(partialModel.providers, 'overview')
   );
   const providerPartialIssuesHtml = sandbox.__combinedDashboardTest.renderQuotaIssuesSection(
     sandbox.__combinedDashboardTest.scopeProvidersByTab(partialModel.providers, 'codex')
   );
-  assert.match(overviewPartialIssuesHtml, /quota-issue-state missing">Missing<[\s\S]*Live quota unavailable; showing 100% fallback\./, 'Overview places the missing fallback issue below the measurement grid');
+  assert.match(overviewPartialIssuesHtml, /quota-issue-state missing">Missing<[\s\S]*Live quota unavailable\./, 'Overview places the missing-window issue below the measurement grid');
   assert.match(providerPartialIssuesHtml, /quota-issue-state missing">Missing</, 'Codex tab keeps its own missing issue');
   const glanceStaleHtml = sandbox.__combinedDashboardTest.renderGlanceList([
     {
