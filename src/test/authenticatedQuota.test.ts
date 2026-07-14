@@ -679,7 +679,7 @@ describe('authenticated quota parsing', () => {
     }
   });
 
-  it('loads old cached primary windows as cached rather than newly live', async () => {
+  it('loads legacy cached primary windows without per-window timestamps as stale', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
     try {
       const updatedAt = Date.now() - 60_000;
@@ -699,12 +699,100 @@ describe('authenticated quota parsing', () => {
 
       const result = await readAuthenticatedQuotaCache(tmpDir);
 
-      assert.equal(result.codex?.fiveHour?.sourceKind, 'cache');
+      assert.equal(result.codex?.fiveHour?.usedPercentage, 0);
+      assert.equal(result.codex?.fiveHour?.sourceKind, 'stale');
+      assert.equal(result.codex?.fiveHour?.sourceUpdatedEpochMs, undefined);
       assert.equal(result.codex?.stale, false);
       assert.deepEqual(result.codex?.authenticatedWindows?.fiveHour, {
         observation: 'valid',
+        availability: 'stale'
+      });
+
+      const dashboard = buildUsageDashboardModel({ states: [result.codex!] });
+      const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
+      assert.equal(fiveHour?.remainingPercent, 100);
+      assert.equal(fiveHour?.health, 'stale');
+      assert.equal(fiveHour?.healthDetail, 'Quota value is stale.');
+      assert.doesNotMatch(fiveHour?.healthDetail ?? '', /Last updated/);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads current cached primary windows without per-window timestamps as stale', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
+    try {
+      const updatedAt = Date.now() - 60_000;
+      await fs.writeFile(
+        path.join(tmpDir, 'authenticated-quota-cache.json'),
+        JSON.stringify({
+          providers: [{
+            provider: 'codex',
+            lastUpdatedEpochMs: updatedAt,
+            lastAuthenticatedRefreshEpochMs: updatedAt,
+            authenticatedStatus: 'success',
+            stale: false,
+            fiveHour: { usedPercentage: 35, resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 3600 },
+            authenticatedWindows: {
+              fiveHour: { observation: 'valid', availability: 'cached' }
+            }
+          }]
+        }, undefined, 2),
+        'utf8'
+      );
+
+      const result = await readAuthenticatedQuotaCache(tmpDir);
+
+      assert.equal(result.codex?.fiveHour?.usedPercentage, 35);
+      assert.equal(result.codex?.fiveHour?.sourceKind, 'stale');
+      assert.equal(result.codex?.fiveHour?.sourceUpdatedEpochMs, undefined);
+      assert.deepEqual(result.codex?.authenticatedWindows?.fiveHour, {
+        observation: 'valid',
+        availability: 'stale'
+      });
+
+      const dashboard = buildUsageDashboardModel({ states: [result.codex!] });
+      const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
+      assert.equal(fiveHour?.remainingPercent, 65);
+      assert.equal(fiveHour?.health, 'stale');
+      assert.equal(fiveHour?.healthDetail, 'Quota value is stale.');
+      assert.doesNotMatch(fiveHour?.healthDetail ?? '', /Last updated/);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads a legacy cached primary window using its own trustworthy timestamp', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
+    try {
+      const providerUpdatedAt = Date.now();
+      const windowUpdatedAt = providerUpdatedAt - 60_000;
+      await fs.writeFile(
+        path.join(tmpDir, 'authenticated-quota-cache.json'),
+        JSON.stringify({
+          providers: [{
+            provider: 'codex',
+            lastUpdatedEpochMs: providerUpdatedAt,
+            lastAuthenticatedRefreshEpochMs: providerUpdatedAt,
+            authenticatedStatus: 'success',
+            fiveHour: {
+              usedPercentage: 35,
+              resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 3600,
+              sourceUpdatedEpochMs: windowUpdatedAt
+            }
+          }]
+        }, undefined, 2),
+        'utf8'
+      );
+
+      const result = await readAuthenticatedQuotaCache(tmpDir);
+
+      assert.equal(result.codex?.fiveHour?.sourceKind, 'cache');
+      assert.equal(result.codex?.fiveHour?.sourceUpdatedEpochMs, windowUpdatedAt);
+      assert.deepEqual(result.codex?.authenticatedWindows?.fiveHour, {
+        observation: 'valid',
         availability: 'cached',
-        lastLiveEpochMs: updatedAt
+        lastLiveEpochMs: windowUpdatedAt
       });
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
@@ -873,7 +961,7 @@ describe('authenticated quota parsing', () => {
     }
   });
 
-  it('does not fabricate a legacy Codex missing-window observation', async () => {
+  it('does not fabricate a legacy Codex missing-window observation or sibling freshness', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ab-quota-cache-test-'));
     try {
       await fs.writeFile(
@@ -891,12 +979,18 @@ describe('authenticated quota parsing', () => {
 
       const cached = (await readAuthenticatedQuotaCache(tmpDir)).codex;
       assert.equal(cached?.authenticatedWindows?.fiveHour, undefined);
-      assert.equal(cached?.authenticatedWindows?.sevenDay?.availability, 'cached');
+      assert.deepEqual(cached?.authenticatedWindows?.sevenDay, {
+        observation: 'valid',
+        availability: 'stale'
+      });
       const merged = mergeLocalAndAuthenticated({ provider: 'codex', source: 'local session' }, cached);
       const dashboard = buildUsageDashboardModel({ states: [merged] });
       const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
+      const sevenDay = dashboard.providers[0]?.windows.find(window => window.key === 'sevenDay');
       assert.equal(fiveHour?.warning, undefined);
       assert.equal(fiveHour?.freshness, undefined);
+      assert.equal(sevenDay?.health, 'stale');
+      assert.equal(sevenDay?.healthDetail, 'Quota value is stale.');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }

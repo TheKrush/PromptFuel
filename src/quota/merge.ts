@@ -214,8 +214,7 @@ function mergeAuthenticatedPrimaryWindow(
   const fallbackState = fallbackAuthenticatedWindowState(
     observation,
     current?.authenticatedWindows?.[key],
-    fallback,
-    current?.lastUpdatedEpochMs
+    fallback
   );
   if (!fallbackState) {
     return {
@@ -247,14 +246,12 @@ function fallbackAuthenticatedWindowStates(
     fiveHour: fallbackAuthenticatedWindowState(
       current.authenticatedWindows.fiveHour,
       current.authenticatedWindows.fiveHour,
-      fallback.fiveHour,
-      current.lastUpdatedEpochMs
+      fallback.fiveHour
     ),
     sevenDay: fallbackAuthenticatedWindowState(
       current.authenticatedWindows.sevenDay,
       current.authenticatedWindows.sevenDay,
-      fallback.sevenDay,
-      current.lastUpdatedEpochMs
+      fallback.sevenDay
     )
   };
 }
@@ -262,8 +259,7 @@ function fallbackAuthenticatedWindowStates(
 function fallbackAuthenticatedWindowState(
   observation: AuthenticatedQuotaWindowState | undefined,
   previous: AuthenticatedQuotaWindowState | undefined,
-  window: LimitWindow | undefined,
-  legacyLastUpdatedEpochMs: number | undefined
+  window: LimitWindow | undefined
 ): AuthenticatedQuotaWindowState | undefined {
   if (!observation) {
     return undefined;
@@ -277,8 +273,7 @@ function fallbackAuthenticatedWindowState(
   }
 
   const lastLiveEpochMs = previous?.lastLiveEpochMs
-    ?? window?.sourceUpdatedEpochMs
-    ?? legacyLastUpdatedEpochMs;
+    ?? window?.sourceUpdatedEpochMs;
   return {
     observation: observation.observation,
     availability: window ? fallbackAvailability(lastLiveEpochMs) : 'unavailable',
@@ -342,27 +337,44 @@ export function annotateStateWindows(state: ProviderUsageState, options?: QuotaM
   const sourceUpdatedEpochMs = inferSourceUpdatedEpochMs(state);
   const sourceAuthorityRank = AUTHORITY_RANK[sourceKind];
   const sourceLabel = sourceLabelForKind(sourceKind, state.source);
+  const fiveHourSourceUpdatedEpochMs = primaryWindowSourceUpdatedEpochMs(state, 'fiveHour', sourceKind, sourceUpdatedEpochMs);
+  const sevenDaySourceUpdatedEpochMs = primaryWindowSourceUpdatedEpochMs(state, 'sevenDay', sourceKind, sourceUpdatedEpochMs);
 
   return {
     ...state,
-    fiveHour: annotateWindow(state.fiveHour, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options, FIVE_HOUR_WINDOW_S),
-    sevenDay: annotateWindow(state.sevenDay, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options, SEVEN_DAY_WINDOW_S),
+    fiveHour: annotateWindow(state.fiveHour, sourceKind, sourceLabel, fiveHourSourceUpdatedEpochMs, sourceAuthorityRank, options, FIVE_HOUR_WINDOW_S),
+    sevenDay: annotateWindow(state.sevenDay, sourceKind, sourceLabel, sevenDaySourceUpdatedEpochMs, sourceAuthorityRank, options, SEVEN_DAY_WINDOW_S),
     meters: annotateMeters(state.meters, sourceKind, sourceLabel, sourceUpdatedEpochMs, sourceAuthorityRank, options)
   };
+}
+
+function primaryWindowSourceUpdatedEpochMs(
+  state: ProviderUsageState,
+  key: AuthenticatedQuotaWindowKey,
+  sourceKind: QuotaSourceKind,
+  providerSourceUpdatedEpochMs: number | undefined
+): number | undefined {
+  const window = state[key];
+  const authenticatedWindow = state.authenticatedWindows?.[key];
+  const authenticatedDerived = state.provider === 'codex'
+    && window !== undefined
+    && (isAuthenticatedDerivedWindow(window) || (sourceKind === 'authenticated' && Boolean(authenticatedWindow)));
+
+  return authenticatedDerived
+    ? window?.sourceUpdatedEpochMs ?? authenticatedWindow?.lastLiveEpochMs
+    : providerSourceUpdatedEpochMs;
 }
 
 function annotateAuthenticatedFallbackWindows(state: ProviderUsageState): ProviderUsageState {
   const fiveHourState = fallbackAuthenticatedWindowState(
     state.authenticatedWindows?.fiveHour,
     state.authenticatedWindows?.fiveHour,
-    state.fiveHour,
-    state.lastUpdatedEpochMs
+    state.fiveHour
   );
   const sevenDayState = fallbackAuthenticatedWindowState(
     state.authenticatedWindows?.sevenDay,
     state.authenticatedWindows?.sevenDay,
-    state.sevenDay,
-    state.lastUpdatedEpochMs
+    state.sevenDay
   );
   const fiveHour = annotateAuthenticatedFallbackWindow(
     state.fiveHour,

@@ -423,6 +423,47 @@ describe('quota fallback regression coverage', () => {
     assert.doesNotMatch(window.healthDetail ?? '', /Last updated/);
   });
 
+  it('does not let failure recovery manufacture a missing per-window timestamp', () => {
+    const failed = mergeAuthenticatedFailure({
+      provider: 'codex',
+      fiveHour: {
+        usedPercentage: 35,
+        resetsAtEpochSeconds: fiveHourReset,
+        sourceKind: 'authenticated'
+      },
+      sevenDay: {
+        usedPercentage: 20,
+        resetsAtEpochSeconds: sevenDayReset,
+        sourceKind: 'authenticated',
+        sourceUpdatedEpochMs: now - 60_000
+      },
+      lastUpdatedEpochMs: now,
+      lastAuthenticatedRefreshEpochMs: now,
+      authenticatedStatus: 'success',
+      stale: false,
+      authenticatedWindows: {
+        fiveHour: { observation: 'valid', availability: 'live' },
+        sevenDay: { observation: 'valid', availability: 'live', lastLiveEpochMs: now - 60_000 }
+      }
+    }, failure('codex', 'network_error'), backoffUntil);
+
+    assert.equal(failed.fiveHour?.usedPercentage, 35);
+    assert.equal(failed.fiveHour?.sourceKind, 'stale');
+    assert.equal(failed.fiveHour?.sourceUpdatedEpochMs, undefined);
+    assert.deepEqual(failed.authenticatedWindows?.fiveHour, {
+      observation: 'valid',
+      availability: 'stale'
+    });
+    assert.equal(failed.authenticatedWindows?.sevenDay?.availability, 'cached');
+    assert.equal(failed.authenticatedWindows?.sevenDay?.lastLiveEpochMs, now - 60_000);
+
+    const fiveHour = dashboardWindow(failed, 'fiveHour');
+    assert.equal(fiveHour.remainingPercent, 65);
+    assert.equal(fiveHour.health, 'stale');
+    assert.equal(fiveHour.healthDetail, 'Quota value is stale.');
+    assert.doesNotMatch(fiveHour.healthDetail ?? '', /Last updated/);
+  });
+
   it('derives ordinary window health from each window timestamp before a carried stale flag', () => {
     const freshTimestamp = now - 60_000;
     const oldTimestamp = now - 25 * 60_000;

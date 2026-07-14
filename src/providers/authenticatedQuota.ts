@@ -564,8 +564,8 @@ function authenticatedWindowStateFromObservation(
 function cachedAuthenticatedWindowStates(
   state: ProviderUsageState
 ): Partial<Record<AuthenticatedQuotaWindowKey, AuthenticatedQuotaWindowState>> {
-  const fiveHour = cachedAuthenticatedWindowState(state.authenticatedWindows?.fiveHour, state.fiveHour, state.lastUpdatedEpochMs);
-  const sevenDay = cachedAuthenticatedWindowState(state.authenticatedWindows?.sevenDay, state.sevenDay, state.lastUpdatedEpochMs);
+  const fiveHour = cachedAuthenticatedWindowState(state.authenticatedWindows?.fiveHour, state.fiveHour);
+  const sevenDay = cachedAuthenticatedWindowState(state.authenticatedWindows?.sevenDay, state.sevenDay);
   return {
     ...(fiveHour ? { fiveHour } : {}),
     ...(sevenDay ? { sevenDay } : {})
@@ -574,8 +574,7 @@ function cachedAuthenticatedWindowStates(
 
 function cachedAuthenticatedWindowState(
   existing: AuthenticatedQuotaWindowState | undefined,
-  window: LimitWindow | undefined,
-  legacyLastUpdatedEpochMs: number | undefined
+  window: LimitWindow | undefined
 ): AuthenticatedQuotaWindowState | undefined {
   if (!existing && !window) {
     return undefined;
@@ -592,8 +591,7 @@ function cachedAuthenticatedWindowState(
   }
 
   const lastLiveEpochMs = existing?.lastLiveEpochMs
-    ?? window.sourceUpdatedEpochMs
-    ?? legacyLastUpdatedEpochMs;
+    ?? window.sourceUpdatedEpochMs;
 
   return {
     observation: existing?.observation ?? 'valid',
