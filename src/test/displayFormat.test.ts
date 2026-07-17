@@ -107,7 +107,6 @@ describe('display formatting', () => {
     }], baseOptions());
 
     assert.doesNotMatch(result.text, /[!⚠▲△?]/);
-    assert.equal(result.localLiveQuotaAttention, true);
     assert.equal(
       result.tooltip.split('Some live quota data is incomplete. Open the dashboard for details.').length - 1,
       1
@@ -141,7 +140,7 @@ describe('display formatting', () => {
 
     assert.doesNotMatch(result.text, /!/);
     assert.doesNotMatch(result.tooltip, /cached value|stale cached value|live window unreadable/i);
-    assert.equal(result.localLiveQuotaAttention, false);
+    assert.doesNotMatch(result.tooltip, /Some live quota data is incomplete/);
   });
 
   it('does not treat imported snapshot staleness as local live-quota attention', () => {
@@ -158,7 +157,7 @@ describe('display formatting', () => {
       }
     }]);
 
-    assert.equal(result.localLiveQuotaAttention, false);
+    assert.doesNotMatch(result.tooltip, /Some live quota data is incomplete/);
     assert.doesNotMatch(result.tooltip, /snap|snapshot|cached|stale|unavailable|live window not supplied/i);
   });
 
@@ -166,7 +165,6 @@ describe('display formatting', () => {
     const state = makeState(25, 50)[0];
     const result = formatStatus([{ ...state, error: 'local history read failed' }], baseOptions());
 
-    assert.equal(result.localLiveQuotaAttention, false);
     assert.doesNotMatch(result.tooltip, /Some live quota data is incomplete/);
   });
 

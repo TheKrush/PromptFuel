@@ -469,7 +469,6 @@ describe('authenticated quota parsing', () => {
         assert.equal(sevenDay?.freshness, 'live');
         assert.equal(fiveHour?.remainingPercent, 100);
         assert.equal(fiveHour?.freshness, 'stale');
-        assert.equal(fiveHour?.warning, 'absent');
       }
       assert.equal(overview.selectedTab, 'overview');
       assert.equal(scoped.selectedTab, 'codex');
@@ -478,7 +477,6 @@ describe('authenticated quota parsing', () => {
       assert.match(formatted.text, /47%/);
       assert.match(formatted.text, /100%/);
       assert.doesNotMatch(formatted.text, /[!⚠▲△?]|\bstale\b/i);
-      assert.equal(formatted.localLiveQuotaAttention, true);
       assert.match(formatted.tooltip, /\*\*47%\*\*/);
       assert.match(formatted.tooltip, /\*\*100%\*\*/);
       assert.equal((formatted.tooltip.match(/Some live quota data is incomplete\. Open the dashboard for details\./g) ?? []).length, 1);
@@ -835,7 +833,6 @@ describe('authenticated quota parsing', () => {
       const beforeRestart = buildUsageDashboardModel({ states: [partial] });
       const beforeRestartFiveHour = beforeRestart.providers[0]?.windows.find(window => window.key === 'fiveHour');
       assert.equal(beforeRestartFiveHour?.freshness, 'stale');
-      assert.equal(beforeRestartFiveHour?.warning, 'malformed');
 
       await writeAuthenticatedQuotaCache(tmpDir, { codex: partial });
       const reloaded = await readAuthenticatedQuotaCache(tmpDir);
@@ -853,7 +850,6 @@ describe('authenticated quota parsing', () => {
       const afterRestart = buildUsageDashboardModel({ states: [reloaded.codex!] });
       const afterRestartFiveHour = afterRestart.providers[0]?.windows.find(window => window.key === 'fiveHour');
       assert.equal(afterRestartFiveHour?.freshness, 'stale');
-      assert.equal(afterRestartFiveHour?.warning, 'malformed');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
@@ -954,7 +950,6 @@ describe('authenticated quota parsing', () => {
       const merged = mergeLocalAndAuthenticated({ provider: 'claude', source: 'local session' }, cached);
       const dashboard = buildUsageDashboardModel({ states: [merged] });
       const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
-      assert.equal(fiveHour?.warning, undefined);
       assert.doesNotMatch(JSON.stringify(dashboard), /live window/i);
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
@@ -987,7 +982,6 @@ describe('authenticated quota parsing', () => {
       const dashboard = buildUsageDashboardModel({ states: [merged] });
       const fiveHour = dashboard.providers[0]?.windows.find(window => window.key === 'fiveHour');
       const sevenDay = dashboard.providers[0]?.windows.find(window => window.key === 'sevenDay');
-      assert.equal(fiveHour?.warning, undefined);
       assert.equal(fiveHour?.freshness, undefined);
       assert.equal(sevenDay?.health, 'stale');
       assert.equal(sevenDay?.healthDetail, 'Quota value is stale.');

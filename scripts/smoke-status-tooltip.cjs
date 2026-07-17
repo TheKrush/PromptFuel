@@ -137,7 +137,7 @@ function main() {
       }
     }]);
     assert.doesNotMatch(result.tooltip, /snap|snapshot|stale|cached|⚠|▲|△/i, 'stale imported state adds no compact tooltip noise');
-    assert.equal(result.localLiveQuotaAttention, false, 'stale imported state does not trigger local attention');
+    assert.doesNotMatch(result.tooltip, /Some live quota data is incomplete/, 'stale imported state does not trigger local attention');
     assertDefaultStatusBarBackground('stale imported quota');
   }
 
@@ -187,7 +187,6 @@ function main() {
     }], opts);
 
     assert.doesNotMatch(result.text, /[!⚠▲△?]/, 'window-specific fallback adds no compact issue marker');
-    assert.equal(result.localLiveQuotaAttention, true, 'window-specific fallback enables the one local attention state');
     assert.equal((result.tooltip.match(/Some live quota data is incomplete\. Open the dashboard for details\./g) ?? []).length, 1, 'tooltip contains one concise attention summary');
     assert.doesNotMatch(result.tooltip, /cached value|live window unreadable|<span[^>]*(?:title|aria-label)=/i, 'tooltip rows contain no state explanation or indicator element');
     assert.doesNotMatch(result.tooltip, new RegExp(rawProviderError), 'tooltip excludes raw provider errors');
@@ -217,7 +216,6 @@ function main() {
       fiveHour: { usedPercentage: 40, resetsAtEpochSeconds: fiveHourReset, sourceKind: 'cache' }
     }], opts);
 
-    assert.equal(result.localLiveQuotaAttention, true, 'authenticated provider failure remains available to the tooltip state');
     assert.match(result.tooltip, /Some live quota data is incomplete\. Open the dashboard for details\./, 'authenticated provider failure retains concise tooltip context');
     assertDefaultStatusBarBackground('authenticated provider error');
   }
@@ -241,7 +239,7 @@ function main() {
     assert.doesNotMatch(result.text, /\u00B7\s*$/, 'missing five-hour quota leaves no dangling separator');
     assert.doesNotMatch(result.text, /\?/, 'missing five-hour quota does not add an unknown reset countdown');
     assert.doesNotMatch(result.text, /[!⚠▲△]/, 'status text contains no per-window issue marker');
-    assert.equal(result.localLiveQuotaAttention, true, 'missing five-hour data enables the one local attention state');
+    assert.match(result.tooltip, /Some live quota data is incomplete\. Open the dashboard for details\./, 'missing five-hour data keeps concise tooltip context');
     const missingRow = result.tooltip.split('\n').find(line => line.includes('| Codex | 5h |')) || '';
     assert.match(missingRow, /\| \u2014 \| \| \u2014 \| \|$/, 'tooltip retains the missing five-hour row with compact placeholders');
     assertDefaultStatusBarBackground('missing stale local Codex five-hour quota');

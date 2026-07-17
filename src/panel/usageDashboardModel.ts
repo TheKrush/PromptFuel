@@ -1,6 +1,5 @@
 import {
   AuthenticatedQuotaWindowAvailability,
-  AuthenticatedQuotaWindowObservation,
   AuthenticatedQuotaWindowState,
   LimitWindow,
   ProviderName,
@@ -20,7 +19,7 @@ import { quotaLevelForRemaining } from '../display/format';
 import {
   formatCount, formatUsd, formatPercent, formatPercentSuffix, clamp,
   normalizePercent, normalizePositiveNumber, firstNumber, addNumbers,
-  sourceInfo, AUTH_DISABLED_STATUSES, formatProviderStatus, buildUnavailableBreakdownCard
+  sourceInfo, AUTH_DISABLED_STATUSES, buildUnavailableBreakdownCard
 } from './dashboard/format';
 
 import { buildToday, buildTodayOverviewFromCharts } from './dashboard/today';
@@ -62,7 +61,6 @@ export interface UsageDashboardProvider {
   label: string;
   stale: boolean;
   source?: string;
-  status?: string;
   error?: string;
   lastUpdatedIso?: string;
   lastAuthenticatedRefreshIso?: string;
@@ -81,7 +79,6 @@ export interface UsageDashboardWindow {
   resetLabel?: string;
   available: boolean;
   freshness?: AuthenticatedQuotaWindowAvailability;
-  warning?: Exclude<AuthenticatedQuotaWindowObservation, 'valid'>;
   health?: 'missing' | 'stale';
   healthDetail?: string;
   source?: UsageDashboardSourceInfo;
@@ -457,14 +454,12 @@ function buildProvider(state: ProviderUsageState, normalizedSources?: Record<str
       .map(meter => buildMeterWindow(meter))
   ];
   const hasLiveWindow = windows.some(window => window.available && window.freshness === 'live');
-  const hasUnavailableSibling = windows.some(window => Boolean(window.warning));
 
   return {
     provider: state.provider,
     label: normalizedSources?.[state.provider]?.label ?? (state.provider === 'claude' ? 'Claude' : 'Codex'),
     stale: Boolean(state.stale) && !hasLiveWindow,
     source: state.source,
-    status: hasLiveWindow && hasUnavailableSibling ? 'partial' : formatProviderStatus(state.authenticatedStatus),
     error: state.error ?? (state.authenticatedStatus && !AUTH_DISABLED_STATUSES.has(state.authenticatedStatus) ? state.authenticatedError : undefined),
     lastUpdatedIso: formatEpochToIso(state.lastUpdatedEpochMs),
     lastAuthenticatedRefreshIso: formatEpochToIso(state.lastAuthenticatedRefreshEpochMs),
@@ -510,7 +505,6 @@ function buildWindow(
     resetLabel: formatRelativeTime(value?.resetsAtEpochSeconds),
     available: usedPercent !== undefined,
     ...(freshness ? { freshness } : {}),
-    ...(authenticatedWindow && authenticatedWindow.observation !== 'valid' ? { warning: authenticatedWindow.observation } : {}),
     ...(health ? { health } : {}),
     ...(healthDetail ? { healthDetail } : {})
   };

@@ -1,7 +1,6 @@
 import {
   AuthenticatedQuotaWindowAvailability,
   AuthenticatedQuotaWindowKey,
-  AuthenticatedQuotaWindowObservation,
   AuthenticatedQuotaWindowState,
   DisplayMode,
   LimitWindow,
@@ -52,7 +51,6 @@ export interface PresentableQuotaWindowState {
   severity: PresentableQuotaSeverity;
   freshness: PresentableQuotaFreshness;
   incident?: PresentableQuotaIncident;
-  warning?: AuthenticatedQuotaWindowObservation;
 }
 
 export interface RemoteQuotaRow {
@@ -78,7 +76,6 @@ export interface FormattedStatus {
   tooltip: string;
   severity: StatusSeverity;
   providers: FormattedProviderStatus[];
-  localLiveQuotaAttention: boolean;
 }
 
 const LIVE_QUOTA_ATTENTION_SUMMARY = 'Some live quota data is incomplete. Open the dashboard for details.';
@@ -99,8 +96,7 @@ export function derivePresentableQuotaWindowState(
     freshness: authenticatedWindow
       ? presentableFreshness(authenticatedWindowAvailabilityForPresentation(state, value, authenticatedWindow))
       : quotaFreshnessForWindow(state, value),
-    incident: providerIncident(state),
-    ...(authenticatedWindow && authenticatedWindow.observation !== 'valid' ? { warning: authenticatedWindow.observation } : {})
+    incident: providerIncident(state)
   };
 }
 
@@ -115,8 +111,7 @@ export function formatStatus(
       text: '$(circle-slash) AI usage unavailable',
       tooltip: 'No usage providers are enabled or reporting.',
       severity: 'warning',
-      providers: [],
-      localLiveQuotaAttention: false
+      providers: []
     };
   }
 
@@ -153,8 +148,7 @@ export function formatStatus(
       localLiveQuotaAttention
     ),
     severity,
-    providers,
-    localLiveQuotaAttention
+    providers
   };
 }
 
@@ -963,10 +957,8 @@ function authenticatedWindowAvailabilityForPresentation(
 }
 
 function hasActionableLocalQuotaIssue(state: ProviderUsageState): boolean {
-  if (formatWindowWarningNote(state, state.sevenDay, '7d')
-      || formatWindowWarningNote(state, state.fiveHour, '5h')) {
-    return true;
-  }
+  if (hasActionableLocalQuotaWindowIssue(state, state.sevenDay, '7d')
+      || hasActionableLocalQuotaWindowIssue(state, state.fiveHour, '5h')) return true;
 
   return state.authenticatedStatus === 'auth_expired'
     || state.authenticatedStatus === 'network_error'
@@ -975,19 +967,10 @@ function hasActionableLocalQuotaIssue(state: ProviderUsageState): boolean {
     || state.authenticatedStatus === 'backoff';
 }
 
-function formatWindowWarningNote(state: ProviderUsageState, window: LimitWindow | undefined, label?: string): string | undefined {
+function hasActionableLocalQuotaWindowIssue(state: ProviderUsageState, window: LimitWindow | undefined, label?: string): boolean {
   const authenticatedWindow = authenticatedWindowStateFor(state, window)
     ?? authenticatedWindowStateForLabel(state, label);
-  if (!authenticatedWindow || authenticatedWindow.observation === 'valid') {
-    return undefined;
-  }
-
-  const prefix = authenticatedWindow.availability === 'cached'
-    ? 'cached value'
-    : authenticatedWindow.availability === 'stale'
-      ? 'stale cached value'
-      : 'unavailable';
-  return `${prefix}; live window ${formatWindowObservation(authenticatedWindow.observation)}`;
+  return Boolean(authenticatedWindow && authenticatedWindow.observation !== 'valid');
 }
 
 function authenticatedWindowStateForLabel(
@@ -1011,23 +994,6 @@ function isAuthenticatedDerivedWindow(window: LimitWindow): boolean {
   return window.sourceKind === 'authenticated'
     || window.sourceKind === 'cache'
     || window.sourceKind === 'stale';
-}
-
-function formatWindowObservation(observation: AuthenticatedQuotaWindowObservation): string {
-  switch (observation) {
-    case 'absent':
-      return 'not supplied';
-    case 'null':
-      return 'returned null';
-    case 'unsupported':
-      return 'unsupported';
-    case 'disabled':
-      return 'disabled';
-    case 'malformed':
-      return 'unreadable';
-    default:
-      return 'unavailable';
-  }
 }
 
 function formatFreshnessLabel(freshness: PresentableQuotaFreshness): string | undefined {

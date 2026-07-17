@@ -161,12 +161,8 @@ describe('quota fallback regression coverage', () => {
     const fiveHour = derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions());
     const sevenDay = derivePresentableQuotaWindowState(partial, partial.sevenDay, formatOptions());
     assert.equal(fiveHour.freshness, 'cached');
-    assert.equal(fiveHour.warning, 'absent');
     assert.equal(sevenDay.freshness, 'live');
-    assert.equal(sevenDay.warning, undefined);
-    assert.equal(dashboardWindow(partial, 'fiveHour').warning, 'absent');
     assert.equal(dashboardWindow(partial, 'fiveHour').freshness, 'cached');
-    assert.equal(dashboardWindow(partial, 'sevenDay').warning, undefined);
     assert.equal(dashboardWindow(partial, 'sevenDay').remainingPercent, 0);
 
     const repeatedPartial = mergeAuthenticatedQuotaSuccess(partial, liveState('codex', {
@@ -191,7 +187,6 @@ describe('quota fallback regression coverage', () => {
       }
     }));
     assert.equal(recovered.authenticatedWindows?.fiveHour?.availability, 'live');
-    assert.equal(derivePresentableQuotaWindowState(recovered, recovered.fiveHour, formatOptions()).warning, undefined);
     assert.equal(recovered.fiveHour?.usedPercentage, 0);
     assert.equal(dashboardWindow(recovered, 'fiveHour').remainingPercent, 100);
   });
@@ -232,9 +227,7 @@ describe('quota fallback regression coverage', () => {
 
       const presentable = derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions());
       assert.equal(presentable.freshness, 'local');
-      assert.equal(presentable.warning, undefined);
       assert.equal(dashboardWindow(partial, 'fiveHour').freshness, undefined);
-      assert.equal(dashboardWindow(partial, 'fiveHour').warning, undefined);
       assert.equal(dashboardWindow(partial, 'sevenDay').freshness, 'live');
     }
   });
@@ -263,9 +256,7 @@ describe('quota fallback regression coverage', () => {
       availability: 'unavailable'
     });
     assert.equal(derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions()).freshness, 'local');
-    assert.equal(derivePresentableQuotaWindowState(partial, partial.fiveHour, formatOptions()).warning, undefined);
     assert.equal(dashboardWindow(partial, 'fiveHour').freshness, undefined);
-    assert.equal(dashboardWindow(partial, 'fiveHour').warning, undefined);
   });
 
   it('presents a broken Codex five-hour window as missing without a synthetic percentage', () => {
@@ -283,25 +274,21 @@ describe('quota fallback regression coverage', () => {
     assert.equal(presentable.value, undefined);
     assert.equal(presentable.severity, 'unavailable');
     assert.equal(presentable.freshness, 'unavailable');
-    assert.equal(presentable.warning, 'null');
     assert.equal(fiveHour.usedPercent, undefined);
     assert.equal(fiveHour.remainingPercent, undefined);
     assert.equal(fiveHour.available, false);
     assert.equal(fiveHour.freshness, 'unavailable');
-    assert.equal(fiveHour.warning, 'null');
     assert.equal(fiveHour.health, 'missing');
     assert.equal(fiveHour.healthDetail, 'Live quota unavailable.');
     assert.equal(fiveHour.resetIso, undefined);
     assert.equal(fiveHour.resetLabel, undefined);
     assert.equal(sevenDay.available, true);
-    assert.equal(sevenDay.warning, undefined);
 
     const formatted = formatStatus([partial], { displayMode: 'compact', statusMode: 'remaining' });
     assert.match(formatted.text, /75%/);
     assert.doesNotMatch(formatted.text, /100%|5h|\u2014/);
     assert.doesNotMatch(formatted.text, /\u00B7\s*(?:$|\|)/);
     assert.doesNotMatch(formatted.text, /[!⚠▲△?]/);
-    assert.equal(formatted.localLiveQuotaAttention, true);
     const tooltipRow = formatted.tooltip.split('\n').find(line => line.includes('| Codex | 5h |')) ?? '';
     assert.match(tooltipRow, /\| \u2014 \| \| \u2014 \| \|$/);
     assert.doesNotMatch(tooltipRow, /100%/);
@@ -347,15 +334,12 @@ describe('quota fallback regression coverage', () => {
     const formatted = formatStatus([state], { displayMode: 'standard', statusMode: 'remaining' });
 
     assert.equal(provider.stale, false);
-    assert.equal(provider.status, 'partial');
     assert.equal(sevenDay?.remainingPercent, 34);
     assert.equal(sevenDay?.freshness, 'live');
-    assert.equal(sevenDay?.warning, undefined);
     assert.equal(sevenDay?.health, undefined);
     assert.equal(fiveHour?.remainingPercent, undefined);
     assert.equal(fiveHour?.available, false);
     assert.equal(fiveHour?.freshness, 'unavailable');
-    assert.equal(fiveHour?.warning, 'absent');
     assert.equal(fiveHour?.health, 'missing');
     assert.equal(fiveHour?.healthDetail, 'Live quota unavailable.');
     assert.equal(fiveHour?.resetIso, undefined);
@@ -365,7 +349,7 @@ describe('quota fallback regression coverage', () => {
     assert.doesNotMatch(formatted.text, /100%|5h|\u2014/);
     assert.doesNotMatch(formatted.text, /\u00B7\s*$/);
     assert.doesNotMatch(formatted.text, /[!⚠▲△?]/);
-    assert.equal(formatted.localLiveQuotaAttention, true);
+    assert.match(formatted.tooltip, /Some live quota data is incomplete\. Open the dashboard for details\./);
   });
 
   it('uses the stale displayed window timestamp rather than a recent provider refresh attempt', () => {
@@ -673,14 +657,12 @@ describe('quota fallback regression coverage', () => {
     assert.deepEqual(recoveredFiveHour.authenticatedWindows?.fiveHour, {
       observation: 'valid', availability: 'live', lastLiveEpochMs: recoveredAt
     });
-    assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').warning, undefined);
     assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').freshness, 'live');
     assert.equal(dashboardWindow(recoveredFiveHour, 'fiveHour').health, undefined);
     assert.equal(recoveredFiveHour.fiveHour?.usedPercentage, 0);
     assert.deepEqual(recoveredFiveHour.authenticatedWindows?.sevenDay, {
       observation: 'disabled', availability: 'stale', lastLiveEpochMs: sevenDayLive
     });
-    assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').warning, 'disabled');
     assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').freshness, 'stale');
     assert.equal(dashboardWindow(recoveredFiveHour, 'sevenDay').health, 'stale');
     assert.equal(recoveredFiveHour.authenticatedStatus, 'success');
@@ -705,7 +687,6 @@ describe('quota fallback regression coverage', () => {
 
     assert.equal(partial.authenticatedWindows?.fiveHour?.availability, 'stale');
     assert.equal(dashboardWindow(partial, 'fiveHour').freshness, 'stale');
-    assert.equal(dashboardWindow(partial, 'fiveHour').warning, 'unsupported');
     assert.equal(dashboardWindow(partial, 'fiveHour').health, 'stale');
     assert.equal(dashboardWindow(partial, 'sevenDay').freshness, 'live');
     assert.equal(dashboardWindow(partial, 'sevenDay').health, undefined);

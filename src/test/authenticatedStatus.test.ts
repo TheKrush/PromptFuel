@@ -37,9 +37,6 @@ describe('authenticated status presentation', () => {
       });
 
       assert.equal(provider.error, undefined);
-      assert.ok(provider.status, `${authenticatedStatus} should still expose neutral status context`);
-      assert.equal(provider.status.toLowerCase().includes('error'), false);
-      assert.equal(provider.status.toLowerCase().includes('failure'), false);
     }
   });
 
@@ -51,7 +48,6 @@ describe('authenticated status presentation', () => {
       });
 
       assert.equal(provider.error, 'Quota refresh failed');
-      assert.ok(provider.status, `${authenticatedStatus} should expose status context`);
     }
   });
 
@@ -63,9 +59,5 @@ describe('authenticated status presentation', () => {
     });
 
     assert.equal(provider.error, 'Corrupt local state file');
-  });
-
-  it('omits status text when no authenticated status exists', () => {
-    assert.equal(dashboardProvider().status, undefined);
   });
 });

@@ -1,4 +1,4 @@
-import { AuthenticatedQuotaStatus } from '../../types';
+import type { AuthenticatedQuotaStatus } from '../../types';
 import type {
   UsageDashboardSourceInfo,
   UsageDashboardSourceConfidence,
@@ -125,33 +125,6 @@ export function addNumbers(...values: Array<number | undefined>): number | undef
   }
 
   return normalizedValues.reduce((sum, value) => sum + value, 0);
-}
-
-export function formatProviderStatus(status: AuthenticatedQuotaStatus | undefined): string | undefined {
-  switch (status) {
-    case undefined:
-      return undefined;
-    case 'disabled':
-      return 'authenticated quota provider: disabled';
-    case 'not_configured':
-      return 'authenticated quota provider: not configured';
-    case 'skipped':
-      return 'authenticated quota provider: skipped (local usage data)';
-    case 'backoff':
-      return 'authenticated quota provider: in backoff';
-    case 'success':
-      return 'authenticated quota provider: active';
-    case 'http_error':
-      return 'authenticated quota provider: HTTP error';
-    case 'network_error':
-      return 'authenticated quota provider: network error';
-    case 'auth_expired':
-      return 'authenticated quota provider: auth expired';
-    case 'parse_error':
-      return 'authenticated quota provider: response parse error';
-    default:
-      return status;
-  }
 }
 
 function historyFallbackCostOverride(

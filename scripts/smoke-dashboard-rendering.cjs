@@ -569,10 +569,8 @@ function main() {
   assert.equal(provenanceFiveHour.available, true, 'retained local-session 5h value remains numerically available');
   assert.equal(provenanceFiveHour.remainingPercent, 70, 'retained local-session 5h value keeps its numeric percentage');
   assert.equal(provenanceFiveHour.freshness, undefined, 'retained local-session 5h value has no authenticated freshness');
-  assert.equal(provenanceFiveHour.warning, undefined, 'retained local-session 5h value has no authenticated warning');
   assert.equal(provenanceSevenDay.remainingPercent, 100, 'live authenticated 7d value remains independently available');
   assert.equal(provenanceSevenDay.freshness, 'live', 'live authenticated 7d value remains independently live');
-  assert.equal(provenanceSevenDay.warning, undefined, 'live authenticated 7d value remains unmarked');
 
   const provenanceFiveHourHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(provenanceFiveHour, '5h');
   const provenanceSevenDayHtml = sandbox.__combinedDashboardTest.renderGlanceWindowCells(provenanceSevenDay, '7d');
@@ -634,7 +632,6 @@ function main() {
   const partialProvider = partialModel.providers[0];
   const partialHtml = sandbox.__combinedDashboardTest.renderGlanceList(partialModel.providers);
   assert.equal(partialProvider.stale, false, 'one live authenticated window prevents provider-wide stale presentation');
-  assert.equal(partialProvider.status, 'partial', 'live plus unavailable sibling uses partial provider status');
   assert.equal(partialProvider.windows.find(window => window.key === 'sevenDay').freshness, 'live', 'valid authenticated success normalizes 7d presentation to live');
   const missingLocalFiveHour = partialProvider.windows.find(window => window.key === 'fiveHour');
   assert.equal(missingLocalFiveHour.available, false, 'missing local 5h remains unavailable in the dashboard model');

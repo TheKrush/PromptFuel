@@ -95,10 +95,10 @@ const refreshState = {
 let resetRefreshTimer: NodeJS.Timeout | undefined;
 let scheduledResetRefreshEpochMs: number | undefined;
 
-let _onStatusUpdate: ((text: string, tooltip: string, localLiveQuotaAttention: boolean) => void) | undefined;
+let _onStatusUpdate: ((text: string, tooltip: string) => void) | undefined;
 
 export function initRefreshController(deps: {
-  onStatusUpdate: (text: string, tooltip: string, localLiveQuotaAttention: boolean) => void;
+  onStatusUpdate: (text: string, tooltip: string) => void;
 }): void {
   _onStatusUpdate = deps.onStatusUpdate;
 }
@@ -626,7 +626,6 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
 
   _onStatusUpdate?.(
     formatted.text,
-    `${formatted.tooltip}\n\nClick to open PromptFuel dashboard`,
-    formatted.localLiveQuotaAttention
+    `${formatted.tooltip}\n\nClick to open PromptFuel dashboard`
   );
 }
