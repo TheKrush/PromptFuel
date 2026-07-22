@@ -210,10 +210,14 @@ function main() {
       'overview Today cache carries provider detailLines'
     );
     const overviewApiEquivalent = overviewCards.find(card => card.key === 'overviewTodayApiEquivalent');
-    assert.equal(overviewApiEquivalent.available, false, 'overview Today API-equivalent stays unavailable when one provider estimate is incomplete');
-    assert.equal(overviewApiEquivalent.detailLines, undefined, 'overview Today API-equivalent does not emit partial provider dollar detailLines');
-    assert.ok(overviewApiEquivalent.detail && overviewApiEquivalent.detail.length > 0, 'overview Today API-equivalent carries unavailable detail context');
-    assert.ok(overviewApiEquivalent.detailTooltip && overviewApiEquivalent.detailTooltip.length > 0, 'overview Today API-equivalent carries unavailable tooltip context');
+    const claudeApiEquivalent = model.today.cards.find(card => card.key === 'todayApiEquivalent');
+    const codexApiEquivalent = model.today.cards.find(card => card.key === 'codexTodayApiEquivalent');
+    assert.equal(overviewApiEquivalent.available, true, 'overview Today API-equivalent retains the valid Claude contribution when Codex is incomplete');
+    assert.equal(overviewApiEquivalent.value, claudeApiEquivalent.value, 'overview Today partial estimate equals the valid Claude contribution');
+    assert.match(overviewApiEquivalent.detail, /Partial estimate.*Codex/, 'overview Today API-equivalent visibly discloses missing Codex coverage');
+    assert.ok(overviewApiEquivalent.detailLines && overviewApiEquivalent.detailLines.some(line => /Partial estimate.*Codex/.test(line)), 'overview Today API-equivalent emits visible partial coverage detail');
+    assert.match(overviewApiEquivalent.detailTooltip, /partial: unavailable from Codex/i, 'overview Today API-equivalent tooltip discloses missing Codex coverage');
+    assert.equal(codexApiEquivalent.available, false, 'Codex provider API-equivalent remains unavailable');
     assert.equal(model.today.cards.find(card => card.key === 'todayTokens').value, '51.5K', 'Claude provider Today card remains scoped');
     assert.equal(model.today.cards.find(card => card.key === 'codexTodayTokens').value, '8.5K', 'Codex provider Today card remains scoped');
     console.log('PASS: Overview Today cards aggregate providers while provider cards stay scoped');

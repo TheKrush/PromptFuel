@@ -18,18 +18,39 @@ interface OverviewTodayPart {
   apiCostUsd?: number;
   apiFallbackPricingUsed?: boolean;
   hasApiEstimateInput: boolean;
+  apiEstimateUnavailableReason?: string;
+}
+
+interface OverviewApiEstimateContribution {
+  label: string;
+  costUsd?: number;
+  fallbackPricingUsed?: boolean;
+  unavailableReason?: string;
+}
+
+interface OverviewApiEstimateCardFields {
+  value: string;
+  detail: string;
+  detailLines?: string[];
+  detailTooltip: string;
+  available: boolean;
+  fallbackPricingUsed: boolean;
 }
 
 interface ApiEstimateTooltipOptions {
   label: string;
   fallbackPricingUsed?: boolean;
   unavailableReason?: string;
+  partialUnavailableReason?: string;
 }
 
 function formatApiEstimateTooltip(options: ApiEstimateTooltipOptions): string {
   const prefix = `${options.label} estimate`;
   if (options.unavailableReason) {
     return `${prefix} unavailable: ${options.unavailableReason}. Not actual billing.`;
+  }
+  if (options.partialUnavailableReason) {
+    return `${prefix} partial: unavailable from ${options.partialUnavailableReason}. ${options.fallbackPricingUsed ? 'Fallback pricing used; ' : ''}not actual billing.`;
   }
   return `${prefix}; ${options.fallbackPricingUsed ? 'fallback pricing used; ' : ''}not actual billing.`;
 }
@@ -129,6 +150,89 @@ function overviewDetailLines(
   return lines.length >= 2 ? lines : undefined;
 }
 
+function isUsableApiEstimateCost(costUsd: number | undefined): costUsd is number {
+  return typeof costUsd === 'number' && Number.isFinite(costUsd) && costUsd >= 0;
+}
+
+function hasUsableApiEstimateCost(
+  contribution: OverviewApiEstimateContribution
+): contribution is OverviewApiEstimateContribution & { costUsd: number } {
+  return isUsableApiEstimateCost(contribution.costUsd);
+}
+
+function overviewApiEstimateContribution(part: OverviewTodayPart): OverviewApiEstimateContribution {
+  return {
+    label: part.label,
+    costUsd: part.apiCostUsd,
+    fallbackPricingUsed: part.apiFallbackPricingUsed,
+    unavailableReason: part.apiEstimateUnavailableReason ?? (part.hasApiEstimateInput
+      ? 'model/token data unavailable'
+      : 'no per-model token data')
+  };
+}
+
+function buildOverviewApiEstimateCard(
+  contributions: OverviewApiEstimateContribution[],
+  unavailableDetail: string,
+  unavailableReason: string
+): OverviewApiEstimateCardFields {
+  const valid = contributions.filter(hasUsableApiEstimateCost);
+  const unavailable = contributions.filter(contribution => !hasUsableApiEstimateCost(contribution));
+  const fallbackPricingUsed = valid.some(contribution => contribution.fallbackPricingUsed);
+
+  if (valid.length === 0) {
+    return {
+      value: 'Unavailable',
+      detail: unavailableDetail,
+      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', unavailableReason }),
+      available: false,
+      fallbackPricingUsed: false
+    };
+  }
+
+  const totalCostUsd = valid.reduce((sum, contribution) => sum + contribution.costUsd, 0);
+  if (!Number.isFinite(totalCostUsd)) {
+    return {
+      value: 'Unavailable',
+      detail: unavailableDetail,
+      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', unavailableReason }),
+      available: false,
+      fallbackPricingUsed: false
+    };
+  }
+  if (unavailable.length === 0) {
+    const detailLines = valid.length >= 2
+      ? valid.map(contribution => `${contribution.label}: ${formatUsd(contribution.costUsd)}`)
+      : undefined;
+    return {
+      value: formatUsd(totalCostUsd),
+      detail: valid.map(contribution => `${contribution.label} ${formatUsd(contribution.costUsd)}`).join(' | '),
+      ...(detailLines ? { detailLines } : {}),
+      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', fallbackPricingUsed }),
+      available: true,
+      fallbackPricingUsed
+    };
+  }
+
+  const unavailableLabels = unavailable.map(contribution => contribution.label);
+  const unavailableSummary = unavailable.map(contribution => `${contribution.label}: ${contribution.unavailableReason ?? 'model/token data unavailable'}`).join('; ');
+  return {
+    value: formatUsd(totalCostUsd),
+    detail: `Partial estimate · unavailable: ${unavailableLabels.join(', ')}`,
+    detailLines: [
+      `Partial estimate · unavailable: ${unavailableLabels.join(', ')}`,
+      ...valid.map(contribution => `${contribution.label}: ${formatUsd(contribution.costUsd)}`)
+    ],
+    detailTooltip: formatApiEstimateTooltip({
+      label: '1D API-equivalent',
+      fallbackPricingUsed,
+      partialUnavailableReason: unavailableSummary
+    }),
+    available: true,
+    fallbackPricingUsed
+  };
+}
+
 function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetricCard[] | undefined {
   const activeParts = parts.filter(overviewPartHasValues);
   if (activeParts.length === 0) {
@@ -141,11 +245,11 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
   const totalInput = activeParts.reduce((sum, part) => sum + part.inputTokens, 0);
   const totalOutput = activeParts.reduce((sum, part) => sum + part.outputTokens, 0);
   const totalCache = activeParts.reduce((sum, part) => sum + part.cacheTokens, 0);
-  const apiRows = activeParts
-    .filter(part => part.hasApiEstimateInput)
-    .map(part => ({ costUsd: part.apiCostUsd }));
-  const totalApi = sumCostIfComplete(apiRows);
-  const fallbackPricingUsed = activeParts.some(part => part.apiFallbackPricingUsed);
+  const apiEstimate = buildOverviewApiEstimateCard(
+    activeParts.map(overviewApiEstimateContribution),
+    'Estimate requires model/token data from all contributing Today sources',
+    'every contributing Today source must include model and token component data'
+  );
 
   const overviewSource = sourceInfo(
     'mixedDayBucket',
@@ -203,26 +307,11 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
     {
       key: 'overviewTodayApiEquivalent',
       label: '1D API-equivalent',
-      value: totalApi !== undefined ? formatUsd(totalApi) : 'Unavailable',
-      detail: totalApi !== undefined
-        ? activeParts
-          .filter(part => part.hasApiEstimateInput)
-          .map(part => `${part.label} ${formatUsd(part.apiCostUsd ?? 0)}`)
-          .join(' | ')
-        : 'Estimate requires model/token data from all contributing Today sources',
-      detailLines: totalApi !== undefined
-        ? overviewDetailLines(
-          activeParts,
-          part => formatUsd(part.apiCostUsd ?? 0),
-          part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
-        )
-        : undefined,
-      detailTooltip: formatApiEstimateTooltip({
-        label: '1D API-equivalent',
-        fallbackPricingUsed,
-        unavailableReason: totalApi === undefined ? 'every contributing Today source must include model and token component data' : undefined
-      }),
-      available: totalApi !== undefined,
+      value: apiEstimate.value,
+      detail: apiEstimate.detail,
+      ...(apiEstimate.detailLines ? { detailLines: apiEstimate.detailLines } : {}),
+      detailTooltip: apiEstimate.detailTooltip,
+      available: apiEstimate.available,
       source: overviewSource
     }
   ];
@@ -406,7 +495,6 @@ export function buildTodayOverviewFromCharts(
 
   const claudeApi = toEstimateInput(claudeBin, true);
   const codexApi = toEstimateInput(codexBin, false);
-  const totalApi = claudeApi && codexApi ? claudeApi.costUsd + codexApi.costUsd : undefined;
   const parts: OverviewTodayPart[] = [
     {
       label: 'Claude',
@@ -432,6 +520,11 @@ export function buildTodayOverviewFromCharts(
     }
   ];
 
+  const apiEstimate = buildOverviewApiEstimateCard(
+    parts.map(overviewApiEstimateContribution),
+    'Estimate requires per-model token data from all sources',
+    'every contributing Today source must include model and token component data'
+  );
   const overviewSource = sourceInfo('mixedDayBucket', 'Today — combined', 'Claude and Codex today usage from 1D history bins.');
   return [
     {
@@ -477,23 +570,11 @@ export function buildTodayOverviewFromCharts(
     {
       key: 'overviewTodayApiEquivalent',
       label: '1D API-equivalent',
-      value: totalApi !== undefined ? formatUsd(totalApi) : 'Unavailable',
-      detail: totalApi !== undefined
-        ? `Claude ${formatUsd(claudeApi!.costUsd)} · Codex ${formatUsd(codexApi!.costUsd)}`
-        : 'Estimate requires per-model token data from all sources',
-      detailLines: totalApi !== undefined
-        ? overviewDetailLines(
-          parts,
-          part => formatUsd(part.apiCostUsd ?? 0),
-          part => part.hasApiEstimateInput && part.apiCostUsd !== undefined
-        )
-        : undefined,
-      detailTooltip: formatApiEstimateTooltip({
-        label: '1D API-equivalent',
-        fallbackPricingUsed: parts.some(part => part.apiFallbackPricingUsed),
-        unavailableReason: totalApi === undefined ? 'every contributing Today source must include model and token component data' : undefined
-      }),
-      available: totalApi !== undefined,
+      value: apiEstimate.value,
+      detail: apiEstimate.detail,
+      ...(apiEstimate.detailLines ? { detailLines: apiEstimate.detailLines } : {}),
+      detailTooltip: apiEstimate.detailTooltip,
+      available: apiEstimate.available,
       source: overviewSource
     }
   ];

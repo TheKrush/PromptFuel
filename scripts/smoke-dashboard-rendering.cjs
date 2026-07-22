@@ -803,6 +803,30 @@ function main() {
   assert.match(escapedApiHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API-equivalent detailLines are escaped and br-joined');
   assert.doesNotMatch(visibleTextFromHtml(escapedApiHtml), /Claude \$57\.34 \| Codex \$114/, 'API-equivalent detailLines suppress fallback detail text');
 
+  const partialOverviewToday = {
+    cards: [
+      { key: 'todayApiEquivalent', label: '1D API-equivalent', value: 'Unavailable', detail: 'No model data', available: false },
+      { key: 'codexTodayApiEquivalent', label: '1D API-equivalent', value: '$12.34', detail: 'Estimate · not actual billing', available: true }
+    ],
+    overviewCards: [{
+      key: 'overviewTodayApiEquivalent',
+      label: '1D API-equivalent',
+      value: '$12.34',
+      detail: 'Partial estimate · unavailable: Claude',
+      detailLines: ['Partial estimate · unavailable: Claude', 'Codex: $12.34'],
+      detailTooltip: '1D API-equivalent estimate partial: unavailable from Claude: no per-model token data. Not actual billing.',
+      available: true
+    }]
+  };
+  const partialOverviewCard = partialOverviewToday.overviewCards[0];
+  const partialOverviewHtml = sandbox.__combinedDashboardTest.renderApiEstimateStrip(partialOverviewCard);
+  assert.match(visibleTextFromHtml(partialOverviewHtml), /Partial estimate.*Claude/, 'Overview partial API-equivalent visibly discloses unavailable coverage');
+  assert.match(partialOverviewHtml, /usage-api-estimate-strip(?! unavailable)/, 'Overview partial API-equivalent does not render as unavailable');
+  assert.match(partialOverviewHtml, /aria-label="1D API-equivalent: 1D API-equivalent estimate partial: unavailable from Claude/, 'Overview partial API-equivalent exposes its disclosure through the custom tooltip fallback');
+  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'overview').overviewCards, partialOverviewToday.overviewCards, 'Overview retains the aggregate partial API-equivalent card');
+  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'claude').overviewCards, undefined, 'provider tabs do not reuse the Overview partial API-equivalent card');
+  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'claude').cards.find(card => card.key === 'todayApiEquivalent').available, false, 'provider-specific unavailable card remains unavailable');
+
   assert.equal(combinedOneMonthTokens.detailLines.some(line => line.includes('stale')), false, 'stale context remains outside per-line breakdown data');
 
   const partialApiModel = buildUsageDashboardModel({
@@ -816,8 +840,25 @@ function main() {
     sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, partialCombinedChart, '1M'),
     'combinedHistoryApiEquivalent'
   );
-  assert.equal(partialCombinedApiCard.available, false, 'partial provider API-equivalent does not expose a partial combined value');
-  assert.equal(partialCombinedApiCard.detailLines, undefined, 'partial provider API-equivalent does not emit provider dollar detailLines');
+  assert.equal(partialCombinedApiCard.available, true, 'partial provider API-equivalent retains the valid combined contribution');
+  assert.match(partialCombinedApiCard.detail, /Partial estimate.*Codex/, 'partial provider API-equivalent discloses missing Codex coverage');
+  assert.ok(partialCombinedApiCard.detailLines && partialCombinedApiCard.detailLines.some(line => /Partial estimate.*Codex/.test(line)), 'partial provider API-equivalent emits visible partial coverage detail');
+  assert.match(partialCombinedApiCard.detailTooltip, /partial: unavailable from Codex/i, 'partial provider API-equivalent tooltip discloses missing Codex coverage');
+
+  const codexOnlyApiModel = buildUsageDashboardModel({
+    states: [],
+    claudeUsageHistory: withoutModelStacks(makeClaudeHistory()),
+    codexCorrelatedHistory: makeCodexHistory(),
+    enabledProviders: ['claude', 'codex']
+  });
+  const codexOnlyChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(codexOnlyApiModel.details.combinedHistoryChart, '1D');
+  const codexOnlyApiCard = metricCardByKey(
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, codexOnlyChart, '1D'),
+    'combinedHistoryApiEquivalent'
+  );
+  assert.equal(codexOnlyApiCard.available, true, 'Codex-only estimate remains available when Claude lacks model data');
+  assert.match(codexOnlyApiCard.detail, /Partial estimate.*Claude/, 'Codex-only estimate discloses missing Claude coverage');
+  assert.match(codexOnlyApiCard.detailTooltip, /partial: unavailable from Claude/i, 'Codex-only tooltip discloses missing Claude coverage');
   sandbox.__combinedDashboardTest.setProviderTab('codex');
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1M');
   const partialCodexDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(partialApiModel.details, 'codex');

@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
+import { buildTodayOverviewFromCharts } from '../panel/dashboard/today';
+import { formatUsd } from '../panel/dashboard/format';
+import { estimateAggregateCostUsd } from '../providers/pricing';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
 import type { ProviderUsageState } from '../types';
@@ -95,6 +98,46 @@ function codexToday(): CodexCorrelatedDayBucket {
     skippedMissingBaseline: 0,
     skippedNegativeDelta: 0
   };
+}
+
+function unavailableClaudeToday(): ClaudeTodayUsageBucket {
+  return {
+    ...claudeToday(),
+    models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
+    modelUsage: []
+  };
+}
+
+function unavailableCodexToday(): CodexCorrelatedDayBucket {
+  return {
+    ...codexToday(),
+    models: ['gpt-5-codex-20260517', 'o3'],
+    modelUsage: []
+  };
+}
+
+function chartForTodayBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket): any {
+  return {
+    rangeViews: {
+      '1D': {
+        activeBinCount: 1,
+        points: [{
+          assistantMessages: bucket.assistantMessages,
+          inputTokens: bucket.inputTokens,
+          outputTokens: bucket.outputTokens,
+          cacheTokens: bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens,
+          totalTokens: bucket.totalTokens,
+          models: bucket.modelUsage
+        }]
+      }
+    }
+  };
+}
+
+function overviewApiCard(model: ReturnType<typeof buildUsageDashboardModel>) {
+  const card = model.today.overviewCards?.find(item => item.key === 'overviewTodayApiEquivalent');
+  assert.ok(card, 'Overview Today API-equivalent card must exist');
+  return card;
 }
 
 describe('provider tabs model', () => {
@@ -203,6 +246,122 @@ describe('provider tabs model', () => {
     assert.equal(model.today.overviewCards?.find(card => card.key === 'overviewTodayCache')?.value, '700');
     assert.ok(model.today.cards.some(card => card.key === 'todayTokens'), 'Claude provider Today cards remain in model');
     assert.ok(model.today.cards.some(card => card.key === 'codexTodayTokens'), 'Codex provider Today cards remain in model');
+  });
+
+  it('keeps an estimable Codex Overview contribution when Claude is unavailable', () => {
+    const model = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: unavailableClaudeToday(),
+      codexTodayUsage: codexToday(),
+      enabledProviders: ['claude', 'codex']
+    });
+    const overview = overviewApiCard(model);
+    const codex = model.today.cards.find(card => card.key === 'codexTodayApiEquivalent');
+    const claude = model.today.cards.find(card => card.key === 'todayApiEquivalent');
+
+    assert.ok(codex);
+    assert.ok(claude);
+    assert.equal(overview.available, true, 'Overview remains available from Codex contribution');
+    assert.equal(overview.value, codex.value, 'Overview partial total equals the valid Codex contribution');
+    assert.match(overview.detail ?? '', /Partial estimate.*Claude/, 'Overview labels missing Claude coverage as partial');
+    assert.match(overview.detailTooltip ?? '', /partial: unavailable from Claude/i, 'Overview tooltip discloses unavailable Claude coverage');
+    assert.equal(claude.available, false, 'Claude provider card remains unavailable');
+  });
+
+  it('marks a fully estimable Overview API-equivalent as complete', () => {
+    const claude = claudeToday();
+    const codex = codexToday();
+    const model = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: claude,
+      codexTodayUsage: codex,
+      enabledProviders: ['claude', 'codex']
+    });
+    const expected = estimateAggregateCostUsd((claude.modelUsage ?? []).map(item => ({
+      model: item.model,
+      inputTokens: item.inputTokens,
+      outputTokens: item.outputTokens,
+      cacheCreationInputTokens: item.cacheCreationInputTokens,
+      cacheReadInputTokens: item.cacheReadInputTokens
+    })), true).costUsd + estimateAggregateCostUsd((codex.modelUsage ?? []).map(item => ({
+      model: item.model,
+      inputTokens: item.inputTokens,
+      outputTokens: item.outputTokens,
+      cacheCreationInputTokens: item.cacheCreationInputTokens,
+      cacheReadInputTokens: item.cacheReadInputTokens
+    })), false).costUsd;
+    const overview = overviewApiCard(model);
+
+    assert.equal(overview.available, true);
+    assert.equal(overview.value, formatUsd(expected), 'Overview complete total equals both provider estimates');
+    assert.doesNotMatch(overview.detail ?? '', /Partial estimate/, 'fully estimable Overview is not marked partial');
+  });
+
+  it('keeps the Overview API-equivalent unavailable when no provider is estimable', () => {
+    const model = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: unavailableClaudeToday(),
+      codexTodayUsage: unavailableCodexToday(),
+      enabledProviders: ['claude', 'codex']
+    });
+    const overview = overviewApiCard(model);
+
+    assert.equal(overview.available, false);
+    assert.equal(overview.value, 'Unavailable');
+  });
+
+  it('drops malformed estimates without poisoning a valid Overview contribution', () => {
+    const malformedClaude = claudeToday();
+    const malformedModel = malformedClaude.modelUsage?.[0];
+    assert.ok(malformedModel, 'Claude fixture includes model usage');
+    malformedClaude.modelUsage = [{
+      ...malformedModel,
+      inputTokens: Number.NaN
+    }];
+    const model = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: malformedClaude,
+      codexTodayUsage: codexToday(),
+      enabledProviders: ['claude', 'codex']
+    });
+    const overview = overviewApiCard(model);
+    const codex = model.today.cards.find(card => card.key === 'codexTodayApiEquivalent');
+
+    assert.ok(codex);
+    assert.equal(overview.available, true);
+    assert.equal(overview.value, codex.value, 'malformed Claude cost does not alter valid Codex total');
+    assert.doesNotMatch(`${overview.value} ${overview.detail}`, /NaN/, 'Overview never renders malformed estimate values');
+    assert.match(overview.detail ?? '', /Partial estimate.*Claude/);
+  });
+
+  it('keeps direct Today and chart-fallback API-equivalent states in parity', () => {
+    const scenarios = [
+      { label: 'complete', claude: claudeToday(), codex: codexToday(), available: true, partial: false },
+      { label: 'partial', claude: unavailableClaudeToday(), codex: codexToday(), available: true, partial: true },
+      { label: 'unavailable', claude: unavailableClaudeToday(), codex: unavailableCodexToday(), available: false, partial: false }
+    ];
+
+    for (const scenario of scenarios) {
+      const direct = overviewApiCard(buildUsageDashboardModel({
+        states: [claudeState(), codexState()],
+        claudeTodayUsage: scenario.claude,
+        codexTodayUsage: scenario.codex,
+        enabledProviders: ['claude', 'codex']
+      }));
+      const fallback = buildTodayOverviewFromCharts(
+        chartForTodayBucket(scenario.claude),
+        chartForTodayBucket(scenario.codex),
+        true,
+        true
+      )?.find(card => card.key === 'overviewTodayApiEquivalent');
+
+      assert.ok(fallback, `${scenario.label} chart fallback API-equivalent card exists`);
+      assert.equal(fallback.available, scenario.available, `${scenario.label} chart fallback availability matches direct Today`);
+      assert.equal(fallback.available, direct.available, `${scenario.label} availability is identical across paths`);
+      assert.equal(fallback.value, direct.value, `${scenario.label} displayed estimate value is identical across paths`);
+      assert.equal(/Partial estimate/.test(fallback.detail ?? ''), scenario.partial, `${scenario.label} chart fallback partial disclosure matches direct Today`);
+      assert.equal(/Partial estimate/.test(direct.detail ?? ''), scenario.partial, `${scenario.label} direct Today partial disclosure is expected`);
+    }
   });
 
   describe('scopedToProvider filtering', () => {

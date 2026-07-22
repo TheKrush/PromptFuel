@@ -2036,10 +2036,13 @@
     };
   }
 
-  function formatApiEstimateTooltip(label, fallbackPricingUsed, unavailableReason) {
+  function formatApiEstimateTooltip(label, fallbackPricingUsed, unavailableReason, partialUnavailableReason) {
     var prefix = label + ' estimate';
     if (unavailableReason) {
       return prefix + ' unavailable: ' + unavailableReason + '. Not actual billing.';
+    }
+    if (partialUnavailableReason) {
+      return prefix + ' partial: unavailable from ' + partialUnavailableReason + '. ' + (fallbackPricingUsed ? 'fallback pricing used; ' : '') + 'not actual billing.';
     }
     return prefix + '; ' + (fallbackPricingUsed ? 'fallback pricing used; ' : '') + 'not actual billing.';
   }
@@ -2055,18 +2058,32 @@
     var providerModelUsage = aggregateProviderModelUsageForEstimate(points);
     var claudeEst = estimateApiEquivalentFromModelUsage(providerModelUsage.claude, true);
     var codexEst = estimateApiEquivalentFromModelUsage(providerModelUsage.codex, false);
-    var isFallback = claudeEst.isFallback || codexEst.isFallback;
+    var estimates = [
+      { label: 'Claude', estimate: claudeEst },
+      { label: 'Codex', estimate: codexEst }
+    ];
+    var valid = estimates.filter(function(entry) {
+      return entry.estimate.available && isFinite(entry.estimate.costUsd) && entry.estimate.costUsd >= 0;
+    });
+    var unavailable = estimates.filter(function(entry) {
+      return valid.indexOf(entry) < 0;
+    });
 
-    if (claudeEst.available && codexEst.available) {
-      return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(claudeEst.costUsd + codexEst.costUsd), detail: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-        detailLines: ['Claude: ' + formatMetricUsd(claudeEst.costUsd), 'Codex: ' + formatMetricUsd(codexEst.costUsd)],
-        detailTooltip: formatApiEstimateTooltip(label, isFallback), available: true, source: cardSource };
-    }
-    if (claudeEst.available || codexEst.available) {
-      return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable',
-        detail: 'Estimate requires per-model token data from all providers',
-        detailTooltip: formatApiEstimateTooltip(label, false, 'every contributing provider must include per-model token data'),
-        available: false, source: cardSource };
+    if (valid.length) {
+      var totalCostUsd = valid.reduce(function(total, entry) { return total + entry.estimate.costUsd; }, 0);
+      var isFallback = valid.some(function(entry) { return entry.estimate.isFallback; });
+      if (isFinite(totalCostUsd)) {
+        if (unavailable.length) {
+          var unavailableLabels = unavailable.map(function(entry) { return entry.label; });
+          return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(totalCostUsd),
+            detail: 'Partial estimate · unavailable: ' + unavailableLabels.join(', '),
+            detailLines: ['Partial estimate · unavailable: ' + unavailableLabels.join(', ')].concat(valid.map(function(entry) { return entry.label + ': ' + formatMetricUsd(entry.estimate.costUsd); })),
+            detailTooltip: formatApiEstimateTooltip(label, isFallback, undefined, unavailableLabels.join(', ')), available: true, source: cardSource };
+        }
+        return { key: 'combinedHistoryApiEquivalent', label: label, value: formatMetricUsd(totalCostUsd), detail: isFallback ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
+          detailLines: valid.map(function(entry) { return entry.label + ': ' + formatMetricUsd(entry.estimate.costUsd); }),
+          detailTooltip: formatApiEstimateTooltip(label, isFallback), available: true, source: cardSource };
+      }
     }
     return { key: 'combinedHistoryApiEquivalent', label: label, value: 'Unavailable', detail: 'Provider estimates unavailable',
       detailTooltip: formatApiEstimateTooltip(label, false, 'no token data is available'), available: false, source: cardSource };
