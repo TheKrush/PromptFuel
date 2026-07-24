@@ -91,16 +91,6 @@ export function annotateSourceConfidence(
   );
 
   for (const card of model.details.cards) {
-    if (card.key === 'historyApiEquivalent' || card.key === 'codexHistoryApiEquivalent') {
-      card.source = card.available
-        ? sourceInfo(
-          'apiEquivalentEstimate',
-          card.key === 'historyApiEquivalent' ? 'Claude history API-equivalent estimate' : 'Codex history API-equivalent estimate',
-          'Estimate from per-model token counts and published model pricing; not actual billing.'
-        )
-        : card.source;
-      continue;
-    }
 
     if (card.source) {
       continue;

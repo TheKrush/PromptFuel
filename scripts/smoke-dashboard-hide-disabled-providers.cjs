@@ -151,11 +151,11 @@ function main() {
 
     const claudeHistoryKeys = ['historyRange', 'historyTokens', 'historyActivity', 'historyCache'];
     const claudeHistoryCards = model.details.cards.filter(c => claudeHistoryKeys.includes(c.key));
-    assert.equal(claudeHistoryCards.length, 4, 'claude history cards present when claude enabled');
+    assert.equal(claudeHistoryCards.length, 0, 'Claude no longer emits legacy base history cards; range views drive the renderer');
 
     const codexHistoryKeys = ['codexHistoryRange', 'codexHistoryTokens', 'codexHistoryActivity', 'codexHistoryCache'];
     const codexHistoryCards = model.details.cards.filter(c => codexHistoryKeys.includes(c.key));
-    assert.equal(codexHistoryCards.length, 4, 'codex history cards present when codex enabled');
+    assert.equal(codexHistoryCards.length, 0, 'Codex no longer emits legacy base history cards; range views drive the renderer');
 
     assert.equal(model.details.cards.find(c => c.key === 'codexBridgeStatus'), undefined, 'codex bridge status card absent from public dashboard');
 

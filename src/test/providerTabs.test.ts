@@ -2,10 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
 import { buildTodayOverviewFromCharts } from '../panel/dashboard/today';
+import { buildClaudeHistoryChart, buildCombinedHistoryChart } from '../panel/dashboard/historyChart';
 import { formatUsd } from '../panel/dashboard/format';
 import { estimateAggregateCostUsd } from '../providers/pricing';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
+import type { UsageDashboardHistoryChart } from '../panel/usageDashboardModel';
+import type { UsageHistoryPoint } from '../panel/usageHistoryBinning';
 import type { ProviderUsageState } from '../types';
 
 const now = Date.now();
@@ -117,6 +120,22 @@ function unavailableCodexToday(): CodexCorrelatedDayBucket {
 }
 
 function chartForTodayBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket): any {
+  const totalTokens = bucket.inputTokens + bucket.outputTokens + bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens;
+  const isClaude = !('correlatedTurns' in bucket);
+  const modelUsage = bucket.modelUsage ?? [];
+  const modelTokens = modelUsage.reduce(
+    (sum, model) => sum + model.inputTokens + model.outputTokens + model.cacheCreationInputTokens + model.cacheReadInputTokens,
+    0
+  );
+  const apiEstimate = modelUsage.length > 0 && modelTokens >= totalTokens
+    ? estimateAggregateCostUsd(modelUsage.map(model => ({
+      model: model.model,
+      inputTokens: model.inputTokens,
+      outputTokens: model.outputTokens,
+      cacheCreationInputTokens: model.cacheCreationInputTokens,
+      cacheReadInputTokens: model.cacheReadInputTokens
+    })), isClaude)
+    : undefined;
   return {
     rangeViews: {
       '1D': {
@@ -126,12 +145,84 @@ function chartForTodayBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDay
           inputTokens: bucket.inputTokens,
           outputTokens: bucket.outputTokens,
           cacheTokens: bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens,
-          totalTokens: bucket.totalTokens,
+          totalTokens,
           models: bucket.modelUsage
-        }]
+        }],
+        apiEquivalentCard: {
+          key: isClaude ? 'historyApiEquivalent' : 'codexHistoryApiEquivalent',
+          label: '1D API-equivalent',
+          value: apiEstimate ? formatUsd(apiEstimate.costUsd) : 'Unavailable',
+          apiEquivalentCostUsd: apiEstimate?.costUsd,
+          apiEquivalentFallbackPricingUsed: apiEstimate ? apiEstimate.fallbackCount > 0 : undefined,
+          detail: apiEstimate ? 'Prepared chart estimate' : 'Model/token data unavailable',
+          available: Boolean(apiEstimate)
+        }
       }
     }
   };
+}
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function historyPoint(
+  provider: 'claude' | 'codex',
+  dateKey: string,
+  costUsd: number | undefined,
+  options: { totalTokens?: number; source?: 'local' | 'remote'; sourceLabel?: string; modelData?: boolean } = {}
+): UsageHistoryPoint & { sourceLabel?: string } {
+  const totalTokens = options.totalTokens ?? 1000;
+  const modelData = options.modelData ?? true;
+  const model = provider === 'claude' ? 'claude-sonnet-4-20250514' : 'gpt-5-codex-20260517';
+  return {
+    dateKey,
+    label: dateKey,
+    totalTokens,
+    inputTokens: totalTokens,
+    outputTokens: 0,
+    cacheTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    assistantMessages: totalTokens > 0 ? 1 : 0,
+    models: modelData ? [{
+      label: model,
+      model,
+      provider,
+      providerLabel: provider === 'claude' ? 'Claude' : 'Codex',
+      totalTokens,
+      inputTokens: totalTokens,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      apiEquivalentCostUsd: costUsd,
+      pricingMatchedModel: model,
+      assistantMessages: totalTokens > 0 ? 1 : 0
+    }] : [],
+    source: options.source ?? 'local',
+    ...(options.sourceLabel ? { sourceLabel: options.sourceLabel } : {})
+  };
+}
+
+function historyChartForTest(points: UsageHistoryPoint[]): UsageDashboardHistoryChart {
+  return {
+    available: true,
+    title: 'Token trend',
+    rangeLabel: '1M / 30d',
+    ranges: [],
+    points: points as UsageDashboardHistoryChart['points'],
+    maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0)
+  };
+}
+
+function combinedRangeCard(
+  claudePoints: UsageHistoryPoint[],
+  codexPoints: UsageHistoryPoint[],
+  range: '1D' | '1W' | '1M' | '1Y' | 'ALL' = '1D'
+) {
+  const combined = buildCombinedHistoryChart(historyChartForTest(claudePoints), historyChartForTest(codexPoints));
+  assert.ok(combined?.rangeViews?.[range]?.apiEquivalentCard, `${range} combined range card must be serialized`);
+  return combined.rangeViews[range].apiEquivalentCard;
 }
 
 function overviewApiCard(model: ReturnType<typeof buildUsageDashboardModel>) {
@@ -334,7 +425,7 @@ describe('provider tabs model', () => {
     assert.match(overview.detail ?? '', /Partial estimate.*Claude/);
   });
 
-  it('keeps direct Today and chart-fallback API-equivalent states in parity', () => {
+  it('keeps all direct Today and chart-fallback Overview cards in parity', () => {
     const scenarios = [
       { label: 'complete', claude: claudeToday(), codex: codexToday(), available: true, partial: false },
       { label: 'partial', claude: unavailableClaudeToday(), codex: codexToday(), available: true, partial: true },
@@ -342,26 +433,160 @@ describe('provider tabs model', () => {
     ];
 
     for (const scenario of scenarios) {
-      const direct = overviewApiCard(buildUsageDashboardModel({
+      const direct = buildUsageDashboardModel({
         states: [claudeState(), codexState()],
         claudeTodayUsage: scenario.claude,
         codexTodayUsage: scenario.codex,
         enabledProviders: ['claude', 'codex']
-      }));
+      }).today.overviewCards;
       const fallback = buildTodayOverviewFromCharts(
         chartForTodayBucket(scenario.claude),
         chartForTodayBucket(scenario.codex),
         true,
         true
-      )?.find(card => card.key === 'overviewTodayApiEquivalent');
+      );
 
-      assert.ok(fallback, `${scenario.label} chart fallback API-equivalent card exists`);
-      assert.equal(fallback.available, scenario.available, `${scenario.label} chart fallback availability matches direct Today`);
-      assert.equal(fallback.available, direct.available, `${scenario.label} availability is identical across paths`);
-      assert.equal(fallback.value, direct.value, `${scenario.label} displayed estimate value is identical across paths`);
-      assert.equal(/Partial estimate/.test(fallback.detail ?? ''), scenario.partial, `${scenario.label} chart fallback partial disclosure matches direct Today`);
-      assert.equal(/Partial estimate/.test(direct.detail ?? ''), scenario.partial, `${scenario.label} direct Today partial disclosure is expected`);
+      assert.ok(direct, `${scenario.label} direct Today Overview cards exist`);
+      assert.ok(fallback, `${scenario.label} chart fallback Overview cards exist`);
+      assert.equal(direct.length, 5, `${scenario.label} direct Today has five Overview cards`);
+      assert.equal(fallback.length, 5, `${scenario.label} chart fallback has five Overview cards`);
+      assert.deepEqual(
+        fallback.map(({ source: _source, detailTooltip: _detailTooltip, ...card }) => card),
+        direct.map(({ source: _source, detailTooltip: _detailTooltip, ...card }) => card),
+        `${scenario.label} all Overview card semantics match across paths`
+      );
+      assert.deepEqual(
+        fallback.map(card => card.source?.label),
+        Array(5).fill('Today — combined'),
+        `${scenario.label} chart fallback preserves its 1D-history provenance label`
+      );
+      assert.deepEqual(
+        fallback.map(card => card.source?.detail),
+        Array(5).fill('Claude and Codex today usage from 1D history bins.'),
+        `${scenario.label} chart fallback preserves its 1D-history provenance detail`
+      );
+      assert.equal(
+        fallback.find(card => card.key === 'overviewTodayApiEquivalent')?.available,
+        scenario.available,
+        `${scenario.label} chart fallback API-equivalent availability matches direct Today`
+      );
+      assert.equal(
+        /Partial estimate/.test(fallback.find(card => card.key === 'overviewTodayApiEquivalent')?.detail ?? ''),
+        scenario.partial,
+        `${scenario.label} chart fallback partial disclosure is expected`
+      );
     }
+  });
+
+  it('keeps chart-derived Today partial when a prepared 1D provider card rejects incomplete model coverage', () => {
+    const incompleteClaude = claudeToday();
+    const incompleteModel = incompleteClaude.modelUsage?.[0];
+    assert.ok(incompleteModel, 'Claude fixture includes model usage');
+    incompleteClaude.modelUsage = [{
+      ...incompleteModel,
+      inputTokens: 500,
+      totalTokens: 500
+    }];
+    const fallback = buildTodayOverviewFromCharts(
+      chartForTodayBucket(incompleteClaude),
+      chartForTodayBucket(codexToday()),
+      true,
+      true
+    );
+    const apiCard = fallback?.find(card => card.key === 'overviewTodayApiEquivalent');
+
+    assert.equal(apiCard?.available, true);
+    assert.match(apiCard?.detail ?? '', /Partial estimate.*Claude/);
+    assert.match(apiCard?.detailTooltip ?? '', /partial: unavailable from Claude: model\/token data unavailable/i);
+  });
+
+  describe('serialized history range API-equivalent cards', () => {
+    const today = localDateKey(new Date());
+    const priorDayDate = new Date();
+    priorDayDate.setDate(priorDayDate.getDate() - 1);
+    const priorDay = localDateKey(priorDayDate);
+
+    it('keeps valid Codex when unavailable Claude coverage makes the combined card partial', () => {
+      const card = combinedRangeCard(
+        [historyPoint('claude', today, undefined, { modelData: false })],
+        [historyPoint('codex', today, 2.34)]
+      );
+
+      assert.equal(card.available, true);
+      assert.equal(card.value, '$2.34');
+      assert.match(card.detail ?? '', /Partial estimate.*Claude/);
+      assert.match(card.detailTooltip ?? '', /partial: unavailable from Claude: local history model\/token data unavailable/i);
+    });
+
+    it('serializes a complete combined card only when both active provider contributions are estimable', () => {
+      const card = combinedRangeCard(
+        [historyPoint('claude', today, 1.23)],
+        [historyPoint('codex', today, 2.34)]
+      );
+
+      assert.equal(card.available, true);
+      assert.equal(card.value, '$3.57');
+      assert.doesNotMatch(card.detail ?? '', /Partial estimate/);
+      assert.deepEqual(card.detailLines, ['Claude: $1.23', 'Codex: $2.34']);
+    });
+
+    it('preserves unavailable presentation when neither active provider can be estimated', () => {
+      const card = combinedRangeCard(
+        [historyPoint('claude', today, undefined, { modelData: false })],
+        [historyPoint('codex', today, undefined, { modelData: false })]
+      );
+
+      assert.equal(card.available, false);
+      assert.equal(card.value, 'Unavailable');
+      assert.equal(card.detail, 'Provider estimates unavailable');
+    });
+
+    it('excludes malformed provider cost data without emitting NaN or a fake zero', () => {
+      const card = combinedRangeCard(
+        [historyPoint('claude', today, Number.NaN)],
+        [historyPoint('codex', today, 2.34)]
+      );
+
+      assert.equal(card.available, true);
+      assert.equal(card.value, '$2.34');
+      assert.match(card.detail ?? '', /Partial estimate.*Claude/);
+      assert.doesNotMatch(`${card.value} ${card.detail} ${card.detailTooltip}`, /NaN/);
+    });
+
+    it('does not treat an inactive provider as unavailable combined-estimate coverage', () => {
+      const card = combinedRangeCard(
+        [historyPoint('claude', today, undefined, { totalTokens: 0, modelData: false })],
+        [historyPoint('codex', today, 2.34)]
+      );
+
+      assert.equal(card.available, true);
+      assert.equal(card.value, '$2.34');
+      assert.doesNotMatch(card.detail ?? '', /Partial estimate/);
+    });
+
+    it('keeps provider-specific cards unavailable while the combined range can remain partial', () => {
+      const unavailableClaude = historyPoint('claude', today, undefined, { modelData: false });
+      const claudeChart = buildClaudeHistoryChart(undefined, [unavailableClaude]);
+      const providerCard = claudeChart.rangeViews?.['1D'].apiEquivalentCard;
+      const combinedCard = combinedRangeCard([unavailableClaude], [historyPoint('codex', today, 2.34)]);
+
+      assert.equal(providerCard?.available, false);
+      assert.equal(combinedCard.available, true);
+      assert.match(combinedCard.detail ?? '', /Partial estimate.*Claude/);
+    });
+
+    it('binds each prepared card to its exact range and keeps source disclosure safe', () => {
+      const claudeToday = historyPoint('claude', today, undefined, { modelData: false, source: 'remote', sourceLabel: 'raw-hostname.example' });
+      const codexToday = historyPoint('codex', today, 2.34);
+      const claudePrior = historyPoint('claude', priorDay, 1.23);
+      const codexPrior = historyPoint('codex', priorDay, 3.45);
+      const oneDay = combinedRangeCard([claudeToday, claudePrior], [codexToday, codexPrior], '1D');
+      const oneWeek = combinedRangeCard([claudeToday, claudePrior], [codexToday, codexPrior], '1W');
+
+      assert.notEqual(oneDay.value, oneWeek.value, 'distinct ranges carry distinct prepared cards');
+      assert.match(oneDay.detailTooltip ?? '', /snapshot history model\/token data unavailable/i);
+      assert.doesNotMatch(JSON.stringify(oneDay), /raw-hostname\.example/);
+    });
   });
 
   describe('scopedToProvider filtering', () => {

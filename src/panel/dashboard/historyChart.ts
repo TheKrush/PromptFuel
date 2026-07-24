@@ -1,12 +1,11 @@
 import type { ClaudeUsageHistory } from '../../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedHistory } from '../../providers/codexCorrelatedDayBucketScanner';
-import { estimateAggregateCostUsd } from '../../providers/pricing';
-import type { RemoteModelEntry } from '../../snapshot/remoteUsageProjection';
 import { displayTotalTokens } from '../../snapshot/tokenMath';
-import type { UsageDashboardHistoryChart, UsageDashboardHistoryChartRange, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard } from '../usageDashboardModel';
-import type { UsageHistoryPoint } from '../usageHistoryBinning';
+import type { UsageDashboardHistoryChart, UsageDashboardHistoryChartRange, UsageDashboardHistoryChartPoint, UsageDashboardMetricCard, UsageDashboardSourceInfo } from '../usageDashboardModel';
+import type { UsageHistoryPoint, UsageHistoryRangeKey, UsageHistoryRangeView, UsageHistoryRangeViews } from '../usageHistoryBinning';
 import { buildUsageHistoryRangeViews } from '../usageHistoryBinning';
-import { sourceInfo, formatCount, formatUsd, shortenClaudeModel, shortenCodexModel, mapModelUsageToHistory, normalizeRemoteHistoryPointModels, buildHistoryUnavailableCard, buildCodexHistoryUnavailableCard, remoteModelEntriesToCostRows } from './format';
+import { sourceInfo, shortenClaudeModel, shortenCodexModel, mapModelUsageToHistory, normalizeRemoteHistoryPointModels } from './format';
+import { buildApiEquivalentEstimateResult, type ApiEquivalentEstimateContribution } from './apiEstimate';
 
 function buildHistoryRanges(hasData: boolean): UsageDashboardHistoryChartRange[] {
   return [
@@ -29,6 +28,195 @@ function remoteSourceDisplayLabel(remoteMachineLabels?: string[], aliasMap?: Rec
     return aliases.slice(0, 2).join(', ');
   }
   return 'Snapshot';
+}
+
+type HistoryEstimateProvider = 'claude' | 'codex';
+
+interface HistoryProviderRangeSummary {
+  contribution: ApiEquivalentEstimateContribution;
+}
+
+function isFiniteNonNegative(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function safeHistorySourceDescription(sourceKinds: Set<'local' | 'snapshot'>): string {
+  if (sourceKinds.has('local') && sourceKinds.has('snapshot')) {
+    return 'local and snapshot history';
+  }
+  if (sourceKinds.has('snapshot')) {
+    return 'snapshot history';
+  }
+  if (sourceKinds.has('local')) {
+    return 'local history';
+  }
+  return 'history';
+}
+
+function historyProviderRangeSummary(
+  points: UsageHistoryPoint[],
+  provider: HistoryEstimateProvider,
+  label: 'Claude' | 'Codex',
+  assumeProvider: boolean
+): HistoryProviderRangeSummary {
+  let totalTokens = 0;
+  let assistantMessages = 0;
+  let malformedTotals = false;
+  const models: UsageHistoryPoint['models'] = [];
+  const sourceKinds = new Set<'local' | 'snapshot'>();
+
+  for (const point of points) {
+    const segment = assumeProvider
+      ? undefined
+      : point.providerSegments?.find(candidate => candidate.provider === provider);
+    if (!assumeProvider && !segment) {
+      continue;
+    }
+
+    const pointTotalTokens = assumeProvider ? point.totalTokens : segment!.totalTokens;
+    const pointMessages = assumeProvider ? point.assistantMessages : segment!.assistantMessages;
+    if (!isFiniteNonNegative(pointTotalTokens) || !isFiniteNonNegative(pointMessages)) {
+      malformedTotals = true;
+    } else {
+      totalTokens += pointTotalTokens;
+      assistantMessages += pointMessages;
+    }
+
+    for (const sourceKind of point.sourceKinds ?? []) {
+      sourceKinds.add(sourceKind);
+    }
+
+    models.push(...(point.models ?? []).filter(model => assumeProvider || model.provider === provider));
+  }
+
+  const active = totalTokens > 0 || assistantMessages > 0;
+  if (!active) {
+    return { contribution: { label, active: false } };
+  }
+
+  const sourceDescription = safeHistorySourceDescription(sourceKinds);
+  const relevantModels = models.filter(model => isFiniteNonNegative(model.totalTokens) && model.totalTokens > 0);
+  const modelTokenTotal = relevantModels.reduce((sum, model) => sum + model.totalTokens, 0);
+  const modelRowsValid = relevantModels.length > 0 && relevantModels.every(model =>
+    isFiniteNonNegative(model.apiEquivalentCostUsd) && !model.apiEquivalentCostUnavailableReason
+  );
+
+  if (malformedTotals || modelTokenTotal < totalTokens || !modelRowsValid) {
+    return {
+      contribution: {
+        label,
+        active: true,
+        unavailableReason: `${sourceDescription} model/token data unavailable`
+      }
+    };
+  }
+
+  const costUsd = relevantModels.reduce((sum, model) => sum + model.apiEquivalentCostUsd!, 0);
+  if (!Number.isFinite(costUsd)) {
+    return {
+      contribution: {
+        label,
+        active: true,
+        unavailableReason: `${sourceDescription} model/token data unavailable`
+      }
+    };
+  }
+
+  return {
+    contribution: {
+      label,
+      active: true,
+      costUsd,
+      fallbackPricingUsed: relevantModels.some(model => !model.pricingMatchedModel)
+    }
+  };
+}
+function historyApiEstimateSource(label: string, detail: string): UsageDashboardSourceInfo {
+  return sourceInfo('apiEquivalentEstimate', label, detail);
+}
+
+function rangeApiEquivalentLabel(rangeKey: UsageHistoryRangeKey): string {
+  return `${rangeKey} API-equivalent`;
+}
+
+function buildProviderRangeApiEquivalentCard(
+  view: UsageHistoryRangeView,
+  provider: HistoryEstimateProvider,
+  providerLabel: 'Claude' | 'Codex',
+  key: string
+): UsageDashboardMetricCard {
+  const estimate = buildApiEquivalentEstimateResult(
+    [historyProviderRangeSummary(view.points, provider, providerLabel, true).contribution],
+    {
+      label: `${providerLabel} ${rangeApiEquivalentLabel(view.key)}`,
+      unavailableDetail: 'No token data to estimate API-equivalent cost',
+      unavailableReason: 'selected-range model token totals must cover all tokens',
+      includeContributionDetailLines: true
+    }
+  );
+  return {
+    key,
+    label: rangeApiEquivalentLabel(view.key),
+    value: estimate.value,
+    ...(estimate.costUsd !== undefined ? { apiEquivalentCostUsd: estimate.costUsd } : {}),
+    ...(estimate.available ? { apiEquivalentFallbackPricingUsed: estimate.fallbackPricingUsed } : {}),
+    detail: estimate.detail,
+    ...(estimate.detailLines ? { detailLines: estimate.detailLines } : {}),
+    detailTooltip: estimate.detailTooltip,
+    available: estimate.available,
+    source: historyApiEstimateSource(
+      `${providerLabel} history API-equivalent estimate`,
+      'Estimate from selected-range per-model token counts and published model pricing; not actual billing.'
+    )
+  };
+}
+function buildCombinedRangeApiEquivalentCard(view: UsageHistoryRangeView): UsageDashboardMetricCard {
+  const estimate = buildApiEquivalentEstimateResult(
+    [
+      historyProviderRangeSummary(view.points, 'claude', 'Claude', false).contribution,
+      historyProviderRangeSummary(view.points, 'codex', 'Codex', false).contribution
+    ],
+    {
+      label: rangeApiEquivalentLabel(view.key),
+      unavailableDetail: view.activeBinCount > 0 ? 'Provider estimates unavailable' : 'Range estimate unavailable',
+      unavailableReason: 'no token data is available',
+      includeContributionDetailLines: true
+    }
+  );
+  return {
+    key: 'combinedHistoryApiEquivalent',
+    label: rangeApiEquivalentLabel(view.key),
+    value: estimate.value,
+    ...(estimate.costUsd !== undefined ? { apiEquivalentCostUsd: estimate.costUsd } : {}),
+    ...(estimate.available ? { apiEquivalentFallbackPricingUsed: estimate.fallbackPricingUsed } : {}),
+    detail: estimate.detail,
+    ...(estimate.detailLines ? { detailLines: estimate.detailLines } : {}),
+    detailTooltip: estimate.detailTooltip,
+    available: estimate.available,
+    source: historyApiEstimateSource(
+      'Combined API-equivalent estimate',
+      'Combined from selected-range provider API-equivalent estimates when available.'
+    )
+  };
+}
+
+function buildHistoryRangeViewsWithApiEquivalent(
+  points: UsageHistoryPoint[],
+  kind: 'claude' | 'codex' | 'combined'
+): UsageHistoryRangeViews {
+  const views = buildUsageHistoryRangeViews(points);
+  for (const key of ['1D', '1W', '1M', '1Y', 'ALL'] as UsageHistoryRangeKey[]) {
+    const view = views[key];
+    view.apiEquivalentCard = kind === 'combined'
+      ? buildCombinedRangeApiEquivalentCard(view)
+      : buildProviderRangeApiEquivalentCard(
+        view,
+        kind,
+        kind === 'claude' ? 'Claude' : 'Codex',
+        kind === 'claude' ? 'historyApiEquivalent' : 'codexHistoryApiEquivalent'
+      );
+  }
+  return views;
 }
 
 export function buildClaudeHistoryChart(
@@ -101,12 +289,11 @@ export function buildClaudeHistoryChart(
     ranges,
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
-    rangeViews: buildUsageHistoryRangeViews(points),
+    rangeViews: buildHistoryRangeViewsWithApiEquivalent(points, 'claude'),
 
     source
   };
 }
-
 export function buildCodexHistoryChart(
   codexCorrelatedHistory: CodexCorrelatedHistory | undefined,
   remoteHistoryPoints?: UsageHistoryPoint[],
@@ -177,7 +364,7 @@ export function buildCodexHistoryChart(
     ranges,
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
-    rangeViews: buildUsageHistoryRangeViews(points),
+    rangeViews: buildHistoryRangeViewsWithApiEquivalent(points, 'codex'),
 
     source
   };
@@ -246,213 +433,9 @@ export function buildCombinedHistoryChart(
     ranges: buildHistoryRanges(points.length > 0),
     points,
     maxTotalTokens: points.reduce((max, point) => Math.max(max, point.totalTokens), 0),
-    rangeViews: buildUsageHistoryRangeViews(points),
+    rangeViews: buildHistoryRangeViewsWithApiEquivalent(points, 'combined'),
 
     ariaLabel: 'Combined token trend chart. Claude segments are solid; Codex segments are hatched correlated data.',
     source
   };
-}
-
-export function buildHistoryCards(claudeUsageHistory: ClaudeUsageHistory | undefined, remoteModelEntries?: RemoteModelEntry[]): UsageDashboardMetricCard[] {
-  const source = claudeUsageHistory?.available
-    ? sourceInfo(
-      'trustedCompletedTurnUsage',
-      'Claude assistant-message JSONL history buckets',
-      'Completed Claude assistant records with message.usage only'
-    )
-    : sourceInfo(
-      'unavailable',
-      'Claude assistant-message history unavailable',
-      undefined,
-      claudeUsageHistory?.error ?? 'No trusted completed-turn history is available yet.'
-    );
-
-  if (!claudeUsageHistory?.available) {
-    return [
-      buildHistoryUnavailableCard('historyActivity', '30d Messages/Turns', source),
-      buildHistoryUnavailableCard('historyTokens', '30d tokens', source),
-      buildHistoryUnavailableCard('historyInputOutput', '30d Input / Output', source),
-      buildHistoryUnavailableCard('historyCache', '30d cache', source),
-      buildHistoryUnavailableCard('historyApiEquivalent', '30d API-equivalent', source),
-      buildHistoryUnavailableCard('historyRange', '30d history', source)
-    ];
-  }
-
-  const cacheTokens = claudeUsageHistory.cacheCreationInputTokens + claudeUsageHistory.cacheReadInputTokens;
-  const claudeHistoryTotal = displayTotalTokens(claudeUsageHistory);
-
-  const historyApiEstimate = estimateAggregateCostUsd(
-    [
-      ...claudeUsageHistory.modelUsage.map(m => ({
-        model: m.model,
-        inputTokens: m.inputTokens,
-        outputTokens: m.outputTokens,
-        cacheCreationInputTokens: m.cacheCreationInputTokens,
-        cacheReadInputTokens: m.cacheReadInputTokens
-      })),
-      ...(remoteModelEntriesToCostRows(remoteModelEntries) ?? [])
-    ],
-    true
-  );
-  const historyApiAvailable = !remoteModelEntries?.length || remoteModelEntriesToCostRows(remoteModelEntries) !== undefined;
-
-  return [
-    {
-      key: 'historyActivity',
-      label: '30d Messages/Turns',
-      value: formatCount(claudeUsageHistory.assistantMessages),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'historyTokens',
-      label: '30d tokens',
-      value: formatCount(claudeHistoryTotal),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'historyInputOutput',
-      label: '30d Input / Output',
-      value: `${formatCount(claudeUsageHistory.inputTokens)} / ${formatCount(claudeUsageHistory.outputTokens)}`,
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'historyCache',
-      label: '30d cache',
-      value: formatCount(cacheTokens),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'historyApiEquivalent',
-      label: '30d API-equivalent',
-      value: historyApiAvailable ? formatUsd(historyApiEstimate.costUsd) : 'Unavailable',
-      detail: !historyApiAvailable
-        ? 'Estimate unavailable · some snapshot rows lack model/token components'
-        : historyApiEstimate.fallbackCount > 0 ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-      detailTooltip: !historyApiAvailable
-        ? 'API-equivalent is hidden unless all snapshot rows carry model and token component data.'
-        : historyApiEstimate.fallbackCount > 0
-        ? `Estimated Claude API-equivalent cost from per-model history (${historyApiEstimate.fallbackCount}/${historyApiEstimate.totalCount} models used fallback pricing). Not actual billing.`
-        : 'Estimated Claude API-equivalent cost from per-model history; not actual billing',
-      available: historyApiAvailable,
-      source
-    },
-    {
-      key: 'historyRange',
-      label: '30d history',
-      value: `${claudeUsageHistory.activeDays} active days`,
-      detail: claudeUsageHistory.rangeLabel,
-      available: true,
-      source
-    }
-  ];
-}
-
-export function buildCodexHistoryCards(codexCorrelatedHistory: CodexCorrelatedHistory | undefined, remoteModelEntries?: RemoteModelEntry[]): UsageDashboardMetricCard[] {
-  const source = codexCorrelatedHistory?.available
-    ? sourceInfo(
-      'correlatedDayBucket',
-      'Codex correlated day-bucket history',
-      'Correlated from ordered Codex JSONL event logs; not Claude-equivalent completed-turn records.'
-    )
-    : sourceInfo(
-      'unavailable',
-      'Codex correlated day-bucket history unavailable',
-      undefined,
-      codexCorrelatedHistory?.error ?? 'No Codex correlated usage data is available yet.'
-    );
-
-  if (!codexCorrelatedHistory?.available) {
-    return [
-      buildCodexHistoryUnavailableCard('codexHistoryActivity', '1M Messages/Turns', source),
-      buildCodexHistoryUnavailableCard('codexHistoryTokens', '1M tokens', source),
-      buildCodexHistoryUnavailableCard('codexHistoryInputOutput', '1M Input / Output', source),
-      buildCodexHistoryUnavailableCard('codexHistoryCache', '1M cache', source),
-      buildCodexHistoryUnavailableCard('codexHistoryApiEquivalent', '1M API-equivalent', source),
-      buildCodexHistoryUnavailableCard('codexHistoryRange', '1M history', source)
-    ];
-  }
-
-  const cacheTokens = codexCorrelatedHistory.cacheCreationInputTokens + codexCorrelatedHistory.cacheReadInputTokens;
-  const codexHistoryTotal = displayTotalTokens(codexCorrelatedHistory);
-
-  const codexHistoryApiEstimate = estimateAggregateCostUsd(
-    [
-      ...codexCorrelatedHistory.modelUsage.map(m => ({
-      model: m.model,
-      inputTokens: m.inputTokens,
-      outputTokens: m.outputTokens,
-      cacheCreationInputTokens: m.cacheCreationInputTokens,
-      cacheReadInputTokens: m.cacheReadInputTokens
-      })),
-      ...(remoteModelEntriesToCostRows(remoteModelEntries) ?? [])
-    ],
-    false
-  );
-  const codexHistoryApiAvailable = !remoteModelEntries?.length || remoteModelEntriesToCostRows(remoteModelEntries) !== undefined;
-
-  return [
-    {
-      key: 'codexHistoryActivity',
-      label: '1M Messages/Turns',
-      value: formatCount(codexCorrelatedHistory.assistantMessages),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'codexHistoryTokens',
-      label: '1M tokens',
-      value: formatCount(codexHistoryTotal),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'codexHistoryInputOutput',
-      label: '1M Input / Output',
-      value: `${formatCount(codexCorrelatedHistory.inputTokens)} / ${formatCount(codexCorrelatedHistory.outputTokens)}`,
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'codexHistoryCache',
-      label: '1M cache',
-      value: formatCount(cacheTokens),
-      detail: '',
-      available: true,
-      source
-    },
-    {
-      key: 'codexHistoryApiEquivalent',
-      label: '1M API-equivalent',
-      value: codexHistoryApiAvailable ? formatUsd(codexHistoryApiEstimate.costUsd) : 'Unavailable',
-      detail: !codexHistoryApiAvailable
-        ? 'Estimate unavailable · some snapshot rows lack model/token components'
-        : codexHistoryApiEstimate.fallbackCount > 0 ? 'Estimate · fallback pricing used' : 'Estimate · not actual billing',
-      detailTooltip: !codexHistoryApiAvailable
-        ? 'API-equivalent is hidden unless all snapshot rows carry model and token component data.'
-        : codexHistoryApiEstimate.fallbackCount > 0
-        ? `Estimated Codex API-equivalent cost from per-model history (${codexHistoryApiEstimate.fallbackCount}/${codexHistoryApiEstimate.totalCount} models used fallback pricing). Not actual billing.`
-        : 'Estimated Codex API-equivalent cost from per-model history; not actual billing',
-      available: codexHistoryApiAvailable,
-      source
-    },
-    {
-      key: 'codexHistoryRange',
-      label: '1M history',
-      value: `${codexCorrelatedHistory.activeDays} active days`,
-      detail: codexCorrelatedHistory.rangeLabel,
-      available: true,
-      source
-    }
-  ];
 }

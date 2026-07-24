@@ -355,9 +355,12 @@ function main() {
   );
 
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
+  assert.doesNotMatch(webviewScript, /function buildCombinedApiEquivalentCard\b/, 'renderer no longer builds combined API-equivalent cards');
+  assert.doesNotMatch(webviewScript, /function aggregateModelUsageForEstimate\b/, 'renderer no longer aggregates model usage for pricing');
+  assert.doesNotMatch(webviewScript, /function estimateApiEquivalentFromModelUsage\b/, 'renderer no longer calculates selected-range API-equivalent estimates');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange, usageCardsByKey: usageCardsByKey }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -426,8 +429,6 @@ function main() {
     { provider: 'claude', label: 'Claude', windows: [] },
     { provider: 'codex', label: 'Codex', windows: [] }
   ];
-  const claudeHistoryCardKeys = ['historyActivity', 'historyTokens', 'historyInputOutput', 'historyCache', 'historyApiEquivalent'];
-  const codexHistoryCardKeys = ['codexHistoryActivity', 'codexHistoryTokens', 'codexHistoryInputOutput', 'codexHistoryCache', 'codexHistoryApiEquivalent'];
   const glanceHtml = sandbox.__combinedDashboardTest.renderGlanceList([
     {
       provider: 'claude',
@@ -719,7 +720,7 @@ function main() {
   assert.doesNotMatch(claudeScopedIssues, /Codex|Missing/, 'Claude tab does not leak Codex issues');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
   const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
-  const combinedOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, selectedCombinedChart, '1M');
+  const combinedOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(selectedCombinedChart, '1M');
   const combinedOneMonthTokens = metricCardByKey(combinedOneMonthCards, 'combinedHistoryTokens');
   const combinedOneMonthApi = metricCardByKey(combinedOneMonthCards, 'combinedHistoryApiEquivalent');
   const overviewTodayMessages = metricCardByKey(model.today.overviewCards, 'overviewTodayMessages');
@@ -743,7 +744,7 @@ function main() {
   });
   const oneProviderCacheHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(oneProviderCacheModel.details, oneProviderCacheModel.today, selectedProviders);
   const oneProviderCacheChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(oneProviderCacheModel.details.combinedHistoryChart, '1M');
-  const oneProviderCacheCard = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, oneProviderCacheChart, '1M')
+  const oneProviderCacheCard = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(oneProviderCacheChart, '1M')
     .find(card => card.key === 'combinedHistoryCache');
   assert.match(oneProviderCacheHtml, /usage-metric-card/, 'combined history cache fixture renders metric cards');
   assert.equal(oneProviderCacheCard.detail, 'Claude 300 · Codex 0', 'combined history cache fallback detail is the old provider attribution');
@@ -751,17 +752,19 @@ function main() {
   assert.equal(combinedOneMonthApi.available, true, 'combined history API-equivalent uses per-model selected-range pricing');
   assert.ok(combinedOneMonthApi.value.startsWith('$'), 'combined history API-equivalent has a computed value');
   assertDetailLineLabels(combinedOneMonthApi, ['Claude', 'Codex'], 'combined history API-equivalent carries provider cost attribution');
+  assert.equal(combinedOneMonthApi, selectedCombinedChart.apiEquivalentCard, 'selected 1M range uses the host-serialized API-equivalent card');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1D');
   const combinedOneDayHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
   const selectedCombinedOneDayChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1D');
   const combinedOneDayApiCard = metricCardByKey(
-    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, selectedCombinedOneDayChart, '1D'),
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(selectedCombinedOneDayChart, '1D'),
     'combinedHistoryApiEquivalent'
   );
   const oneDayApiHtml = firstApiEstimateStrip(combinedOneDayHistorySectionHtml, '1D API-equivalent');
   const oneMonthApiHtml = firstApiEstimateStrip(combinedHistorySectionHtml, '1M API-equivalent');
   assert.equal(combinedOneDayApiCard.available, true, 'Overview 1D API-equivalent is available through range cards');
   assert.equal(combinedOneDayApiCard.detailLines.length, 2, 'Overview 1D API-equivalent carries one source line per provider');
+  assert.equal(combinedOneDayApiCard, selectedCombinedOneDayChart.apiEquivalentCard, 'Today-in-History uses the prepared 1D API-equivalent card');
   assert.match(oneDayApiHtml, /usage-api-estimate-strip/, 'Overview 1D API-equivalent footer renders structurally');
   assert.match(oneMonthApiHtml, /usage-api-estimate-strip/, 'Overview 1M API-equivalent footer renders structurally');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
@@ -837,7 +840,7 @@ function main() {
   });
   const partialCombinedChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(partialApiModel.details.combinedHistoryChart, '1M');
   const partialCombinedApiCard = metricCardByKey(
-    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, partialCombinedChart, '1M'),
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(partialCombinedChart, '1M'),
     'combinedHistoryApiEquivalent'
   );
   assert.equal(partialCombinedApiCard.available, true, 'partial provider API-equivalent retains the valid combined contribution');
@@ -853,7 +856,7 @@ function main() {
   });
   const codexOnlyChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(codexOnlyApiModel.details.combinedHistoryChart, '1D');
   const codexOnlyApiCard = metricCardByKey(
-    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, codexOnlyChart, '1D'),
+    sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(codexOnlyChart, '1D'),
     'combinedHistoryApiEquivalent'
   );
   assert.equal(codexOnlyApiCard.available, true, 'Codex-only estimate remains available when Claude lacks model data');
@@ -868,7 +871,6 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(partialApiModel.providers, 'codex')
   );
   const partialCodexCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(partialCodexDetails.cards, codexHistoryCardKeys),
     partialCodexDetails.codexHistoryChart,
     '1M'
   );
@@ -881,10 +883,11 @@ function main() {
     const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
     const rangeChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, range);
     const rangeApiCard = metricCardByKey(
-      sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(undefined, rangeChart, range),
+      sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(rangeChart, range),
       'combinedHistoryApiEquivalent'
     );
     assert.equal(rangeApiCard.available, true, `combined ${range} API-equivalent is available`);
+    assert.equal(rangeApiCard, rangeChart.apiEquivalentCard, `combined ${range} selects that exact prepared API-equivalent card`);
     assert.equal(sectionProviderCardCount(rangeHtml), 1, `combined ${range} range re-render keeps one aggregate card set`);
   });
 
@@ -936,14 +939,13 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
   const claudeLocalOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(claudeLocalOneDayDetails.cards, claudeHistoryCardKeys),
     claudeLocalOneDayDetails.historyChart,
     '1D'
   );
   assertDetailLineLabels(metricCardByKey(claudeLocalOneDayCards, 'historyTokens'), ['Local'], 'Claude 1D local-only token card has source detailLines');
   const claudeLocalOneDayApi = firstApiEstimateStrip(claudeLocalOneDayHtml, '1D API-equivalent');
   assert.match(claudeLocalOneDayApi, /usage-api-estimate-strip/, 'Claude 1D local-only API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(claudeLocalOneDayCards, 'historyApiEquivalent'), ['Local'], 'Claude 1D local-only API card has source detailLines');
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneDayCards, 'historyApiEquivalent'), ['Claude'], 'Claude 1D local-only API card keeps its prepared provider contribution detailLine');
 
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1M');
   const claudeLocalOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude');
@@ -953,14 +955,13 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
   const claudeLocalOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(claudeLocalOneMonthDetails.cards, claudeHistoryCardKeys),
     claudeLocalOneMonthDetails.historyChart,
     '1M'
   );
   assertDetailLineLabels(metricCardByKey(claudeLocalOneMonthCards, 'historyTokens'), ['Local'], 'Claude 1M local-only token card has source detailLines');
   const claudeLocalOneMonthApi = firstApiEstimateStrip(claudeLocalOneMonthHtml, '1M API-equivalent');
   assert.match(claudeLocalOneMonthApi, /usage-api-estimate-strip/, 'Claude 1M local-only API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(claudeLocalOneMonthCards, 'historyApiEquivalent'), ['Local'], 'Claude 1M local-only API card has source detailLines');
+  assertDetailLineLabels(metricCardByKey(claudeLocalOneMonthCards, 'historyApiEquivalent'), ['Claude'], 'Claude 1M local-only API card keeps its prepared provider contribution detailLine');
 
   const remoteFixture = createCanonicalUsageFixture();
   const remoteAliasModel = buildUsageDashboardModel({
@@ -983,7 +984,6 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
   const overviewOneDayCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
-    undefined,
     sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(overviewOneDayDetails.combinedHistoryChart, '1D'),
     '1D'
   );
@@ -1000,7 +1000,6 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
   const overviewOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
-    undefined,
     sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(overviewOneMonthDetails.combinedHistoryChart, '1M'),
     '1M'
   );
@@ -1018,13 +1017,12 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
   );
   const claudeRemoteOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(claudeRemoteOneDayDetails.cards, claudeHistoryCardKeys),
     claudeRemoteOneDayDetails.historyChart,
     '1D'
   );
   const claudeRemoteOneDayApi = firstApiEstimateStrip(claudeRemoteOneDayHtml, '1D API-equivalent');
   assert.match(claudeRemoteOneDayApi, /usage-api-estimate-strip/, 'Claude 1D local+remote API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(claudeRemoteOneDayCards, 'historyApiEquivalent'), ['Local', 'WATCHER'], 'Claude 1D API card uses source labels with configured alias');
+  assertDetailLineLabels(metricCardByKey(claudeRemoteOneDayCards, 'historyApiEquivalent'), ['Claude'], 'Claude 1D API card uses the prepared provider contribution detailLine');
 
   sandbox.__combinedDashboardTest.setClaudeHistoryRange('1M');
   const claudeRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude');
@@ -1034,13 +1032,12 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
   );
   const claudeRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(claudeRemoteOneMonthDetails.cards, claudeHistoryCardKeys),
     claudeRemoteOneMonthDetails.historyChart,
     '1M'
   );
   const claudeRemoteOneMonthApi = firstApiEstimateStrip(claudeRemoteOneMonthHtml, '1M API-equivalent');
   assert.match(claudeRemoteOneMonthApi, /usage-api-estimate-strip/, 'Claude 1M local+remote API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(claudeRemoteOneMonthCards, 'historyApiEquivalent'), ['Local', 'WATCHER'], 'Claude 1M API card uses source labels with configured alias');
+  assertDetailLineLabels(metricCardByKey(claudeRemoteOneMonthCards, 'historyApiEquivalent'), ['Claude'], 'Claude 1M API card uses the prepared provider contribution detailLine');
 
   sandbox.__combinedDashboardTest.setProviderTab('codex');
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1D');
@@ -1051,14 +1048,13 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
   const codexRemoteOneDayCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(codexRemoteOneDayDetails.cards, codexHistoryCardKeys),
     codexRemoteOneDayDetails.codexHistoryChart,
     '1D'
   );
   assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryTokens'), ['Local', 'WATCHER'], 'Codex 1D token card uses source labels with configured alias');
   const codexRemoteOneDayApi = firstApiEstimateStrip(codexRemoteOneDayHtml, '1D API-equivalent');
   assert.match(codexRemoteOneDayApi, /usage-api-estimate-strip/, 'Codex 1D local+remote API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryApiEquivalent'), ['Local', 'WATCHER'], 'Codex 1D API card uses source labels with configured alias');
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryApiEquivalent'), ['Codex'], 'Codex 1D API card uses the prepared provider contribution detailLine');
 
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1M');
   const codexRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
@@ -1068,20 +1064,17 @@ function main() {
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
   const codexRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
-    sandbox.__combinedDashboardTest.usageCardsByKey(codexRemoteOneMonthDetails.cards, codexHistoryCardKeys),
     codexRemoteOneMonthDetails.codexHistoryChart,
     '1M'
   );
   assertDetailLineLabels(metricCardByKey(codexRemoteOneMonthCards, 'codexHistoryTokens'), ['Local', 'WATCHER'], 'Codex 1M token card uses source labels with configured alias');
   const codexRemoteOneMonthApi = firstApiEstimateStrip(codexRemoteOneMonthHtml, '1M API-equivalent');
   assert.match(codexRemoteOneMonthApi, /usage-api-estimate-strip/, 'Codex 1M local+remote API footer renders structurally');
-  assertDetailLineLabels(metricCardByKey(codexRemoteOneMonthCards, 'codexHistoryApiEquivalent'), ['Local', 'WATCHER'], 'Codex 1M API card uses source labels with configured alias');
+  assertDetailLineLabels(metricCardByKey(codexRemoteOneMonthCards, 'codexHistoryApiEquivalent'), ['Codex'], 'Codex 1M API card uses the prepared provider contribution detailLine');
 
-  var claudeCardKeys = claudeHistoryCardKeys;
-  var codexCardKeys = codexHistoryCardKeys;
   ['1D', '1M'].forEach(function(rk) {
     var claudeCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
-      sandbox.__combinedDashboardTest.usageCardsByKey(model.details.cards, claudeCardKeys), model.details.historyChart, rk);
+      model.details.historyChart, rk);
     claudeCards.forEach(function(card) {
       if (card && card.key && card.key.indexOf('ApiEquivalent') < 0) {
         assert.ok(Array.isArray(card.detailLines), 'Claude ' + rk + ' ' + card.key + ' has source detailLines');
@@ -1090,7 +1083,7 @@ function main() {
       }
     });
     var codexCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
-      sandbox.__combinedDashboardTest.usageCardsByKey(model.details.cards, codexCardKeys), model.details.codexHistoryChart, rk);
+      model.details.codexHistoryChart, rk);
     codexCards.forEach(function(card) {
       if (card && card.key && card.key.indexOf('ApiEquivalent') < 0) {
         assert.ok(Array.isArray(card.detailLines), 'Codex ' + rk + ' ' + card.key + ' has source detailLines');

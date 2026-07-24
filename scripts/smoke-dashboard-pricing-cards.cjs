@@ -20,6 +20,8 @@ function main() {
     cacheCreationInputTokens: model.cacheCreationInputTokens,
     cacheReadInputTokens: model.cacheReadInputTokens
   }));
+  const now = new Date();
+  const historyDateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   const claudeState = {
     provider: 'claude',
@@ -196,10 +198,32 @@ function main() {
   }
 
   {
+    const codexHistoryModelUsage = [
+      {
+        model: 'gpt-5.4-2026-05-13',
+        assistantMessages: 1,
+        inputTokens: 1000,
+        outputTokens: 2000,
+        cacheCreationInputTokens: 200,
+        cacheReadInputTokens: 0,
+        reasoningOutputTokens: 300,
+        totalTokens: 3300
+      },
+      {
+        model: '<synthetic>:o3-20260513',
+        assistantMessages: 1,
+        inputTokens: 2000,
+        outputTokens: 3000,
+        cacheCreationInputTokens: 300,
+        cacheReadInputTokens: 0,
+        reasoningOutputTokens: 300,
+        totalTokens: 5300
+      }
+    ];
     const codexCorrelatedHistory = {
       available: true,
-      rangeLabel: '2026-05-15 to 2026-05-16',
-      totalDays: 2,
+      rangeLabel: `${historyDateKey} to ${historyDateKey}`,
+      totalDays: 1,
       activeDays: 1,
       assistantMessages: 2,
       inputTokens: 3000,
@@ -221,29 +245,18 @@ function main() {
       skippedTokenCountOutsideTurn: 0,
       skippedCloseWithoutTurn: 0,
       skippedCompletionTimestampMissing: 0,
-      days: [],
-      modelUsage: [
-        {
-          model: 'gpt-5.4-2026-05-13',
-          assistantMessages: 1,
-          inputTokens: 1000,
-          outputTokens: 2000,
-          cacheCreationInputTokens: 200,
-          cacheReadInputTokens: 0,
-          reasoningOutputTokens: 300,
-          totalTokens: 3300
-        },
-        {
-          model: '<synthetic>:o3-20260513',
-          assistantMessages: 1,
-          inputTokens: 2000,
-          outputTokens: 3000,
-          cacheCreationInputTokens: 300,
-          cacheReadInputTokens: 0,
-          reasoningOutputTokens: 300,
-          totalTokens: 5300
-        }
-      ]
+      days: [{
+        dateKey: historyDateKey,
+        correlatedTurns: 2,
+        inputTokens: 3000,
+        outputTokens: 5000,
+        cacheCreationInputTokens: 500,
+        cacheReadInputTokens: 0,
+        reasoningOutputTokens: 600,
+        totalTokens: 8600,
+        modelUsage: codexHistoryModelUsage
+      }],
+      modelUsage: codexHistoryModelUsage
     };
 
     const model = buildUsageDashboardModel({
@@ -252,10 +265,10 @@ function main() {
       enabledProviders: ['codex']
     });
 
-    const apiEq = model.details.cards.find(c => c.key === 'codexHistoryApiEquivalent');
-    assert.ok(apiEq, 'codexHistoryApiEquivalent card present');
-    assert.equal(apiEq.available, true, 'codexHistoryApiEquivalent card available');
-    assert.ok(apiEq.value.startsWith('$'), `codexHistoryApiEquivalent value starts with $, got ${apiEq.value}`);
+    const apiEq = model.details.codexHistoryChart?.rangeViews?.['1M']?.apiEquivalentCard;
+    assert.ok(apiEq, 'prepared Codex 1M API-equivalent card present');
+    assert.equal(apiEq.available, true, 'prepared Codex 1M API-equivalent card available');
+    assert.ok(apiEq.value.startsWith('$'), `prepared Codex 1M API-equivalent value starts with $, got ${apiEq.value}`);
     const historyEstimate = estimateAggregateCostUsd(costRowsFromModels(codexCorrelatedHistory.modelUsage), false);
     assert.equal(historyEstimate.fallbackCount, 1, 'codex history estimate records one fallback-priced model');
     assert.equal(historyEstimate.totalCount, 2, 'codex history estimate evaluates both model rows');

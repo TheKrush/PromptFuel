@@ -23,10 +23,7 @@ import {
 } from './dashboard/format';
 
 import { buildToday, buildTodayOverviewFromCharts } from './dashboard/today';
-import {
-  buildClaudeHistoryChart, buildCodexHistoryChart, buildCombinedHistoryChart,
-  buildHistoryCards, buildCodexHistoryCards
-} from './dashboard/historyChart';
+import { buildClaudeHistoryChart, buildCodexHistoryChart, buildCombinedHistoryChart } from './dashboard/historyChart';
 import { buildClaudeModelDistribution, buildCodexModelDistribution } from './dashboard/modelDistribution';
 import { annotateSourceConfidence } from './dashboard/sourceConfidence';
 
@@ -193,6 +190,7 @@ export interface UsageDashboardHistoryChartPoint {
   isEmpty?: boolean;
   source?: 'local' | 'remote';
   sourceLabel?: string;
+  sourceKinds?: Array<'local' | 'snapshot'>;
 }
 
 export interface UsageDashboardHistoryChartModelUsage {
@@ -269,6 +267,8 @@ export interface UsageDashboardMetricCard {
   key: string;
   label: string;
   value: string;
+  apiEquivalentCostUsd?: number;
+  apiEquivalentFallbackPricingUsed?: boolean;
   detail?: string;
   detailLines?: string[];
   detailTooltip?: string;
@@ -636,8 +636,6 @@ function buildDetails(
         : undefined,
       available: providerApiEquivalentCostUsd !== undefined
     },
-    ...(claudeEnabled ? buildHistoryCards(claudeUsageHistory, remoteClaudeModels) : []),
-    ...(codexEnabled ? buildCodexHistoryCards(codexCorrelatedHistory, remoteCodexModels) : []),
     ...buildBreakdownCards(availableProviders, totals, snapshotSource)
   ];
 

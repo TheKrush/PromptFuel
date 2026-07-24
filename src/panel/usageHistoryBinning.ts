@@ -1,6 +1,7 @@
 import { displayTotalTokens } from '../snapshot/tokenMath';
 import { buildWeekdayActivityBreakdown } from './dashboard/weekdayActivity';
 import type { WeekdayActivityBreakdown } from './dashboard/weekdayActivity';
+import type { UsageDashboardMetricCard } from './usageDashboardModel';
 
 export type UsageHistoryRangeKey = '1D' | '1W' | '1M' | '1Y' | 'ALL';
 export type UsageHistoryBinGranularity = 'day' | 'week' | 'month';
@@ -57,6 +58,8 @@ export interface UsageHistoryPoint {
   binEndDateKey?: string;
   sourcePointCount?: number;
   isEmpty?: boolean;
+  source?: 'local' | 'remote';
+  sourceKinds?: Array<'local' | 'snapshot'>;
 }
 
 export interface UsageHistoryRangeView {
@@ -73,6 +76,7 @@ export interface UsageHistoryRangeView {
   unavailableReason?: string;
   limitation?: string;
   weekdayBreakdown?: WeekdayActivityBreakdown;
+  apiEquivalentCard?: UsageDashboardMetricCard;
 }
 
 export type UsageHistoryRangeViews = Record<UsageHistoryRangeKey, UsageHistoryRangeView>;
@@ -268,6 +272,7 @@ function aggregateBin(
 ): UsageHistoryPoint {
   const modelTotals = new Map<string, UsageHistoryModelUsage>();
   const providerTotals = new Map<string, UsageHistoryProviderSegment>();
+  const sourceKinds = new Set<'local' | 'snapshot'>();
   const totals = {
     totalTokens: 0,
     inputTokens: 0,
@@ -291,6 +296,13 @@ function aggregateBin(
       totals.cacheReadTokens += Number(point.cacheReadTokens || 0);
       totals.assistantMessages += Number(point.assistantMessages || 0);
       totals.sourcePointCount += 1;
+
+      if (point.source === 'local' || point.sourceKinds?.includes('local')) {
+        sourceKinds.add('local');
+      }
+      if (point.source === 'remote' || point.sourceKinds?.includes('snapshot')) {
+        sourceKinds.add('snapshot');
+      }
 
       for (const model of point.models || []) {
         const rawModel = model.model || model.label || 'unknown';
@@ -377,7 +389,8 @@ function aggregateBin(
     binStartDateKey: startKey,
     binEndDateKey: endKey,
     sourcePointCount: totals.sourcePointCount,
-    isEmpty: totals.totalTokens <= 0 && totals.assistantMessages <= 0
+    isEmpty: totals.totalTokens <= 0 && totals.assistantMessages <= 0,
+    ...(sourceKinds.size > 0 ? { sourceKinds: Array.from(sourceKinds).sort() } : {})
   };
 }
 

@@ -7,6 +7,7 @@ import { displayTotalTokens, sumTokens } from '../../snapshot/tokenMath';
 import type { UsageDashboardMetricCard, UsageDashboardToday, UsageDashboardSourceInfo, UsageDashboardHistoryChart } from '../usageDashboardModel';
 import type { UsageHistoryPoint } from '../usageHistoryBinning';
 import { formatCount, formatUsd, sourceInfo, buildUnavailableMetricCard } from './format';
+import { buildApiEquivalentEstimateResult, formatApiEstimateTooltip, type ApiEquivalentEstimateContribution } from './apiEstimate';
 
 interface OverviewTodayPart {
   label: 'Claude' | 'Codex';
@@ -21,38 +22,8 @@ interface OverviewTodayPart {
   apiEstimateUnavailableReason?: string;
 }
 
-interface OverviewApiEstimateContribution {
-  label: string;
-  costUsd?: number;
-  fallbackPricingUsed?: boolean;
-  unavailableReason?: string;
-}
-
-interface OverviewApiEstimateCardFields {
-  value: string;
-  detail: string;
-  detailLines?: string[];
-  detailTooltip: string;
-  available: boolean;
-  fallbackPricingUsed: boolean;
-}
-
-interface ApiEstimateTooltipOptions {
-  label: string;
-  fallbackPricingUsed?: boolean;
-  unavailableReason?: string;
-  partialUnavailableReason?: string;
-}
-
-function formatApiEstimateTooltip(options: ApiEstimateTooltipOptions): string {
-  const prefix = `${options.label} estimate`;
-  if (options.unavailableReason) {
-    return `${prefix} unavailable: ${options.unavailableReason}. Not actual billing.`;
-  }
-  if (options.partialUnavailableReason) {
-    return `${prefix} partial: unavailable from ${options.partialUnavailableReason}. ${options.fallbackPricingUsed ? 'Fallback pricing used; ' : ''}not actual billing.`;
-  }
-  return `${prefix}; ${options.fallbackPricingUsed ? 'fallback pricing used; ' : ''}not actual billing.`;
+interface OverviewTodayCardsPresentation {
+  source: UsageDashboardSourceInfo;
 }
 
 function buildRemoteSourceNote(remote: RemoteSourceTodaySummary): string {
@@ -150,19 +121,10 @@ function overviewDetailLines(
   return lines.length >= 2 ? lines : undefined;
 }
 
-function isUsableApiEstimateCost(costUsd: number | undefined): costUsd is number {
-  return typeof costUsd === 'number' && Number.isFinite(costUsd) && costUsd >= 0;
-}
-
-function hasUsableApiEstimateCost(
-  contribution: OverviewApiEstimateContribution
-): contribution is OverviewApiEstimateContribution & { costUsd: number } {
-  return isUsableApiEstimateCost(contribution.costUsd);
-}
-
-function overviewApiEstimateContribution(part: OverviewTodayPart): OverviewApiEstimateContribution {
+function overviewApiEstimateContribution(part: OverviewTodayPart): ApiEquivalentEstimateContribution {
   return {
     label: part.label,
+    active: true,
     costUsd: part.apiCostUsd,
     fallbackPricingUsed: part.apiFallbackPricingUsed,
     unavailableReason: part.apiEstimateUnavailableReason ?? (part.hasApiEstimateInput
@@ -171,69 +133,16 @@ function overviewApiEstimateContribution(part: OverviewTodayPart): OverviewApiEs
   };
 }
 
-function buildOverviewApiEstimateCard(
-  contributions: OverviewApiEstimateContribution[],
-  unavailableDetail: string,
-  unavailableReason: string
-): OverviewApiEstimateCardFields {
-  const valid = contributions.filter(hasUsableApiEstimateCost);
-  const unavailable = contributions.filter(contribution => !hasUsableApiEstimateCost(contribution));
-  const fallbackPricingUsed = valid.some(contribution => contribution.fallbackPricingUsed);
-
-  if (valid.length === 0) {
-    return {
-      value: 'Unavailable',
-      detail: unavailableDetail,
-      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', unavailableReason }),
-      available: false,
-      fallbackPricingUsed: false
-    };
+function buildOverviewTodayCards(
+  parts: OverviewTodayPart[],
+  presentation: OverviewTodayCardsPresentation = {
+    source: sourceInfo(
+      'mixedDayBucket',
+      'Today - combined',
+      'Combined Today usage from enabled Claude and Codex sources.'
+    )
   }
-
-  const totalCostUsd = valid.reduce((sum, contribution) => sum + contribution.costUsd, 0);
-  if (!Number.isFinite(totalCostUsd)) {
-    return {
-      value: 'Unavailable',
-      detail: unavailableDetail,
-      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', unavailableReason }),
-      available: false,
-      fallbackPricingUsed: false
-    };
-  }
-  if (unavailable.length === 0) {
-    const detailLines = valid.length >= 2
-      ? valid.map(contribution => `${contribution.label}: ${formatUsd(contribution.costUsd)}`)
-      : undefined;
-    return {
-      value: formatUsd(totalCostUsd),
-      detail: valid.map(contribution => `${contribution.label} ${formatUsd(contribution.costUsd)}`).join(' | '),
-      ...(detailLines ? { detailLines } : {}),
-      detailTooltip: formatApiEstimateTooltip({ label: '1D API-equivalent', fallbackPricingUsed }),
-      available: true,
-      fallbackPricingUsed
-    };
-  }
-
-  const unavailableLabels = unavailable.map(contribution => contribution.label);
-  const unavailableSummary = unavailable.map(contribution => `${contribution.label}: ${contribution.unavailableReason ?? 'model/token data unavailable'}`).join('; ');
-  return {
-    value: formatUsd(totalCostUsd),
-    detail: `Partial estimate · unavailable: ${unavailableLabels.join(', ')}`,
-    detailLines: [
-      `Partial estimate · unavailable: ${unavailableLabels.join(', ')}`,
-      ...valid.map(contribution => `${contribution.label}: ${formatUsd(contribution.costUsd)}`)
-    ],
-    detailTooltip: formatApiEstimateTooltip({
-      label: '1D API-equivalent',
-      fallbackPricingUsed,
-      partialUnavailableReason: unavailableSummary
-    }),
-    available: true,
-    fallbackPricingUsed
-  };
-}
-
-function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetricCard[] | undefined {
+): UsageDashboardMetricCard[] | undefined {
   const activeParts = parts.filter(overviewPartHasValues);
   if (activeParts.length === 0) {
     return undefined;
@@ -245,16 +154,13 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
   const totalInput = activeParts.reduce((sum, part) => sum + part.inputTokens, 0);
   const totalOutput = activeParts.reduce((sum, part) => sum + part.outputTokens, 0);
   const totalCache = activeParts.reduce((sum, part) => sum + part.cacheTokens, 0);
-  const apiEstimate = buildOverviewApiEstimateCard(
+  const apiEstimate = buildApiEquivalentEstimateResult(
     activeParts.map(overviewApiEstimateContribution),
-    'Estimate requires model/token data from all contributing Today sources',
-    'every contributing Today source must include model and token component data'
-  );
-
-  const overviewSource = sourceInfo(
-    'mixedDayBucket',
-    'Today - combined',
-    'Combined Today usage from enabled Claude and Codex sources.'
+    {
+      label: '1D API-equivalent',
+      unavailableDetail: 'Estimate requires model/token data from all contributing Today sources',
+      unavailableReason: 'every contributing Today source must include model and token component data'
+    }
   );
 
   return [
@@ -271,7 +177,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
         part => part.assistantMessages !== undefined && part.assistantMessages > 0
       ),
       available: messagesAvailable,
-      source: overviewSource
+      source: presentation.source
     },
     {
       key: 'overviewTodayTokens',
@@ -280,7 +186,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       detail: activeParts.map(part => `${part.label} ${formatCount(part.totalTokens)}`).join(' | '),
       detailLines: overviewDetailLines(activeParts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
       available: true,
-      source: overviewSource
+      source: presentation.source
     },
     {
       key: 'overviewTodayInputOutput',
@@ -293,7 +199,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
         part => part.inputTokens > 0 || part.outputTokens > 0
       ),
       available: true,
-      source: overviewSource
+      source: presentation.source
     },
     {
       key: 'overviewTodayCache',
@@ -302,7 +208,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       detail: activeParts.map(part => `${part.label} ${formatCount(part.cacheTokens)}`).join(' | '),
       detailLines: overviewDetailLines(activeParts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
       available: true,
-      source: overviewSource
+      source: presentation.source
     },
     {
       key: 'overviewTodayApiEquivalent',
@@ -312,7 +218,7 @@ function buildOverviewTodayCards(parts: OverviewTodayPart[]): UsageDashboardMetr
       ...(apiEstimate.detailLines ? { detailLines: apiEstimate.detailLines } : {}),
       detailTooltip: apiEstimate.detailTooltip,
       available: apiEstimate.available,
-      source: overviewSource
+      source: presentation.source
     }
   ];
 }
@@ -444,140 +350,44 @@ export function buildTodayOverviewFromCharts(
   const codexBin = codexView && codexView.activeBinCount > 0 ? codexView.points[0] : undefined;
   if (!claudeBin && !codexBin) { return undefined; }
 
-  const toEstimateInput = (bin: UsageHistoryPoint, isClaude: boolean) =>
-    bin.models.length > 0
-      ? estimateAggregateCostUsd(bin.models.map(m => ({
-          model: m.model,
-          inputTokens: m.inputTokens ?? 0,
-          outputTokens: m.outputTokens ?? 0,
-          cacheCreationInputTokens: m.cacheCreationInputTokens ?? 0,
-          cacheReadInputTokens: m.cacheReadInputTokens ?? 0
-        })), isClaude)
+  const toOverviewTodayPart = (
+    bin: UsageHistoryPoint,
+    label: OverviewTodayPart['label'],
+    apiCard: UsageDashboardMetricCard | undefined
+  ): OverviewTodayPart => {
+    const apiCostUsd = apiCard?.available &&
+      typeof apiCard.apiEquivalentCostUsd === 'number' &&
+      Number.isFinite(apiCard.apiEquivalentCostUsd) &&
+      apiCard.apiEquivalentCostUsd >= 0
+      ? apiCard.apiEquivalentCostUsd
       : undefined;
-
-  if (!claudeBin || !codexBin) {
-    const parts: OverviewTodayPart[] = [];
-    if (claudeBin) {
-      const claudeApi = toEstimateInput(claudeBin, true);
-      parts.push({
-        label: 'Claude',
-        assistantMessages: claudeBin.assistantMessages,
-        inputTokens: claudeBin.inputTokens,
-        outputTokens: claudeBin.outputTokens,
-        cacheTokens: claudeBin.cacheTokens,
-        totalTokens: claudeBin.totalTokens,
-        apiCostUsd: claudeApi?.costUsd,
-        apiFallbackPricingUsed: claudeApi ? claudeApi.fallbackCount > 0 : false,
-        hasApiEstimateInput: claudeBin.models.length > 0
-      });
-    }
-    if (codexBin) {
-      const codexApi = toEstimateInput(codexBin, false);
-      parts.push({
-        label: 'Codex',
-        assistantMessages: codexBin.assistantMessages,
-        inputTokens: codexBin.inputTokens,
-        outputTokens: codexBin.outputTokens,
-        cacheTokens: codexBin.cacheTokens,
-        totalTokens: codexBin.totalTokens,
-        apiCostUsd: codexApi?.costUsd,
-        apiFallbackPricingUsed: codexApi ? codexApi.fallbackCount > 0 : false,
-        hasApiEstimateInput: codexBin.models.length > 0
-      });
-    }
-    return buildOverviewTodayCards(parts);
-  }
-
-  const totalTokens = claudeBin.totalTokens + codexBin.totalTokens;
-  const totalInput = claudeBin.inputTokens + codexBin.inputTokens;
-  const totalOutput = claudeBin.outputTokens + codexBin.outputTokens;
-  const totalCache = claudeBin.cacheTokens + codexBin.cacheTokens;
-
-  const claudeApi = toEstimateInput(claudeBin, true);
-  const codexApi = toEstimateInput(codexBin, false);
-  const parts: OverviewTodayPart[] = [
-    {
-      label: 'Claude',
-      assistantMessages: claudeBin.assistantMessages,
-      inputTokens: claudeBin.inputTokens,
-      outputTokens: claudeBin.outputTokens,
-      cacheTokens: claudeBin.cacheTokens,
-      totalTokens: claudeBin.totalTokens,
-      apiCostUsd: claudeApi?.costUsd,
-      apiFallbackPricingUsed: claudeApi ? claudeApi.fallbackCount > 0 : false,
-      hasApiEstimateInput: claudeBin.models.length > 0
-    },
-    {
-      label: 'Codex',
-      assistantMessages: codexBin.assistantMessages,
-      inputTokens: codexBin.inputTokens,
-      outputTokens: codexBin.outputTokens,
-      cacheTokens: codexBin.cacheTokens,
-      totalTokens: codexBin.totalTokens,
-      apiCostUsd: codexApi?.costUsd,
-      apiFallbackPricingUsed: codexApi ? codexApi.fallbackCount > 0 : false,
-      hasApiEstimateInput: codexBin.models.length > 0
-    }
+    return {
+      label,
+      assistantMessages: bin.assistantMessages,
+      inputTokens: bin.inputTokens,
+      outputTokens: bin.outputTokens,
+      cacheTokens: bin.cacheTokens,
+      totalTokens: bin.totalTokens,
+      apiCostUsd,
+      apiFallbackPricingUsed: apiCard?.apiEquivalentFallbackPricingUsed,
+      hasApiEstimateInput: true,
+      ...(apiCostUsd === undefined ? { apiEstimateUnavailableReason: 'model/token data unavailable' } : {})
+    };
+  };
+  const parts = [
+    ...(claudeBin ? [toOverviewTodayPart(claudeBin, 'Claude', claudeView?.apiEquivalentCard)] : []),
+    ...(codexBin ? [toOverviewTodayPart(codexBin, 'Codex', codexView?.apiEquivalentCard)] : [])
   ];
-
-  const apiEstimate = buildOverviewApiEstimateCard(
-    parts.map(overviewApiEstimateContribution),
-    'Estimate requires per-model token data from all sources',
-    'every contributing Today source must include model and token component data'
-  );
-  const overviewSource = sourceInfo('mixedDayBucket', 'Today — combined', 'Claude and Codex today usage from 1D history bins.');
-  return [
-    {
-      key: 'overviewTodayMessages',
-      label: '1D Messages/Turns',
-      value: formatCount(claudeBin.assistantMessages + codexBin.assistantMessages),
-      detail: `Claude ${formatCount(claudeBin.assistantMessages)} · Codex ${formatCount(codexBin.assistantMessages)}`,
-      detailLines: overviewDetailLines(parts, part => formatCount(part.assistantMessages ?? 0), part => (part.assistantMessages ?? 0) > 0),
-      available: true,
-      source: overviewSource
-    },
-    {
-      key: 'overviewTodayTokens',
-      label: '1D Tokens',
-      value: formatCount(totalTokens),
-      detail: `Claude ${formatCount(claudeBin.totalTokens)} · Codex ${formatCount(codexBin.totalTokens)}`,
-      detailLines: overviewDetailLines(parts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
-      available: true,
-      source: overviewSource
-    },
-    {
-      key: 'overviewTodayInputOutput',
-      label: '1D Input / Output',
-      value: `${formatCount(totalInput)} / ${formatCount(totalOutput)}`,
-      detail: `Claude ${formatCount(claudeBin.inputTokens)} / ${formatCount(claudeBin.outputTokens)} · Codex ${formatCount(codexBin.inputTokens)} / ${formatCount(codexBin.outputTokens)}`,
-      detailLines: overviewDetailLines(
-        parts,
-        part => `${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`,
-        part => part.inputTokens > 0 || part.outputTokens > 0
-      ),
-      available: true,
-      source: overviewSource
-    },
-    {
-      key: 'overviewTodayCache',
-      label: '1D Cache',
-      value: formatCount(totalCache),
-      detail: `Claude ${formatCount(claudeBin.cacheTokens)} · Codex ${formatCount(codexBin.cacheTokens)}`,
-      detailLines: overviewDetailLines(parts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
-      available: true,
-      source: overviewSource
-    },
-    {
-      key: 'overviewTodayApiEquivalent',
-      label: '1D API-equivalent',
-      value: apiEstimate.value,
-      detail: apiEstimate.detail,
-      ...(apiEstimate.detailLines ? { detailLines: apiEstimate.detailLines } : {}),
-      detailTooltip: apiEstimate.detailTooltip,
-      available: apiEstimate.available,
-      source: overviewSource
+  const presentation = claudeBin && codexBin
+    ? {
+      source: sourceInfo(
+        'mixedDayBucket',
+        'Today — combined',
+        'Claude and Codex today usage from 1D history bins.'
+      )
     }
-  ];
+    : undefined;
+  return buildOverviewTodayCards(parts, presentation);
 }
 
 export function buildTodaySectionSource(
