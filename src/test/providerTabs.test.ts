@@ -500,6 +500,27 @@ describe('provider tabs model', () => {
     assert.match(apiCard?.detailTooltip ?? '', /partial: unavailable from Claude: model\/token data unavailable/i);
   });
 
+  it('pins the exact direct-path two-provider Overview source label and detail', () => {
+    const direct = buildUsageDashboardModel({
+      states: [claudeState(), codexState()],
+      claudeTodayUsage: claudeToday(),
+      codexTodayUsage: codexToday(),
+      enabledProviders: ['claude', 'codex']
+    }).today.overviewCards;
+
+    assert.ok(direct, 'two-provider direct Today Overview cards exist');
+    assert.deepEqual(
+      direct.map(card => card.source?.label),
+      Array(5).fill('Today — combined'),
+      'direct Today two-provider Overview source label is pinned exactly'
+    );
+    assert.deepEqual(
+      direct.map(card => card.source?.detail),
+      Array(5).fill('Combined Today usage from enabled Claude and Codex sources.'),
+      'direct Today two-provider Overview source detail is pinned exactly'
+    );
+  });
+
   describe('serialized history range API-equivalent cards', () => {
     const today = localDateKey(new Date());
     const priorDayDate = new Date();

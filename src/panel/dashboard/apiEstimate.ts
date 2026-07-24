@@ -58,6 +58,13 @@ function unavailableReasonFor(contribution: ApiEquivalentEstimateContribution): 
   return contribution.unavailableReason?.trim() || 'model/token data unavailable';
 }
 
+// Partial-tolerant by design: returns a result object that can carry partial/
+// unavailableLabels/disclosure text, so a partial sum here is safe to show — a missing
+// contribution is named in unavailableLabels/detail rather than silently dropped. Call
+// sites choose this when they can afford to disclose a gap instead of hiding it. Contrast
+// with sumCostIfComplete (display/apiEquivalentCost.ts), which returns a bare number with
+// no disclosure channel, so it is all-or-nothing: any missing row voids the whole sum
+// rather than risk an undisclosed partial total.
 export function buildApiEquivalentEstimateResult(
   contributions: ApiEquivalentEstimateContribution[],
   options: ApiEquivalentEstimateOptions

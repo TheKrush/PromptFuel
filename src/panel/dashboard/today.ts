@@ -18,7 +18,6 @@ interface OverviewTodayPart {
   totalTokens: number;
   apiCostUsd?: number;
   apiFallbackPricingUsed?: boolean;
-  hasApiEstimateInput: boolean;
   apiEstimateUnavailableReason?: string;
 }
 
@@ -101,15 +100,6 @@ function costRowFromEstimate(
   return estimate?.available ? { costUsd: estimate.costUsd } : {};
 }
 
-function overviewPartHasValues(part: OverviewTodayPart): boolean {
-  return part.totalTokens > 0 ||
-    part.inputTokens > 0 ||
-    part.outputTokens > 0 ||
-    part.cacheTokens > 0 ||
-    (part.assistantMessages !== undefined && part.assistantMessages > 0) ||
-    part.hasApiEstimateInput;
-}
-
 function overviewDetailLines(
   parts: OverviewTodayPart[],
   formatValue: (part: OverviewTodayPart) => string,
@@ -127,9 +117,7 @@ function overviewApiEstimateContribution(part: OverviewTodayPart): ApiEquivalent
     active: true,
     costUsd: part.apiCostUsd,
     fallbackPricingUsed: part.apiFallbackPricingUsed,
-    unavailableReason: part.apiEstimateUnavailableReason ?? (part.hasApiEstimateInput
-      ? 'model/token data unavailable'
-      : 'no per-model token data')
+    unavailableReason: part.apiEstimateUnavailableReason ?? 'model/token data unavailable'
   };
 }
 
@@ -138,24 +126,23 @@ function buildOverviewTodayCards(
   presentation: OverviewTodayCardsPresentation = {
     source: sourceInfo(
       'mixedDayBucket',
-      'Today - combined',
+      'Today — combined',
       'Combined Today usage from enabled Claude and Codex sources.'
     )
   }
 ): UsageDashboardMetricCard[] | undefined {
-  const activeParts = parts.filter(overviewPartHasValues);
-  if (activeParts.length === 0) {
+  if (parts.length === 0) {
     return undefined;
   }
 
-  const totalMessages = activeParts.reduce((sum, part) => sum + (part.assistantMessages ?? 0), 0);
-  const messagesAvailable = activeParts.some(part => part.assistantMessages !== undefined);
-  const totalTokens = activeParts.reduce((sum, part) => sum + part.totalTokens, 0);
-  const totalInput = activeParts.reduce((sum, part) => sum + part.inputTokens, 0);
-  const totalOutput = activeParts.reduce((sum, part) => sum + part.outputTokens, 0);
-  const totalCache = activeParts.reduce((sum, part) => sum + part.cacheTokens, 0);
+  const totalMessages = parts.reduce((sum, part) => sum + (part.assistantMessages ?? 0), 0);
+  const messagesAvailable = parts.some(part => part.assistantMessages !== undefined);
+  const totalTokens = parts.reduce((sum, part) => sum + part.totalTokens, 0);
+  const totalInput = parts.reduce((sum, part) => sum + part.inputTokens, 0);
+  const totalOutput = parts.reduce((sum, part) => sum + part.outputTokens, 0);
+  const totalCache = parts.reduce((sum, part) => sum + part.cacheTokens, 0);
   const apiEstimate = buildApiEquivalentEstimateResult(
-    activeParts.map(overviewApiEstimateContribution),
+    parts.map(overviewApiEstimateContribution),
     {
       label: '1D API-equivalent',
       unavailableDetail: 'Estimate requires model/token data from all contributing Today sources',
@@ -168,11 +155,11 @@ function buildOverviewTodayCards(
       key: 'overviewTodayMessages',
       label: '1D Messages/Turns',
       value: messagesAvailable ? formatCount(totalMessages) : '-',
-      detail: activeParts
+      detail: parts
         .map(part => `${part.label} ${part.assistantMessages !== undefined ? formatCount(part.assistantMessages) : 'activity unavailable'}`)
         .join(' | '),
       detailLines: overviewDetailLines(
-        activeParts,
+        parts,
         part => part.assistantMessages !== undefined ? formatCount(part.assistantMessages) : 'activity unavailable',
         part => part.assistantMessages !== undefined && part.assistantMessages > 0
       ),
@@ -183,8 +170,8 @@ function buildOverviewTodayCards(
       key: 'overviewTodayTokens',
       label: '1D Tokens',
       value: formatCount(totalTokens),
-      detail: activeParts.map(part => `${part.label} ${formatCount(part.totalTokens)}`).join(' | '),
-      detailLines: overviewDetailLines(activeParts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
+      detail: parts.map(part => `${part.label} ${formatCount(part.totalTokens)}`).join(' | '),
+      detailLines: overviewDetailLines(parts, part => formatCount(part.totalTokens), part => part.totalTokens > 0),
       available: true,
       source: presentation.source
     },
@@ -192,9 +179,9 @@ function buildOverviewTodayCards(
       key: 'overviewTodayInputOutput',
       label: '1D Input / Output',
       value: `${formatCount(totalInput)} / ${formatCount(totalOutput)}`,
-      detail: activeParts.map(part => `${part.label} ${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`).join(' | '),
+      detail: parts.map(part => `${part.label} ${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`).join(' | '),
       detailLines: overviewDetailLines(
-        activeParts,
+        parts,
         part => `${formatCount(part.inputTokens)} / ${formatCount(part.outputTokens)}`,
         part => part.inputTokens > 0 || part.outputTokens > 0
       ),
@@ -205,8 +192,8 @@ function buildOverviewTodayCards(
       key: 'overviewTodayCache',
       label: '1D Cache',
       value: formatCount(totalCache),
-      detail: activeParts.map(part => `${part.label} ${formatCount(part.cacheTokens)}`).join(' | '),
-      detailLines: overviewDetailLines(activeParts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
+      detail: parts.map(part => `${part.label} ${formatCount(part.cacheTokens)}`).join(' | '),
+      detailLines: overviewDetailLines(parts, part => formatCount(part.cacheTokens), part => part.cacheTokens > 0),
       available: true,
       source: presentation.source
     },
@@ -370,7 +357,6 @@ export function buildTodayOverviewFromCharts(
       totalTokens: bin.totalTokens,
       apiCostUsd,
       apiFallbackPricingUsed: apiCard?.apiEquivalentFallbackPricingUsed,
-      hasApiEstimateInput: true,
       ...(apiCostUsd === undefined ? { apiEstimateUnavailableReason: 'model/token data unavailable' } : {})
     };
   };
@@ -474,8 +460,7 @@ export function buildToday(
         totalTokens: hasRemote ? mergedTotal : localTotal,
         apiCostUsd: claudeMergedApiCost,
         apiFallbackPricingUsed: (claudeTodayApiEstimate.available && claudeTodayApiEstimate.fallbackPricingUsed) ||
-          Boolean(claudeRemoteApiEstimate?.available && claudeRemoteApiEstimate.fallbackPricingUsed),
-        hasApiEstimateInput: true
+          Boolean(claudeRemoteApiEstimate?.available && claudeRemoteApiEstimate.fallbackPricingUsed)
       });
 
       if (hasRemote) {
@@ -585,8 +570,7 @@ export function buildToday(
         cacheTokens: remoteCache,
         totalTokens: remoteTotal,
         apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
-        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed,
-        hasApiEstimateInput: true
+        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed
       });
       cards.push({
         key: 'todayMessages',
@@ -684,8 +668,7 @@ export function buildToday(
         totalTokens: hasRemote ? mergedTotal : localTotal,
         apiCostUsd: codexMergedApiCost,
         apiFallbackPricingUsed: (codexTodayApiEstimate.available && codexTodayApiEstimate.fallbackPricingUsed) ||
-          Boolean(codexRemoteApiEstimate?.available && codexRemoteApiEstimate.fallbackPricingUsed),
-        hasApiEstimateInput: true
+          Boolean(codexRemoteApiEstimate?.available && codexRemoteApiEstimate.fallbackPricingUsed)
       });
 
       if (hasRemote) {
@@ -795,8 +778,7 @@ export function buildToday(
         cacheTokens: remoteCache,
         totalTokens: remoteTotal,
         apiCostUsd: remoteApiEstimate.available ? remoteApiEstimate.costUsd : undefined,
-        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed,
-        hasApiEstimateInput: true
+        apiFallbackPricingUsed: remoteApiEstimate.available && remoteApiEstimate.fallbackPricingUsed
       });
       cards.push({
         key: 'codexTodayMessages',
