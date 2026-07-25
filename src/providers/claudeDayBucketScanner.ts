@@ -29,13 +29,6 @@ interface JsonlFileCandidate {
   mtimeMs: number;
 }
 
-interface LocalDayWindow {
-  startMs: number;
-  endMs: number;
-  dateKey: string;
-  dateLabel: string;
-}
-
 interface ClaudeJsonlRecord {
   type?: unknown;
   timestamp?: unknown;
@@ -92,51 +85,6 @@ interface ClaudeHistoryUsageSample extends ClaudeUsageSample {
 export function defaultClaudeProjectsPath(): string {
   return path.join(os.homedir(), '.claude', 'projects');
 }
-
-export async function readClaudeTodayUsageBucket(
-  projectsRoot: string = defaultClaudeProjectsPath(),
-  targetDate: Date = new Date()
-): Promise<ClaudeTodayUsageBucket> {
-  const day = getLocalDayWindow(targetDate);
-  const bucket = createEmptyBucket(day);
-  const models = new Set<string>();
-
-  try {
-    const files = await findJsonlFiles(projectsRoot);
-    bucket.filesFound = files.length;
-
-    if (files.length === 0) {
-      bucket.error = 'No Claude JSONL project files found.';
-      return bucket;
-    }
-
-    for (const candidate of files) {
-      if (!couldContainLocalDay(candidate, day)) {
-        continue;
-      }
-
-      try {
-        await parseClaudeJsonlFile(candidate.file, day, bucket, models);
-      } catch {
-        bucket.fileReadErrors += 1;
-      }
-    }
-
-    bucket.models = Array.from(models).sort();
-    bucket.available = bucket.recordsMatched > 0;
-    if (!bucket.available) {
-      bucket.error = bucket.filesInspected > 0
-        ? 'No Claude assistant-message usage records found for the local day.'
-        : 'Claude JSONL project files were found, but none appeared to be updated for the local day.';
-    }
-
-    return bucket;
-  } catch {
-    bucket.error = 'Claude projects path is unavailable or unreadable.';
-    return bucket;
-  }
-}
-
 
 export async function readClaudeRecentUsageHistory(
   projectsRoot: string = defaultClaudeProjectsPath(),
@@ -430,125 +378,6 @@ async function findJsonlFiles(root: string): Promise<JsonlFileCandidate[]> {
 
   await walk(root, 0);
   return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
-}
-
-function couldContainLocalDay(candidate: JsonlFileCandidate, day: LocalDayWindow): boolean {
-  return candidate.mtimeMs >= day.startMs - 60_000;
-}
-
-async function parseClaudeJsonlFile(
-  file: string,
-  day: LocalDayWindow,
-  bucket: ClaudeTodayUsageBucket,
-  models: Set<string>
-): Promise<void> {
-  bucket.filesInspected += 1;
-
-  const reader = readline.createInterface({
-    input: fs.createReadStream(file, { encoding: 'utf8' }),
-    crlfDelay: Infinity
-  });
-
-  for await (const line of reader) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    bucket.recordsRead += 1;
-
-    let record: ClaudeJsonlRecord;
-    try {
-      record = JSON.parse(line) as ClaudeJsonlRecord;
-    } catch {
-      continue;
-    }
-
-    const sample = readClaudeUsageSample(record, day);
-    if (!sample) {
-      continue;
-    }
-
-    bucket.recordsMatched += 1;
-    bucket.assistantMessages += 1;
-    bucket.inputTokens += sample.inputTokens;
-    bucket.outputTokens += sample.outputTokens;
-    bucket.cacheCreationInputTokens += sample.cacheCreationInputTokens;
-    bucket.cacheReadInputTokens += sample.cacheReadInputTokens;
-    bucket.totalTokens += sample.inputTokens
-      + sample.outputTokens
-      + sample.cacheCreationInputTokens
-      + sample.cacheReadInputTokens;
-    addModelUsage(bucket.modelUsage ??= [], sample);
-    models.add(sample.model);
-  }
-}
-
-function readClaudeUsageSample(record: ClaudeJsonlRecord, day: LocalDayWindow): ClaudeUsageSample | undefined {
-  if (record.type !== 'assistant') {
-    return undefined;
-  }
-
-  const timestampMs = parseTimestampMs(record.timestamp);
-  if (timestampMs === undefined || timestampMs < day.startMs || timestampMs >= day.endMs) {
-    return undefined;
-  }
-
-  const message = asRecord(record.message);
-  if (!message) {
-    return undefined;
-  }
-
-  const model = asString(message.model);
-  if (!model || !model.startsWith('claude-')) {
-    return undefined;
-  }
-
-  const usage = asRecord(message.usage);
-  if (!usage) {
-    return undefined;
-  }
-
-  return {
-    model,
-    inputTokens: readTokenCount(usage.input_tokens),
-    outputTokens: readTokenCount(usage.output_tokens),
-    cacheCreationInputTokens: readTokenCount(usage.cache_creation_input_tokens),
-    cacheReadInputTokens: readTokenCount(usage.cache_read_input_tokens)
-  };
-}
-
-function createEmptyBucket(day: LocalDayWindow): ClaudeTodayUsageBucket {
-  return {
-    available: false,
-    dateKey: day.dateKey,
-    dateLabel: day.dateLabel,
-    assistantMessages: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: 0,
-    totalTokens: 0,
-    models: [],
-    modelUsage: [],
-    filesFound: 0,
-    filesInspected: 0,
-    recordsRead: 0,
-    recordsMatched: 0,
-    fileReadErrors: 0
-  };
-}
-
-function getLocalDayWindow(targetDate: Date): LocalDayWindow {
-  const start = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-  const end = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
-  const dateKey = formatLocalDateKey(start);
-
-  return {
-    startMs: start.getTime(),
-    endMs: end.getTime(),
-    dateKey,
-    dateLabel: dateKey
-  };
 }
 
 function formatLocalDateKey(date: Date): string {

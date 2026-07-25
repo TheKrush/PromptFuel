@@ -29,59 +29,10 @@ function main() {
     }
   };
 
-  const claudeTodayUsage = {
-    available: true,
-    dateKey: '2026-05-13',
-    dateLabel: '2026-05-13',
-    totalTokens: 50000,
-    inputTokens: 30000,
-    outputTokens: 20000,
-    cacheCreationInputTokens: 1000,
-    cacheReadInputTokens: 500,
-    assistantMessages: 42,
-    correlatedTurns: 42,
-    models: ['claude-sonnet-4-20250514'],
-    modelUsage: [],
-    filesFound: 1,
-    filesInspected: 1,
-    recordsRead: 42,
-    recordsMatched: 42,
-    fileReadErrors: 0,
-    skippedMissingTokenData: 0,
-    skippedMissingModel: 0,
-    skippedMissingBaseline: 0,
-    skippedNegativeDelta: 0,
-    reasoningOutputTokens: 0
-  };
-
-  const codexTodayUsage = {
-    available: true,
-    dateKey: '2026-05-13',
-    dateLabel: '2026-05-13',
-    totalTokens: 8000,
-    inputTokens: 3000,
-    outputTokens: 5000,
-    cacheCreationInputTokens: 500,
-    cacheReadInputTokens: 0,
-    reasoningOutputTokens: 600,
-    assistantMessages: 2,
-    correlatedTurns: 2,
-    models: ['gpt-4.5-2026-05-13', '<synthetic>:o3-20260513'],
-    filesFound: 1,
-    filesInspected: 1,
-    recordsRead: 10,
-    recordsMatched: 2,
-    fileReadErrors: 0,
-    skippedMissingTokenData: 0,
-    skippedMissingModel: 0,
-    skippedMissingBaseline: 0,
-    skippedNegativeDelta: 0
-  };
-
   // ── Scenario 1: Claude only ──────────────────────────────────────────────
 
   {
-    const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude'] });
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], enabledProviders: ['claude'] });
 
     assert.deepEqual(model.providers.map(provider => provider.provider), ['claude'], 'providers array excludes disabled Codex');
 
@@ -100,7 +51,7 @@ function main() {
   // ── Scenario 2: Codex only ──────────────────────────────────────────────
 
   {
-    const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['codex'] });
+    const model = buildUsageDashboardModel({ states: [claudeState, codexState], enabledProviders: ['codex'] });
 
     assert.deepEqual(model.providers.map(provider => provider.provider), ['codex'], 'providers array excludes disabled Claude');
 

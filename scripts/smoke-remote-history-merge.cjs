@@ -371,10 +371,8 @@ function makeNonCurrentSource(overrides = {}) {
   const fixture = createCanonicalUsageFixture();
   const model = buildUsageDashboardModel({
     states: fixture.states,
-    claudeTodayUsage: fixture.claudeToday,
     claudeUsageHistory: fixture.claudeHistory,
     codexCorrelatedHistory: fixture.codexHistory,
-    codexTodayUsage: fixture.codexToday,
     enabledProviders: ['claude', 'codex'],
     remoteUsage: fixture.remoteProjection
   });

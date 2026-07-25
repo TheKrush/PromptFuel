@@ -915,7 +915,6 @@ function main() {
 
   const claudeLocalRangeModel = buildUsageDashboardModel({
     states: [],
-    claudeTodayUsage: makeClaudeDay(fixtureDateKeys[1], 2000),
     claudeUsageHistory: makeClaudeHistory(),
     enabledProviders: ['claude']
   });
@@ -953,10 +952,8 @@ function main() {
   const remoteFixture = createCanonicalUsageFixture();
   const remoteAliasModel = buildUsageDashboardModel({
     states: remoteFixture.states,
-    claudeTodayUsage: remoteFixture.claudeToday,
     claudeUsageHistory: remoteFixture.claudeHistory,
     codexCorrelatedHistory: remoteFixture.codexHistory,
-    codexTodayUsage: remoteFixture.codexToday,
     enabledProviders: ['claude', 'codex'],
     remoteUsage: remoteFixture.remoteProjection,
     aliasMap: { 'vm-source': 'WATCHER', workstation: 'WATCHER' }
