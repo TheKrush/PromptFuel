@@ -382,6 +382,19 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
 .usage-data-source-unavailable{
   border-left-color:var(--vscode-inputValidation-errorBorder,#e06c75)
 }
+.usage-data-source-footer{
+  border-width:0;
+  border-top:1px solid var(--ab-keyline);
+  border-radius:0;
+  padding:10px 0 0;
+  margin:16px 0 0
+}
+.usage-data-source-footer .usage-data-source-title{
+  margin:0 0 4px;
+  font-size:.88em;
+  font-weight:600;
+  color:var(--vscode-descriptionForeground)
+}
 .usage-window-list{
   display:flex;
   flex-direction:column;

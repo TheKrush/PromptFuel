@@ -732,6 +732,26 @@ function main() {
     new RegExp(escapeRegExp(combinedAggregate.source.label)),
     'combined Data source section shows the host-provided provenance label as visible text (formerly tooltip-only)'
   );
+  {
+    // The tab-level Data source section is now a compact footer at the bottom of the History
+    // panel body, not a banner above the Today cards. Prove DOM order directly on the rendered
+    // string rather than trusting the return-expression order in the renderer source.
+    const todayIndex = combinedHistorySectionHtml.indexOf('usage-today-inline');
+    const chartIndex = combinedHistorySectionHtml.indexOf('usage-history-chart');
+    const metricGridIndex = combinedHistorySectionHtml.indexOf('usage-metric-card');
+    const distributionIndex = combinedHistorySectionHtml.indexOf('usage-model-distribution');
+    const weekdayIndex = combinedHistorySectionHtml.indexOf('usage-weekday-breakdown');
+    const footerIndex = combinedHistorySectionHtml.indexOf('usage-data-source-footer');
+    assert.ok(
+      todayIndex >= 0 && chartIndex >= 0 && metricGridIndex >= 0 && distributionIndex >= 0 && weekdayIndex >= 0 && footerIndex >= 0,
+      'combined history body renders Today, chart, metric grid, distribution, weekday, and the Data source footer for the DOM-order assertions below'
+    );
+    assert.ok(footerIndex > todayIndex, 'Data source footer renders after the Today cards, never before them');
+    assert.ok(footerIndex > chartIndex, 'Data source footer renders after the history chart');
+    assert.ok(footerIndex > metricGridIndex, 'Data source footer renders after the metric grid');
+    assert.ok(footerIndex > distributionIndex, 'Data source footer renders after Model Distribution');
+    assert.ok(footerIndex > weekdayIndex, 'Data source footer renders after the weekday breakdown, i.e. at the very bottom of the History panel body');
+  }
   assert.doesNotMatch(
     combinedHistorySectionHtml,
     /source-chip|data-source-tip-id/,
@@ -998,6 +1018,11 @@ function main() {
     assert.equal(glanceRowCount(fakeElements.usageDashboardCards.innerHTML), providers.length, `${tabKey} At-a-glance row count matches selected providers`);
     assert.equal(sectionProviderCardCount(fakeElements.usageDetails.innerHTML), 1, `${tabKey} renderer entry keeps one below-glance aggregate set`);
     assert.match(fakeElements.usageDetails.innerHTML, /usage-model-distribution/, `${tabKey} renderer entry uses live model distribution path`);
+    assert.equal(
+      dataSourceSectionCount(fakeElements.usageDetails.innerHTML),
+      1,
+      `${tabKey} rerender via renderDashboardForSources keeps exactly one Data source footer (innerHTML replace, not accumulate) across repeated tab switches`
+    );
   });
   assert.notEqual(dataSourceByTab.claude, dataSourceByTab.codex, 'switching from the Claude tab to the Codex tab changes the visible Data source content');
   assert.notEqual(dataSourceByTab.overview, dataSourceByTab.claude, 'switching from the Overview tab to the Claude tab changes the visible Data source content');
@@ -1219,6 +1244,27 @@ function main() {
     new RegExp(escapeRegExp(r2OneProviderHistoryModel.details.modelDistribution.source.label)),
     'R2 divergence exception line shows the distribution\'s own provenance label as visible text'
   );
+  assert.equal(
+    dataSourceSectionCount(r2Html),
+    1,
+    'R2 overview renders exactly one general Data source footer even though it also renders the separate Model Distribution exception (proves the count helper does not double-count the exception)'
+  );
+  {
+    // The exception is a divergence signal that must stay adjacent to Model Distribution, not
+    // drift down to sit beside the general footer. Assert its position relative to the
+    // distribution markup and the weekday breakdown that follows it, rather than merely asserting
+    // its presence.
+    const distributionIndex = r2Html.indexOf('usage-model-distribution');
+    const exceptionIndex = r2Html.indexOf('usage-data-source-exception');
+    const weekdayIndex = r2Html.indexOf('usage-weekday-breakdown');
+    const footerIndex = r2Html.indexOf('usage-data-source-footer');
+    assert.ok(distributionIndex >= 0 && exceptionIndex >= 0 && footerIndex >= 0, 'R2 overview renders the distribution block, its divergence exception, and the general footer');
+    assert.ok(exceptionIndex > distributionIndex, 'the Model Distribution divergence exception renders after the Model Distribution block opens, i.e. adjacent to the chart it describes');
+    if (weekdayIndex >= 0) {
+      assert.ok(exceptionIndex < weekdayIndex, 'the divergence exception stays scoped next to Model Distribution, ahead of the later weekday breakdown');
+    }
+    assert.ok(footerIndex > exceptionIndex, 'the general Data source footer still renders at the very end, after the Model Distribution exception');
+  }
   assert.equal(r2OneProviderHistoryModel.details.historyChart.available, true, 'R2 one-provider-history keeps available Claude history data');
   assert.equal(r2OneProviderHistoryModel.details.historyChart.points.reduce((sum, point) => sum + point.totalTokens, 0), 3000);
   assert.equal(r2OneProviderHistoryModel.details.combinedHistoryChart, undefined, 'R2 Claude-only fallback does not build a two-provider chart');
@@ -1340,12 +1386,18 @@ function sectionProviderCardCount(html) {
   return (String(html || '').match(/<section class="usage-section-provider-card/g) || []).length;
 }
 
+// Counts only the general/footer Data source section, never the Model Distribution
+// divergence exception. The exception div shares the same "usage-data-source usage-data-source-"
+// class prefix (plus its own "usage-data-source-exception" suffix), so a naive prefix match would
+// double-count a tab that legitimately renders both. Match the closing '>' right after the
+// confidence class (optionally followed by the footer modifier) so the exception's extra class
+// never satisfies this pattern.
 function dataSourceSectionCount(html) {
-  return (String(html || '').match(/class="usage-data-source usage-data-source-/g) || []).length;
+  return (String(html || '').match(/<div class="usage-data-source usage-data-source-[a-z]+(?: usage-data-source-footer)?">/g) || []).length;
 }
 
 function extractDataSourceSection(html) {
-  const match = String(html || '').match(/<div class="usage-data-source usage-data-source-([a-z]+)">([\s\S]*?)<\/div>/);
+  const match = String(html || '').match(/<div class="usage-data-source usage-data-source-([a-z]+)(?: usage-data-source-footer)?">([\s\S]*?)<\/div>/);
   if (!match) { return null; }
   return { cls: match[1], body: match[2] };
 }

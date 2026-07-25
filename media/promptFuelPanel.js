@@ -167,7 +167,10 @@
   }
 
   function renderDashboardHistoryAggregateBody(aggregate) {
-    var sourceSummaryHtml = renderHistorySourceSummary(aggregate.source);
+    var sourceSummaryHtml = renderHistorySourceSummary(aggregate.source, {
+      extraClass: 'usage-data-source-footer',
+      inlineStatus: true
+    });
     var todayHtml = renderTodayInHistory(aggregate.todayCards);
     var unavailableReason = aggregate.unavailableReason || 'No selected provider history data is available yet.';
     var chartHtml = aggregate.unavailable
@@ -186,7 +189,7 @@
       aggregate.chart && aggregate.chart.source
     );
     var metricGridHtml = renderMetricGrid(aggregate.cards, aggregate.emptyCardsText);
-    return sourceSummaryHtml + todayHtml + chartHtml + metricGridHtml + distributionHtml + weekdayHtml;
+    return todayHtml + chartHtml + metricGridHtml + distributionHtml + weekdayHtml + sourceSummaryHtml;
   }
 
   function selectDashboardHistoryAggregate(details, providers) {
@@ -915,9 +918,19 @@
     var opts = options || {};
     var heading = opts.heading === undefined ? 'Data source' : opts.heading;
     var extraClass = opts.extraClass ? ' ' + opts.extraClass : '';
+    var inlineStatus = !!opts.inlineStatus;
+    var headingHtml = '';
+    var statusHtml = '';
+    if (heading) {
+      var headingText = inlineStatus ? heading + ' · ' + cfg.fullLabel : heading;
+      headingHtml = '<h4 class="usage-section-title usage-data-source-title"><span>' + esc(headingText) + '</span></h4>';
+    }
+    if (!inlineStatus) {
+      statusHtml = '<p class="usage-section-copy usage-data-source-status">' + esc(cfg.fullLabel) + '</p>';
+    }
     return '<div class="usage-data-source usage-data-source-' + esc(cfg.cls) + extraClass + '">' +
-      (heading ? '<h4 class="usage-section-title usage-data-source-title"><span>' + esc(heading) + '</span></h4>' : '') +
-      '<p class="usage-section-copy usage-data-source-status">' + esc(cfg.fullLabel) + '</p>' +
+      headingHtml +
+      statusHtml +
       (source.label ? '<p class="usage-section-copy usage-data-source-summary">' + esc(source.label) + '</p>' : '') +
       (source.detail ? '<p class="usage-section-copy usage-data-source-detail">' + esc(source.detail) + '</p>' : '') +
       (source.unavailableReason ? '<p class="usage-section-copy usage-data-source-reason">' + esc(source.unavailableReason) + '</p>' : '') +
