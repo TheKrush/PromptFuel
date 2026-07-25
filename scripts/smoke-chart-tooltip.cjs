@@ -68,26 +68,22 @@ function main() {
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const combinedHtml = sandbox.__chartTooltipTest.renderHistoryChart(combinedChart, 'combined', '1M', combinedChart.source);
   assert.match(combinedHtml, /data-history-tip-id="history-tip-1"/, 'history bars carry a bespoke tooltip payload id');
-  assert.match(combinedHtml, /class="source-chip mixed glyph"[^>]*data-source-tip-id="source-tip-1"/, 'history chart source chips carry bespoke tooltip payload ids');
-  assert.match(combinedHtml, /class="source-chip mixed glyph"[^>]*tabindex="0"/, 'history chart source chips are keyboard focusable');
+  assert.doesNotMatch(combinedHtml, /source-chip/, 'history chart title no longer renders a per-chart source chip');
+  assert.doesNotMatch(combinedHtml, /data-source-tip-id/, 'history chart title has no source-chip tooltip target');
   assert.match(combinedHtml, /tabindex="0"/, 'history bars are keyboard focusable');
   assert.match(combinedHtml, /aria-label="/, 'history bars keep an ARIA fallback');
   assert.doesNotMatch(combinedHtml, /usage-history-bar[^>]*title="/, 'history bars do not rely on native title tooltip UX');
-  assert.doesNotMatch(combinedHtml, /source-chip[^>]*title="/, 'source chips do not rely on native title tooltip UX');
   assert.doesNotMatch(combinedHtml, /<img src=x onerror=alert\(1\)>/, 'unsafe model text is not emitted as raw HTML');
   assert.match(combinedHtml, /&lt;img src=x onerror=alert\(1\)&gt;Codex/, 'unsafe model text is escaped in ARIA fallback');
 
   const payloads = sandbox.__chartTooltipTest.getPayloads();
   const payload = payloads['history-tip-1'];
-  const sourcePayload = payloads['source-tip-1'];
+  assert.equal(payloads['source-tip-1'], undefined, 'no source-chip tooltip payload is registered anymore');
   assert.equal(payload.provider, 'combined', 'payload records combined mode');
   assert.equal(payload.binLabel, '2026-05-28 to 2026-06-24', 'payload includes the full date-range header');
   assert.equal(payload.totalTokens, 3000, 'payload includes total tokens');
   assert.equal(payload.activity, 5, 'payload includes message/turn count');
   assert.equal(payload.sourceText, 'Claude trusted usage + Codex correlated usage', 'combined payload keeps source wording');
-  assert.equal(sourcePayload.kind, 'sourceChip', 'source chip payload is routed through the custom tooltip shell');
-  assert.equal(sourcePayload.title, 'Mixed', 'source chip payload uses the compact source type as the tooltip title');
-  assert.equal(sourcePayload.subtitle, 'Mixed Claude trusted and Codex correlated history', 'source chip payload keeps the provenance label as a subtitle');
   assert.deepEqual(payload.providerRows.map(row => row.label), ['Claude', 'Codex'], 'combined payload includes provider attribution');
   assert.deepEqual(payload.providerRows.map(row => row.tokens), [2000, 1000], 'combined payload includes provider token totals');
   assert.equal(payload.showProviderSwatches, false, 'combined model-stacked tooltip omits provider swatches while preserving provider totals');
@@ -130,9 +126,9 @@ function main() {
     '1M / daily bins',
     { confidence: 'mixedDayBucket', label: 'Mixed Claude trusted and Codex correlated history' }
   );
-  assert.match(weekdayHtml, /Weekday distribution<\/span><span class="source-chip mixed glyph" tabindex="0" data-source-tip-id="source-tip-1"/, "weekday distribution heading uses the shared source chip tooltip path");
-  assert.doesNotMatch(weekdayHtml, /source-chip[^>]*title="/, "weekday distribution heading avoids native title tooltip UX");
-  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'].subtitle, 'Mixed Claude trusted and Codex correlated history', 'weekday distribution heading keeps the shared mixed-source tooltip metadata');
+  assert.match(weekdayHtml, /<div class="usage-history-chart-title"><span>Weekday distribution<\/span><\/div>/, 'weekday distribution heading renders a plain title with no source chip');
+  assert.doesNotMatch(weekdayHtml, /source-chip/, 'weekday distribution heading no longer renders a source chip');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'], undefined, 'weekday distribution heading registers no source-chip tooltip payload');
   const weekdayPayload = sandbox.__chartTooltipTest.getPayloads()['history-tip-1'];
   assert.equal(weekdayPayload.dayLabel, 'Sunday', 'weekday tooltip payload keeps the weekday name');
   assert.equal(weekdayPayload.rangeKey, '1M', 'weekday tooltip payload keeps the active range key');
@@ -270,11 +266,10 @@ function main() {
     },
     available: true
   });
-  assert.match(metricTooltipHtml, /source-chip mixed glyph" tabindex="0" data-source-tip-id="source-tip-1"/, 'metric source chips use custom tooltip payload ids');
+  assert.doesNotMatch(metricTooltipHtml, /source-chip/, 'metric cards no longer render a per-metric source chip');
   assert.match(metricTooltipHtml, /usage-metric-detail" tabindex="0" data-usage-tip-id="usage-tip-1"/, 'metric detail notes use custom tooltip payload ids');
-  assert.doesNotMatch(metricTooltipHtml, /source-chip[^>]*title="/, 'metric source chips avoid native title tooltip UX');
   assert.doesNotMatch(metricTooltipHtml, /usage-metric-detail[^>]*title="/, 'metric details avoid native title tooltip UX');
-  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'].detail, 'Claude uses trusted completed-turn buckets; Codex remains correlated day-bucket data.', 'metric source tooltip keeps the long provenance detail');
+  assert.equal(sandbox.__chartTooltipTest.getPayloads()['source-tip-1'], undefined, 'metric card registers no source-chip tooltip payload');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const unattributedChart = {
@@ -329,7 +324,9 @@ function main() {
     ]
   };
   const splitDistributionHtml = sandbox.__chartTooltipTest.renderClaudeModelDistribution(splitDistribution, splitDistribution.source);
-  assert.match(splitDistributionHtml, /<div class="usage-history-chart-title"><span>Model distribution<\/span><span class="source-chip trusted glyph"/, 'model distribution heading uses the shared chart title source chip path');
+  assert.match(splitDistributionHtml, /<div class="usage-history-chart-title"><span>Model distribution<\/span><\/div>/, 'model distribution heading renders a plain title with no source chip');
+  assert.doesNotMatch(splitDistributionHtml, /source-chip/, 'model distribution heading no longer renders a source chip');
+  assert.doesNotMatch(splitDistributionHtml, /usage-data-source-exception/, 'no divergence exception line renders when the distribution and tab-level confidence tiers match');
   assert.doesNotMatch(splitDistributionHtml, /usage-model-distribution-title/, 'model distribution does not use a separate title alignment class');
   assert.match(splitDistributionHtml, /class="usage-model-donut"[^>]*>/, 'split model donut renders without a native wrapper title');
   assert.doesNotMatch(splitDistributionHtml, /class="usage-model-donut"[^>]*title="/, 'model donut wrapper does not rely on native title tooltip UX');
@@ -356,6 +353,65 @@ function main() {
   assert.equal(splitDonutPayload.activityLabel, 'Assistant messages', 'split payload labels Claude activity as assistant messages');
   assert.equal(splitDonutPayload.color, 'var(--vscode-charts-blue,#4f8fd6)', 'split payload uses matching model-series swatch color');
   assert.equal(splitLegendPayload.color, splitDonutPayload.color, 'legend payload color matches the donut color for the same segment');
+
+  // Model Distribution provenance is computed independently of the tab-level chart provenance
+  // (src/panel/dashboard/historyChart.ts vs src/panel/dashboard/modelDistribution.ts) and can
+  // genuinely diverge on the Claude/Codex single-provider tabs. When it does, the divergence
+  // must be surfaced next to Model Distribution rather than silently flattened to the tab-level
+  // "Data source" status.
+  const claudeTabTrustedSource = {
+    confidence: 'trustedCompletedTurnUsage',
+    label: 'Claude assistant-message JSONL history buckets',
+    detail: 'Completed Claude assistant records with message.usage only'
+  };
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const unavailableDivergentDistribution = {
+    available: false,
+    title: 'Model distribution',
+    providerLabel: 'Claude',
+    totalTokens: 0,
+    segments: [],
+    unavailableReason: 'No Claude model distribution is available for this range.',
+    source: {
+      confidence: 'unavailable',
+      label: 'Claude assistant-message history unavailable',
+      unavailableReason: 'No trusted completed-turn history is available yet.'
+    }
+  };
+  const unavailableDivergentHtml = sandbox.__chartTooltipTest.renderClaudeModelDistribution(unavailableDivergentDistribution, claudeTabTrustedSource);
+  assert.match(unavailableDivergentHtml, /usage-data-source-exception/, 'chart Trusted + distribution Unavailable renders the divergence exception line');
+  assert.match(unavailableDivergentHtml, /usage-data-source-unavailable/, 'divergence exception line carries the distribution\'s own (lower) confidence class, not the tab-level one');
+  assert.match(unavailableDivergentHtml, /Model distribution source/, 'divergence exception line has its own concise heading');
+  assert.match(unavailableDivergentHtml, /usage-data-source-status">Unavailable</, 'divergence exception line shows the distribution\'s own status');
+  assert.match(unavailableDivergentHtml, /Claude assistant-message history unavailable/, 'divergence exception line shows the distribution\'s own label as visible text');
+  assert.match(unavailableDivergentHtml, /No trusted completed-turn history is available yet\./, 'divergence exception line shows the distribution\'s own unavailableReason as visible text');
+  assert.doesNotMatch(unavailableDivergentHtml, /tabindex=|data-source-tip-id|title="/, 'divergence exception line is plain visible text, not a hover target');
+
+  sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
+  const mixedDivergentDistribution = {
+    available: true,
+    title: 'Model distribution',
+    providerLabel: 'Claude',
+    rangeLabel: '1M / 30d',
+    totalTokens: 1000,
+    source: claudeTabTrustedSource,
+    segments: [
+      { label: 'Sonnet 4', model: 'claude-sonnet-4-20250514', totalTokens: 1000, assistantMessages: 4, percent: 1, percentLabel: '100%' }
+    ]
+  };
+  const claudeTabMergedSource = {
+    confidence: 'mixedDayBucket',
+    label: 'Claude history buckets — merged',
+    detail: 'Local day-buckets merged with snapshot history.'
+  };
+  const mixedDivergentHtml = sandbox.__chartTooltipTest.renderClaudeModelDistribution(mixedDivergentDistribution, claudeTabMergedSource);
+  assert.match(mixedDivergentHtml, /usage-data-source-exception/, 'chart Mixed + distribution Trusted renders the divergence exception line even though the distribution itself is available');
+  assert.match(mixedDivergentHtml, /usage-data-source-trusted/, 'divergence exception line carries the distribution\'s own (Trusted) confidence class, not the tab-level Mixed one');
+  assert.match(mixedDivergentHtml, /usage-data-source-status">Trusted</, 'divergence exception line shows the distribution\'s own status');
+  assert.match(mixedDivergentHtml, /Claude assistant-message JSONL history buckets/, 'divergence exception line shows the distribution\'s own label as visible text');
+  assert.match(mixedDivergentHtml, /Completed Claude assistant records with message\.usage only/, 'divergence exception line shows the distribution\'s own detail as visible text');
+  const mixedDivergentExceptionOnly = mixedDivergentHtml.match(/<div class="usage-data-source[^"]*usage-data-source-exception">[\s\S]*?<\/div>/)[0];
+  assert.doesNotMatch(mixedDivergentExceptionOnly, /tabindex=|data-source-tip-id|title="/, 'divergence exception line itself is plain visible text, not a hover target (the model donut/legend below it keep their own unrelated tooltip system)');
 
   sandbox.__chartTooltipTest.resetHistoryTooltipPayloads();
   const combinedDistribution = {
@@ -454,11 +510,11 @@ function main() {
   assert.match(closestSource, /tooltipPayloadIdFromTarget/, 'tooltip target lookup uses the shared target-id helper');
   const targetIdSource = sandbox.__chartTooltipTest.tooltipPayloadIdFromTargetSource;
   assert.match(targetIdSource, /data-model-tip-id/, 'tooltip target lookup recognizes model distribution targets');
-  assert.match(targetIdSource, /data-source-tip-id/, 'tooltip target lookup recognizes source chip targets');
+  assert.doesNotMatch(targetIdSource, /data-source-tip-id/, 'tooltip target lookup no longer recognizes removed source chip targets');
   assert.match(targetIdSource, /data-usage-tip-id/, 'tooltip target lookup recognizes usage note targets');
   const renderTooltipSource = sandbox.__chartTooltipTest.renderHistoryTooltipContentSource;
   assert.match(renderTooltipSource, /renderModelDistributionTooltipContent/, 'single tooltip shell dispatches model distribution payloads');
-  assert.match(renderTooltipSource, /renderSourceTooltipContent/, 'single tooltip shell dispatches source chip payloads');
+  assert.doesNotMatch(renderTooltipSource, /renderSourceTooltipContent/, 'single tooltip shell no longer dispatches removed source chip payloads');
   assert.match(renderTooltipSource, /renderUsageNoteTooltipContent/, 'single tooltip shell dispatches usage note payloads');
   assert.match(renderTooltipSource, /showProviderSwatches === false/, 'history tooltip can suppress provider swatches for model-stacked combined bins');
   assert.match(renderTooltipSource, /appendHistoryTooltipModelList/, 'history tooltip routes Top Models rows through the shared model-list helper');
@@ -478,7 +534,7 @@ function main() {
   assert.match(styles, /\.usage-history-bar:focus-visible/, 'focus-visible styling exists for chart bars');
   assert.match(styles, /\.usage-model-donut-segment:focus-visible/, 'focus-visible styling exists for model donut segments');
   assert.match(styles, /\.usage-model-row:focus-visible/, 'focus-visible styling exists for model legend rows');
-  assert.match(styles, /\.source-chip:focus-visible/, 'focus-visible styling exists for source chips');
+  assert.doesNotMatch(styles, /\.source-chip/, 'obsolete source-chip CSS is removed entirely');
   assert.match(styles, /\.usage-api-estimate-strip:focus-visible/, 'focus-visible styling exists for usage note tooltip targets');
   assert.match(styles, /\.ab-tip-note\{[\s\S]*overflow-wrap:break-word/, 'custom usage note tooltip bodies wrap long text');
   assert.match(styles, /\.ab-tip-provider-row\.codex[\s\S]*repeating-linear-gradient/, 'Codex provider attribution keeps hatch treatment');

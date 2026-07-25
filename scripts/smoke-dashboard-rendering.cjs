@@ -355,7 +355,7 @@ function main() {
   assert.doesNotMatch(webviewScript, /function estimateApiEquivalentFromModelUsage\b/, 'renderer no longer calculates selected-range API-equivalent estimates');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange, selectDashboardHistoryAggregate: selectDashboardHistoryAggregate, renderHistorySourceSummary: renderHistorySourceSummary }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -721,6 +721,32 @@ function main() {
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
   assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
   assert.equal(sectionProviderCardCount(combinedHistorySectionHtml), 1, 'Overview below At-a-glance renders exactly one aggregate card set');
+  const combinedAggregate = sandbox.__combinedDashboardTest.selectDashboardHistoryAggregate(model.details, selectedProviders);
+  assert.equal(dataSourceSectionCount(combinedHistorySectionHtml), 1, 'Overview/combined history renders exactly one visible Data source section');
+  const combinedDataSource = extractDataSourceSection(combinedHistorySectionHtml);
+  assert.ok(combinedDataSource, 'Overview/combined history Data source section is present');
+  assert.equal(combinedDataSource.cls, 'mixed', 'combined Data source section reflects the mixed combined-provenance confidence');
+  assert.match(combinedDataSource.body, /Data source/, 'Data source section renders its heading as visible text, no hover required');
+  assert.match(
+    combinedDataSource.body,
+    new RegExp(escapeRegExp(combinedAggregate.source.label)),
+    'combined Data source section shows the host-provided provenance label as visible text (formerly tooltip-only)'
+  );
+  assert.doesNotMatch(
+    combinedHistorySectionHtml,
+    /source-chip|data-source-tip-id/,
+    'combined history body (Today cards, token trend, model distribution, weekday) no longer renders per-chip source markers anywhere'
+  );
+  assert.equal(
+    combinedAggregate.distribution.source,
+    combinedAggregate.source,
+    'combined/Overview model distribution provenance is the exact same object as the tab-level chart provenance (selectCombinedModelDistributionRange reuses chart.source directly)'
+  );
+  assert.doesNotMatch(
+    combinedHistorySectionHtml,
+    /usage-data-source-exception/,
+    'combined/Overview tab never shows the Model Distribution divergence exception line, since it always reuses chart.source'
+  );
   assert.match(combinedHistorySectionHtml, /usage-today-inline/, 'history section renders the Today card section');
   assert.doesNotMatch(combinedHistorySectionHtml, /data-history-layout/, 'combined history section has no layout toggle controls');
   assert.doesNotMatch(combinedHistorySectionHtml, />Merged</, 'combined history section has no Merged button');
@@ -729,6 +755,36 @@ function main() {
   assert.doesNotMatch(combinedHistorySectionHtml, /usage-section-provider-title">Codex</, 'combined history does not require a separate Codex comparison card');
   assert.equal(combinedOneMonthTokens.value, '4.0K', 'combined history cards show combined displayed token totals including cache');
   assertDetailLineLabels(combinedOneMonthTokens, ['Claude', 'Codex'], 'combined history card carries provider token attribution');
+
+  // Coverage nit: the confidence tiers exercised above only cover trusted/correlated/mixed.
+  // Directly render the remaining SOURCE_CHIP_CONFIG tiers (quota/snapshot/estimate) through the
+  // main Data source section renderer so every status/class pairing has a render assertion.
+  ['quotaState', 'snapshotOnly', 'apiEquivalentEstimate'].forEach(confidence => {
+    const tierSource = { confidence, label: `${confidence} fixture label`, detail: `${confidence} fixture detail` };
+    const tierHtml = sandbox.__combinedDashboardTest.renderHistorySourceSummary(tierSource);
+    const tierSection = extractDataSourceSection(tierHtml);
+    assert.ok(tierSection, `${confidence} Data source section renders`);
+    assert.match(tierHtml, /Data source/, `${confidence} Data source section keeps its visible heading`);
+    assert.match(tierHtml, new RegExp(escapeRegExp(tierSource.label)), `${confidence} Data source section shows its label as visible text`);
+    assert.match(tierHtml, new RegExp(escapeRegExp(tierSource.detail)), `${confidence} Data source section shows its detail as visible text`);
+    assert.doesNotMatch(tierHtml, /tabindex=|data-source-tip-id|title="/, `${confidence} Data source section is plain visible text, not a hover target`);
+  });
+  assert.match(
+    sandbox.__combinedDashboardTest.renderHistorySourceSummary({ confidence: 'quotaState', label: 'x' }),
+    /usage-data-source-quota/,
+    'quotaState confidence maps to the quota confidence class'
+  );
+  assert.match(
+    sandbox.__combinedDashboardTest.renderHistorySourceSummary({ confidence: 'snapshotOnly', label: 'x' }),
+    /usage-data-source-snapshot/,
+    'snapshotOnly confidence maps to the snapshot confidence class'
+  );
+  assert.match(
+    sandbox.__combinedDashboardTest.renderHistorySourceSummary({ confidence: 'apiEquivalentEstimate', label: 'x' }),
+    /usage-data-source-estimate/,
+    'apiEquivalentEstimate confidence maps to the estimate confidence class'
+  );
+
   const oneProviderCacheModel = buildUsageDashboardModel({
     states: [],
     claudeUsageHistory: makeClaudeHistory(),
@@ -869,6 +925,7 @@ function main() {
   assert.match(partialCodexApiHtml, /usage-api-estimate-strip/, 'provider API footer renders structurally');
   assert.equal(metricCardByKey(partialCodexCards, 'codexHistoryApiEquivalent').available, false, 'provider API footer stays unavailable when source model data is incomplete');
   sandbox.__combinedDashboardTest.setProviderTab('overview');
+  const dataSourceByRange = {};
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
     sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
     const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, selectedProviders);
@@ -880,9 +937,21 @@ function main() {
     assert.equal(rangeApiCard.available, true, `combined ${range} API-equivalent is available`);
     assert.equal(rangeApiCard, rangeChart.apiEquivalentCard, `combined ${range} selects that exact prepared API-equivalent card`);
     assert.equal(sectionProviderCardCount(rangeHtml), 1, `combined ${range} range re-render keeps one aggregate card set`);
+    assert.equal(dataSourceSectionCount(rangeHtml), 1, `combined ${range} range renders exactly one Data source section`);
+    const rangeAggregate = sandbox.__combinedDashboardTest.selectDashboardHistoryAggregate(model.details, selectedProviders);
+    assert.equal(rangeAggregate.source, model.details.combinedHistoryChart.source, `combined ${range} reads the range-selected aggregate.source (currently the same object across ranges)`);
+    dataSourceByRange[range] = extractDataSourceSection(rangeHtml).body;
   });
+  // Provenance confidence is computed once per history chart (not per rangeView) in the
+  // current model, so the visible Data source section content is range-invariant today.
+  const rangeDataSourceValues = Object.values(dataSourceByRange);
+  assert.ok(
+    rangeDataSourceValues.every(body => body === rangeDataSourceValues[0]),
+    'Data source section content is identical across 1W/1M/1Y/ALL because provenance confidence is not range-scoped in the current model'
+  );
 
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
+  const dataSourceByTab = {};
   ['overview', 'claude', 'codex'].forEach(tabKey => {
     sandbox.__combinedDashboardTest.setProviderTab(tabKey);
     const providers = sandbox.__combinedDashboardTest.scopeProvidersByTab(selectedProviders, tabKey);
@@ -891,6 +960,24 @@ function main() {
     assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
     assert.match(tabHtml, /usage-api-estimate-strip/, `${tabKey} 1M API-equivalent footer renders structurally`);
     assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
+    assert.equal(dataSourceSectionCount(tabHtml), 1, `${tabKey} history body renders exactly one visible Data source section`);
+    assert.doesNotMatch(
+      tabHtml,
+      /source-chip|data-source-tip-id/,
+      `${tabKey} Today cards, token trend, model distribution, and weekday output carry no leftover source-chip markup`
+    );
+    const tabAggregate = sandbox.__combinedDashboardTest.selectDashboardHistoryAggregate(scopedDetails, providers);
+    const tabDataSource = extractDataSourceSection(tabHtml);
+    assert.ok(tabDataSource, `${tabKey} Data source section is present`);
+    const expectedCfg = { trustedCompletedTurnUsage: 'trusted', correlatedDayBucket: 'correlated', mixedDayBucket: 'mixed' }[tabAggregate.source.confidence];
+    assert.equal(tabDataSource.cls, expectedCfg, `${tabKey} Data source section reflects its own tab-scoped confidence, not a leftover from another tab`);
+    assert.match(
+      tabDataSource.body,
+      new RegExp(escapeRegExp(tabAggregate.source.label)),
+      `${tabKey} Data source section shows its own provenance label as visible text (was tooltip-only before)`
+    );
+    dataSourceByTab[tabKey] = tabDataSource.body;
+
     if (tabKey === 'overview') {
       assert.ok(scopedDetails.modelDistribution?.segments.some(segment => segment.provider === 'claude'), 'Overview model distribution includes Claude segments');
       assert.ok(scopedDetails.codexModelDistribution?.segments.some(segment => segment.provider === 'codex'), 'Overview model distribution includes Codex segments');
@@ -912,6 +999,9 @@ function main() {
     assert.equal(sectionProviderCardCount(fakeElements.usageDetails.innerHTML), 1, `${tabKey} renderer entry keeps one below-glance aggregate set`);
     assert.match(fakeElements.usageDetails.innerHTML, /usage-model-distribution/, `${tabKey} renderer entry uses live model distribution path`);
   });
+  assert.notEqual(dataSourceByTab.claude, dataSourceByTab.codex, 'switching from the Claude tab to the Codex tab changes the visible Data source content');
+  assert.notEqual(dataSourceByTab.overview, dataSourceByTab.claude, 'switching from the Overview tab to the Claude tab changes the visible Data source content');
+  assert.notEqual(dataSourceByTab.overview, dataSourceByTab.codex, 'switching from the Overview tab to the Codex tab changes the visible Data source content');
 
   const claudeLocalRangeModel = buildUsageDashboardModel({
     states: [],
@@ -1034,6 +1124,9 @@ function main() {
   const codexRemoteOneDayApi = firstApiEstimateStrip(codexRemoteOneDayHtml, '1D API-equivalent');
   assert.match(codexRemoteOneDayApi, /usage-api-estimate-strip/, 'Codex 1D local+remote API footer renders structurally');
   assertDetailLineLabels(metricCardByKey(codexRemoteOneDayCards, 'codexHistoryApiEquivalent'), ['Codex'], 'Codex 1D API card uses the prepared provider contribution detailLine');
+  const codexRemoteOneDayDataSource = extractDataSourceSection(codexRemoteOneDayHtml);
+  assert.ok(codexRemoteOneDayDataSource, 'Codex 1D local+remote Data source section is present');
+  assert.doesNotMatch(codexRemoteOneDayDataSource.body, /vm-source|workstation/, 'Codex Data source section never leaks the raw configured hostname where the WATCHER alias belongs');
 
   sandbox.__combinedDashboardTest.setCodexHistoryRange('1M');
   const codexRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
@@ -1113,6 +1206,19 @@ function main() {
   assert.equal(sectionProviderCardCount(r2Html), 1, 'R2 one-provider-history Overview renders exactly one below-glance set');
   assert.match(r2Html, /usage-section-provider-grid combined/, 'R2 one-provider-history Overview still uses the combined aggregate container');
   assert.doesNotMatch(r2Html, /usage-history-legend/, 'R2 Claude-only fallback does not render a two-provider legend');
+  // Real reproduction of the Model Distribution provenance divergence: withoutModelStacks strips
+  // per-day model attribution, so history stays available (chart source stays Trusted) while
+  // modelDistribution.ts independently computes Unavailable (no day.modelUsage rows). The two
+  // sources must not be silently flattened to one tab-level status.
+  assert.equal(r2OneProviderHistoryModel.details.historyChart.source.confidence, 'trustedCompletedTurnUsage', 'R2 one-provider-history Claude chart provenance stays Trusted');
+  assert.equal(r2OneProviderHistoryModel.details.modelDistribution.source.confidence, 'unavailable', 'R2 one-provider-history Claude model distribution provenance is independently Unavailable');
+  assert.match(r2Html, /usage-data-source-exception/, 'R2 one-provider-history Overview surfaces the Model Distribution provenance divergence instead of flattening it to the tab-level Trusted status');
+  assert.match(r2Html, /usage-data-source-unavailable usage-data-source-exception/, 'R2 divergence exception line carries the distribution\'s own (lower) confidence, not the tab-level Trusted one');
+  assert.match(
+    r2Html,
+    new RegExp(escapeRegExp(r2OneProviderHistoryModel.details.modelDistribution.source.label)),
+    'R2 divergence exception line shows the distribution\'s own provenance label as visible text'
+  );
   assert.equal(r2OneProviderHistoryModel.details.historyChart.available, true, 'R2 one-provider-history keeps available Claude history data');
   assert.equal(r2OneProviderHistoryModel.details.historyChart.points.reduce((sum, point) => sum + point.totalTokens, 0), 3000);
   assert.equal(r2OneProviderHistoryModel.details.combinedHistoryChart, undefined, 'R2 Claude-only fallback does not build a two-provider chart');
@@ -1212,14 +1318,14 @@ function main() {
   assert.doesNotMatch(styles, /usage-history-bar-segment\.codex\{[\s\S]*repeating-linear-gradient/, 'Codex model bars are not targeted by the provider hatch selector');
   assert.match(styles, /usage-history-legend-swatch\.codex[\s\S]*repeating-linear-gradient/, 'Codex legend swatch uses hatch treatment');
   assert.doesNotMatch(styles, /\.usage-glance-row\.stale|\.usage-glance-badge|\.usage-glance-window\.(?:degraded|warning|freshness|missing|stale)/, 'provider-wide and full-window health styles are removed');
-  assert.doesNotMatch(styles, /\.source-chip\.quota-health/, 'Quota issues remove the obsolete health-chip CSS');
+  assert.doesNotMatch(styles, /\.source-chip/, 'the removed per-chip source confidence CSS (including the obsolete health-chip variant) is gone entirely');
   assert.match(styles, /\.quota-issue-state\{[^}]*text-align:left[^}]*white-space:nowrap/, 'Quota issue state remains compact, left-aligned text');
   assert.match(styles, /\.quota-issue-state\.missing\{[^}]*inputValidation-error/, 'Missing state uses a subtle theme-aware text color');
   assert.match(styles, /\.quota-issue-state\.stale\{[^}]*inputValidation-warning/, 'Stale state uses a subtle theme-aware text color');
   assert.doesNotMatch(styles, /\.quota-issue-state(?:\.missing|\.stale)?\{[^}]*(?:border|background|border-radius|padding)/, 'Quota issue state text has no chip border, fill, radius, or padding');
   assert.doesNotMatch(styles, /\.quota-issue-state[^\{]*:focus/, 'Quota issue state has no chip-specific focus styling');
-  assert.match(styles, /\.source-chip\{[^}]*padding:[^}]*border-radius:[^}]*border:/, 'shared source-chip styling remains available to other dashboard surfaces');
-  assert.match(scriptSource, /source-chip ' \+ cfg\.cls[\s\S]*tabindex="0"/, 'other dashboard source chips retain their interactive markup');
+  assert.doesNotMatch(scriptSource, /renderSourceChip|renderMetricSourceChip/, 'no surface still calls the removed per-chip source confidence renderers');
+  assert.match(styles, /\.usage-data-source\{[^}]*border:[^}]*border-radius:/, 'the History panel\'s single Data source section keeps a visible card treatment');
   assert.match(styles, /\.usage-glance-win-label\{[^}]*white-space:nowrap[^}]*overflow:hidden/, 'fixed quota-label cells contain their non-wrapping labels');
   assert.match(styles, /\.usage-glance-list\{[^}]*grid-template-columns:minmax\(80px,160px\) 22px/, 'At-a-glance restores one shared aligned measurement grid');
   assert.match(styles, /\.usage-glance-row\{[^}]*display:contents/, 'provider rows participate in the shared aligned grid without wrapper columns');
@@ -1232,6 +1338,20 @@ function main() {
 
 function sectionProviderCardCount(html) {
   return (String(html || '').match(/<section class="usage-section-provider-card/g) || []).length;
+}
+
+function dataSourceSectionCount(html) {
+  return (String(html || '').match(/class="usage-data-source usage-data-source-/g) || []).length;
+}
+
+function extractDataSourceSection(html) {
+  const match = String(html || '').match(/<div class="usage-data-source usage-data-source-([a-z]+)">([\s\S]*?)<\/div>/);
+  if (!match) { return null; }
+  return { cls: match[1], body: match[2] };
+}
+
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function glanceRowCount(html) {

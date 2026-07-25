@@ -11,7 +11,6 @@
   var historyTooltipPayloads = {};
   var historyTooltipIdCounter = 0;
   var modelTooltipIdCounter = 0;
-  var sourceTooltipIdCounter = 0;
   var usageTooltipIdCounter = 0;
   var modelColorAssignments = {};
   var modelColorAssignmentCounter = 0;
@@ -131,16 +130,15 @@
     bindHistoryTooltipControls(el);
   }
 
-  function renderTodayInHistory(cards, source) {
+  function renderTodayInHistory(cards) {
     if (!cards || !cards.length) { return ''; }
-    var cardSource = source || sectionSourceFromCards(cards);
     var primaryCards = cards.filter(function(card) { return !isApiEstimateCard(card); });
     var apiCard = null;
     for (var i = 0; i < cards.length; i++) { if (isApiEstimateCard(cards[i])) { apiCard = cards[i]; break; } }
     if (!primaryCards.length && !apiCard) { return ''; }
     return '<div class="usage-today-inline">' +
       '<div class="usage-today-inline-label">Today</div>' +
-      (primaryCards.length ? '<div class="usage-metric-grid">' + primaryCards.map(function(card) { return renderUsageMetricCard(card, cardSource); }).join('') + '</div>' : '') +
+      (primaryCards.length ? '<div class="usage-metric-grid">' + primaryCards.map(function(card) { return renderUsageMetricCard(card); }).join('') + '</div>' : '') +
       (apiCard ? renderApiEstimateStrip(apiCard) : '') +
     '</div>';
   }
@@ -149,12 +147,11 @@
     var aggregate = selectDashboardHistoryAggregate(details, providers);
     var aggregateBody = renderDashboardHistoryAggregateBody(aggregate);
     var gridClass = aggregate.provider === 'combined' ? 'usage-section-provider-grid combined' : 'usage-section-provider-grid';
-    var titleSource = aggregate.source || sectionSourceFromProviderCharts(details && details.historyChart, details && details.codexHistoryChart, details && details.source);
 
     return '<section class="usage-dashboard-section">' +
       '<div class="usage-history-section-head">' +
         '<div>' +
-          renderUsageSectionTitle('h3', 'usage-section-title', 'History', titleSource) +
+          renderUsageSectionTitle('h3', 'usage-section-title', 'History') +
           '<p class="usage-section-copy">Range-controlled usage trends by provider.</p>' +
         '</div>' +
       '</div>' +
@@ -170,16 +167,17 @@
   }
 
   function renderDashboardHistoryAggregateBody(aggregate) {
-    var todayHtml = renderTodayInHistory(aggregate.todayCards, aggregate.todaySource || aggregate.source);
+    var sourceSummaryHtml = renderHistorySourceSummary(aggregate.source);
+    var todayHtml = renderTodayInHistory(aggregate.todayCards);
     var unavailableReason = aggregate.unavailableReason || 'No selected provider history data is available yet.';
     var chartHtml = aggregate.unavailable
       ? renderProviderUnavailable('History unavailable', unavailableReason)
-      : renderHistoryChart(aggregate.chart, aggregate.provider, aggregate.range, aggregate.source) +
+      : renderHistoryChart(aggregate.chart, aggregate.provider, aggregate.range) +
         (aggregate.showCombinedLegend ? renderCombinedHistoryLegend(aggregate.chart) : '') +
         renderActiveDaysLabel(aggregate.chart);
     var distributionHtml = aggregate.distribution && aggregate.distribution.available
-      ? renderClaudeModelDistribution(aggregate.distribution, aggregate.distribution && aggregate.distribution.source)
-      : renderModelDistributionUnavailable(aggregate.distribution, aggregate.label);
+      ? renderClaudeModelDistribution(aggregate.distribution, aggregate.source)
+      : renderModelDistributionUnavailable(aggregate.distribution, aggregate.label, aggregate.source);
     var weekdayHtml = renderWeekdayActivityBreakdown(
       aggregate.chart && aggregate.chart.weekdayBreakdown,
       aggregate.chart && aggregate.chart.key,
@@ -187,8 +185,8 @@
       aggregate.chart && aggregate.chart.rangeLabel,
       aggregate.chart && aggregate.chart.source
     );
-    var metricGridHtml = renderMetricGrid(aggregate.cards, aggregate.emptyCardsText, aggregate.source);
-    return todayHtml + chartHtml + metricGridHtml + distributionHtml + weekdayHtml;
+    var metricGridHtml = renderMetricGrid(aggregate.cards, aggregate.emptyCardsText);
+    return sourceSummaryHtml + todayHtml + chartHtml + metricGridHtml + distributionHtml + weekdayHtml;
   }
 
   function selectDashboardHistoryAggregate(details, providers) {
@@ -237,7 +235,6 @@
       todayCards: selectedCombinedOneDayChart && selectedCombinedOneDayChart.available
         ? selectCombinedHistoryMetricCardsRange(selectedCombinedOneDayChart, '1D')
         : [],
-      todaySource: selectedCombinedOneDayChart && selectedCombinedOneDayChart.source,
       cards: selectCombinedHistoryMetricCardsRange(selectedCombinedChart, currentCombinedHistoryRange),
       distribution: selectCombinedModelDistributionRange(details, selectedCombinedChart, currentCombinedHistoryRange),
       source: selectedCombinedChart && selectedCombinedChart.source,
@@ -279,7 +276,6 @@
       label: label,
       chart: selectedChart,
       todayCards: todayCards,
-      todaySource: selectedOneDayChart && selectedOneDayChart.source,
       cards: cards,
       distribution: distribution,
       source: selectedChart && selectedChart.source,
@@ -361,7 +357,7 @@
     '</div>';
   }
 
-  function renderMetricGrid(cards, emptyText, parentSource) {
+  function renderMetricGrid(cards, emptyText) {
     if (!cards || !cards.length) {
       return '<div class="usage-empty">' + esc(emptyText || 'No cards available.') + '</div>';
     }
@@ -369,7 +365,7 @@
     var apiCard = null;
     for (var i = 0; i < cards.length; i++) { if (isApiEstimateCard(cards[i])) { apiCard = cards[i]; break; } }
     var gridHtml = primaryCards.length
-      ? '<div class="usage-metric-grid">' + primaryCards.map(function(card) { return renderUsageMetricCard(card, parentSource); }).join('') + '</div>'
+      ? '<div class="usage-metric-grid">' + primaryCards.map(function(card) { return renderUsageMetricCard(card); }).join('') + '</div>'
       : (apiCard ? '' : '<div class="usage-empty">' + esc(emptyText || 'No cards available.') + '</div>');
     return gridHtml + (apiCard ? renderApiEstimateStrip(apiCard) : '');
   }
@@ -389,10 +385,6 @@
     '</section>';
   }
 
-  function sectionSourceFromProviderCharts(primary, secondary, fallback) {
-    return (primary && primary.source) || (secondary && secondary.source) || fallback;
-  }
-
   function renderHistoryUnavailable(chart, label) {
     var reason = (chart && chart.unavailableReason) || 'No ' + label + ' history data is available yet.';
     return '<div class="usage-history-chart unavailable">' +
@@ -400,10 +392,11 @@
     '</div>';
   }
 
-  function renderModelDistributionUnavailable(distribution, label) {
+  function renderModelDistributionUnavailable(distribution, label, tabSource) {
     var reason = (distribution && distribution.unavailableReason) || 'No ' + label + ' model distribution is available yet.';
     return '<div class="usage-model-distribution unavailable">' +
       '<div class="usage-empty">' + esc(reason) + '</div>' +
+      renderModelDistributionSourceException(distribution && distribution.source, tabSource) +
     '</div>';
   }
 
@@ -455,7 +448,7 @@
     return '<div class="usage-history-chart usage-weekday-breakdown">' +
       '<div class="usage-history-chart-head">' +
         '<div>' +
-          renderHistoryChartTitle('Weekday distribution', source) +
+          renderHistoryChartTitle('Weekday distribution') +
           '<div class="usage-history-chart-meta">' + esc(rangeLabel || rangeKey || 'selected range') + '</div>' +
         '</div>' +
       '</div>' +
@@ -480,20 +473,9 @@
     };
   }
 
-  function renderUsageSectionTitle(tagName, className, title, source) {
+  function renderUsageSectionTitle(tagName, className, title) {
     var tag = tagName === 'h4' ? 'h4' : 'h3';
     return '<' + tag + ' class="' + className + '"><span>' + esc(title) + '</span></' + tag + '>';
-  }
-
-  function sectionSourceFromCards(cards, fallback) {
-    if (cards && cards.length) {
-      for (var i = 0; i < cards.length; i += 1) {
-        if (cards[i] && cards[i].source) {
-          return cards[i].source;
-        }
-      }
-    }
-    return fallback;
   }
 
   function renderUsageDetailsProviderSection(providers, source) {
@@ -501,13 +483,13 @@
       return '';
     }
     return '<section class="usage-details-section">' +
-      renderUsageSectionTitle('h4', 'usage-details-section-title', 'Provider Details', source) +
+      renderUsageSectionTitle('h4', 'usage-details-section-title', 'Provider Details') +
       '<p class="usage-details-section-copy">Current per-provider normalized snapshot details.</p>' +
       '<div class="usage-details-provider-list">' + providers + '</div>' +
     '</section>';
   }
 
-  function renderHistoryChart(chart, provider, currentRange, parentSource) {
+  function renderHistoryChart(chart, provider, currentRange) {
     if (!chart) {
       return '<div class="usage-history-chart unavailable">' +
         '<div class="usage-empty">' + esc((provider === 'codex' ? 'Codex' : 'Claude') + ' history chart is unavailable.') + '</div>' +
@@ -528,7 +510,7 @@
     return '<div class="usage-history-chart' + unavailableClass + '">' +
       '<div class="usage-history-chart-head">' +
         '<div>' +
-          renderHistoryChartTitle(chart.title || 'Token trend', chart.source) +
+          renderHistoryChartTitle(chart.title || 'Token trend') +
           '<div class="usage-history-chart-meta">' + esc(metaText) + '</div>' +
         '</div>' +
         '<div class="usage-history-ranges">' + ranges + '</div>' +
@@ -547,8 +529,8 @@
     return '<span class="' + cls + '"' + dataRange + dataProvider + tooltipAttrs + '>' + esc(range && range.label ? range.label : 'Range') + '</span>';
   }
 
-  function renderHistoryChartTitle(title, source) {
-    return '<div class="usage-history-chart-title"><span>' + esc(title) + '</span>' + renderSourceChip(source, 'glyph') + '</div>';
+  function renderHistoryChartTitle(title) {
+    return '<div class="usage-history-chart-title"><span>' + esc(title) + '</span></div>';
   }
 
   function buildHistoryPointTooltip(point) {
@@ -655,7 +637,6 @@
     historyTooltipPayloads = {};
     historyTooltipIdCounter = 0;
     modelTooltipIdCounter = 0;
-    sourceTooltipIdCounter = 0;
     usageTooltipIdCounter = 0;
   }
 
@@ -675,14 +656,6 @@
     modelTooltipIdCounter += 1;
     var id = 'model-tip-' + modelTooltipIdCounter;
     payload.kind = 'modelDistribution';
-    historyTooltipPayloads[id] = payload;
-    return id;
-  }
-
-  function registerSourceTooltipPayload(payload) {
-    sourceTooltipIdCounter += 1;
-    var id = 'source-tip-' + sourceTooltipIdCounter;
-    payload.kind = 'sourceChip';
     historyTooltipPayloads[id] = payload;
     return id;
   }
@@ -935,35 +908,29 @@
     unavailable: { cls: 'unavailable', fullLabel: 'Unavailable', compactLabel: 'N/A' }
   };
 
-  function renderSourceChip(source, mode) {
+  function renderHistorySourceSummary(source, options) {
     if (!source) { return ''; }
     var cfg = SOURCE_CHIP_CONFIG[source.confidence];
     if (!cfg) { return ''; }
-    var parts = [];
-    if (source.label) { parts.push(source.label); }
-    if (source.detail) { parts.push(source.detail); }
-    if (source.unavailableReason) { parts.push(source.unavailableReason); }
-    var chipMode = mode === 'compact' || mode === 'glyph' ? mode : 'full';
-    var label = chipMode === 'full' ? cfg.fullLabel : cfg.compactLabel;
-    var details = parts.join(' - ');
-    var aria = cfg.fullLabel + (details ? ': ' + details : '');
-    var tooltipId = registerSourceTooltipPayload({
-      title: cfg.fullLabel,
-      subtitle: source.label || '',
-      detail: source.detail || '',
-      unavailableReason: source.unavailableReason || '',
-      ariaLabel: aria
-    });
-    var labelHtml = chipMode === 'glyph' ? '' : '<span class="source-chip-label">' + esc(label) + '</span>';
-    return '<span class="source-chip ' + cfg.cls + ' ' + chipMode + '" tabindex="0" data-source-tip-id="' + escAttr(tooltipId) + '" aria-label="' + escAttr(aria) + '">' +
-      '<span class="source-chip-mark"></span>' +
-      labelHtml +
-    '</span>';
+    var opts = options || {};
+    var heading = opts.heading === undefined ? 'Data source' : opts.heading;
+    var extraClass = opts.extraClass ? ' ' + opts.extraClass : '';
+    return '<div class="usage-data-source usage-data-source-' + esc(cfg.cls) + extraClass + '">' +
+      (heading ? '<h4 class="usage-section-title usage-data-source-title"><span>' + esc(heading) + '</span></h4>' : '') +
+      '<p class="usage-section-copy usage-data-source-status">' + esc(cfg.fullLabel) + '</p>' +
+      (source.label ? '<p class="usage-section-copy usage-data-source-summary">' + esc(source.label) + '</p>' : '') +
+      (source.detail ? '<p class="usage-section-copy usage-data-source-detail">' + esc(source.detail) + '</p>' : '') +
+      (source.unavailableReason ? '<p class="usage-section-copy usage-data-source-reason">' + esc(source.unavailableReason) + '</p>' : '') +
+    '</div>';
   }
 
-  function renderMetricSourceChip(source, parentSource) {
-    if (!source) { return ''; }
-    return renderSourceChip(source, 'glyph');
+  function renderModelDistributionSourceException(distributionSource, tabSource) {
+    if (!distributionSource || !tabSource) { return ''; }
+    if (distributionSource.confidence === tabSource.confidence) { return ''; }
+    return renderHistorySourceSummary(distributionSource, {
+      heading: 'Model distribution source',
+      extraClass: 'usage-data-source-exception'
+    });
   }
 
   function renderUsageNoteTooltipAttributes(title, body) {
@@ -978,11 +945,12 @@
     return ' tabindex="0" data-usage-tip-id="' + escAttr(id) + '" aria-label="' + escAttr(cleanTitle + ': ' + cleanBody) + '"';
   }
 
-  function renderClaudeModelDistribution(distribution, parentSource) {
+  function renderClaudeModelDistribution(distribution, tabSource) {
     if (!distribution) { return ''; }
     if (!distribution.available || !distribution.segments || !distribution.segments.length) {
       return '<div class="usage-model-distribution unavailable">' +
         '<div class="usage-empty">' + esc(distribution.unavailableReason || 'Model distribution is unavailable.') + '</div>' +
+        renderModelDistributionSourceException(distribution.source, tabSource) +
       '</div>';
     }
     var metaText = [
@@ -993,10 +961,11 @@
     return '<div class="usage-model-distribution">' +
       '<div class="usage-model-distribution-head">' +
         '<div>' +
-          renderHistoryChartTitle(distribution.title || 'Model distribution', distribution.source) +
+          renderHistoryChartTitle(distribution.title || 'Model distribution') +
           '<div class="usage-model-distribution-meta">' + esc(metaText) + '</div>' +
         '</div>' +
       '</div>' +
+      renderModelDistributionSourceException(distribution.source, tabSource) +
       '<div class="usage-model-distribution-body">' +
         renderModelDistributionDonut(distribution) +
         renderModelDistributionLegend(distribution) +
@@ -1194,7 +1163,6 @@
     if (!target || !target.getAttribute) { return ''; }
     return target.getAttribute('data-history-tip-id') ||
       target.getAttribute('data-model-tip-id') ||
-      target.getAttribute('data-source-tip-id') ||
       target.getAttribute('data-usage-tip-id') ||
       '';
   }
@@ -1239,10 +1207,6 @@
       renderModelDistributionTooltipContent(tip, payload);
       return;
     }
-    if (payload.kind === 'sourceChip') {
-      renderSourceTooltipContent(tip, payload);
-      return;
-    }
     if (payload.kind === 'usageNote') {
       renderUsageNoteTooltipContent(tip, payload);
       return;
@@ -1278,36 +1242,6 @@
     }
 
     appendHistoryTooltipModelList(tip, 'Top models', payload.topModels, 'No model activity in this bin');
-  }
-
-  function renderSourceTooltipContent(tip, payload) {
-    var header = document.createElement('div');
-    header.className = 'ab-tip-head';
-    var title = document.createElement('div');
-    title.className = 'ab-tip-title';
-    title.textContent = payload.title || 'Usage source';
-    header.appendChild(title);
-    if (payload.subtitle) {
-      var subtitle = document.createElement('div');
-      subtitle.className = 'ab-tip-source';
-      subtitle.textContent = payload.subtitle;
-      header.appendChild(subtitle);
-    }
-    tip.appendChild(header);
-
-    var notes = [payload.detail, payload.unavailableReason].filter(Boolean);
-    if (notes.length) {
-      var list = document.createElement('div');
-      list.className = 'ab-tip-list';
-      appendHistoryTooltipListTitle(list, 'Details');
-      notes.forEach(function(text) {
-        var item = document.createElement('div');
-        item.className = 'ab-tip-note';
-        item.textContent = text;
-        list.appendChild(item);
-      });
-      tip.appendChild(list);
-    }
   }
 
   function renderUsageNoteTooltipContent(tip, payload) {
@@ -2069,12 +2003,11 @@
     }
   }
 
-  function renderUsageMetricCard(card, parentSource) {
+  function renderUsageMetricCard(card) {
     var unavailableClass = card && card.available ? '' : ' unavailable';
-    var chip = renderMetricSourceChip(card && card.source, parentSource);
     var detailTooltipAttrs = card && card.detailTooltip ? renderUsageNoteTooltipAttributes(card.label || 'Metric detail', card.detailTooltip) : '';
     return '<section class="usage-metric-card' + unavailableClass + '">' +
-      '<div class="usage-metric-label"><span class="usage-metric-label-text">' + esc(card.label || 'Metric') + '</span>' + chip + '</div>' +
+      '<div class="usage-metric-label"><span class="usage-metric-label-text">' + esc(card.label || 'Metric') + '</span></div>' +
       '<div class="usage-metric-value">' + esc(card.value || 'Unavailable') + '</div>' +
       '<div class="usage-metric-detail"' + detailTooltipAttrs + '>' + renderMetricDetail(card) + '</div>' +
     '</section>';
@@ -2401,7 +2334,7 @@
   function renderAtAGlanceTitle(source) {
     var title = byId('usageAtAGlanceTitle');
     if (title) {
-      title.innerHTML = renderUsageSectionTitle('h3', 'usage-section-title', 'At a glance', source);
+      title.innerHTML = renderUsageSectionTitle('h3', 'usage-section-title', 'At a glance');
     }
   }
 
