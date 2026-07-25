@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.14
+
+**Included in this release:**
+
+- Fixed Overview and History API-equivalent estimates to keep valid provider contributions when another provider is unavailable, showing a partial estimate instead of marking the whole result Unavailable.
+- Removed the separate Today dashboard section and its unused usage-scanner plumbing, consolidating Today into History's 1D range as the single live presentation.
+- Replaced repeated source-provenance chips throughout each tab with one Data source summary per tab.
+- Moved the Data source summary into a subdued footer at the bottom of the History section; Model Distribution still shows its own provenance note beside the chart whenever it genuinely differs from the tab's summary.
+- Added Claude Opus 5 API-equivalent pricing data (`claude-opus-5`), using the same standard rates as Claude Opus 4.8.
+
 ## 1.0.13
 
 **Included in this release:**
