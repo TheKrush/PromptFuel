@@ -4,7 +4,7 @@ This folder contains PromptFuel's local source-of-truth pricing table for API-eq
 
 ## Source Scope
 
-Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30. GPT-5.6 Sol, Terra, and Luna rows were added from official OpenAI API pricing on 2026-07-09.
+Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30. GPT-5.6 Sol, Terra, and Luna rows were added from official OpenAI API pricing on 2026-07-09. Claude Opus 5 row was added from official Anthropic pricing on 2026-07-25, using the same standard global API rates as Claude Opus 4.8.
 
 - Anthropic Claude model pricing: https://platform.claude.com/docs/en/about-claude/pricing
 - Anthropic Claude Sonnet 5 launch pricing: https://www.anthropic.com/news/claude-sonnet-5
