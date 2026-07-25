@@ -362,9 +362,10 @@ function main() {
 
     const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
     const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
-    assert.match(panelScript, /overviewCards/, 'Today overview uses model-computed combined cards');
-    assert.match(panelScript, /overviewCards: undefined/, 'Today provider tabs strip overview cards so provider-specific cards render');
-    assert.doesNotMatch(panelScript, /\? today\.overviewCards : today\.cards/, 'Overview Today does not fall back to provider-specific card arrays');
+    // Overview-vs-provider-tab card scoping (overviewCards presence on overview, stripped
+    // on provider tabs, no fallback to provider-scoped cards) is covered behaviorally via
+    // real buildUsageDashboardModel() output earlier in this file (Scenario 4, lines ~170-224)
+    // and via direct scopeTodayByTab() calls in smoke-dashboard-rendering.cjs (~L726-731, L829-831).
     assert.match(panelScript, /scopeTodayByTab[\s\S]*tab === 'overview'[\s\S]*return today/, 'Provider tabs keep scopeTodayByTab unchanged');
     assert.match(panelScript, /setUsageLoading\(true\)/, 'refresh path dims existing dashboard frames instead of blanking them');
     assert.doesNotMatch(panelScript, /Refreshing today section/, 'refresh path no longer blanks the Today section');

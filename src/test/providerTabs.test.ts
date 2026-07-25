@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
 import { buildTodayOverviewFromCharts } from '../panel/dashboard/today';
-import { buildClaudeHistoryChart, buildCombinedHistoryChart } from '../panel/dashboard/historyChart';
+import { buildClaudeHistoryChart, buildCodexHistoryChart, buildCombinedHistoryChart } from '../panel/dashboard/historyChart';
 import { formatUsd } from '../panel/dashboard/format';
 import { estimateAggregateCostUsd } from '../providers/pricing';
 import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
@@ -119,47 +119,48 @@ function unavailableCodexToday(): CodexCorrelatedDayBucket {
   };
 }
 
-function chartForTodayBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket): any {
-  const totalTokens = bucket.inputTokens + bucket.outputTokens + bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens;
-  const isClaude = !('correlatedTurns' in bucket);
-  const modelUsage = bucket.modelUsage ?? [];
-  const modelTokens = modelUsage.reduce(
-    (sum, model) => sum + model.inputTokens + model.outputTokens + model.cacheCreationInputTokens + model.cacheReadInputTokens,
-    0
-  );
-  const apiEstimate = modelUsage.length > 0 && modelTokens >= totalTokens
-    ? estimateAggregateCostUsd(modelUsage.map(model => ({
+// Converts a Today usage bucket into a single production-shaped UsageHistoryPoint so the
+// chart-fallback fixture below can be built by the real buildClaudeHistoryChart /
+// buildCodexHistoryChart builders (via their remoteHistoryPoints argument) instead of a
+// hand-assembled object literal. `models` intentionally omits label/provider/pricing fields —
+// buildClaudeHistoryChart/buildCodexHistoryChart compute those for real (via
+// normalizeRemoteHistoryPointModels -> modelPricingFields), exactly as production does for
+// snapshot-sourced points.
+function historyPointFromBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket): UsageHistoryPoint {
+  // buildUsageHistoryRangeViews() anchors its 1D bin to the real local "today" (default
+  // anchorDateKey), not to whatever fixed dateKey a fixture bucket carries. The point's
+  // dateKey must match that real anchor day or it falls outside the 1D bin and
+  // rangeViews['1D'].activeBinCount stays 0.
+  const todayKey = localDateKey(new Date());
+  return {
+    dateKey: todayKey,
+    label: todayKey,
+    totalTokens: bucket.totalTokens,
+    inputTokens: bucket.inputTokens,
+    outputTokens: bucket.outputTokens,
+    cacheTokens: bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens,
+    cacheCreationTokens: bucket.cacheCreationInputTokens,
+    cacheReadTokens: bucket.cacheReadInputTokens,
+    assistantMessages: bucket.assistantMessages,
+    models: (bucket.modelUsage ?? []).map(model => ({
+      label: model.model,
       model: model.model,
+      totalTokens: model.totalTokens,
       inputTokens: model.inputTokens,
       outputTokens: model.outputTokens,
       cacheCreationInputTokens: model.cacheCreationInputTokens,
-      cacheReadInputTokens: model.cacheReadInputTokens
-    })), isClaude)
-    : undefined;
-  return {
-    rangeViews: {
-      '1D': {
-        activeBinCount: 1,
-        points: [{
-          assistantMessages: bucket.assistantMessages,
-          inputTokens: bucket.inputTokens,
-          outputTokens: bucket.outputTokens,
-          cacheTokens: bucket.cacheCreationInputTokens + bucket.cacheReadInputTokens,
-          totalTokens,
-          models: bucket.modelUsage
-        }],
-        apiEquivalentCard: {
-          key: isClaude ? 'historyApiEquivalent' : 'codexHistoryApiEquivalent',
-          label: '1D API-equivalent',
-          value: apiEstimate ? formatUsd(apiEstimate.costUsd) : 'Unavailable',
-          apiEquivalentCostUsd: apiEstimate?.costUsd,
-          apiEquivalentFallbackPricingUsed: apiEstimate ? apiEstimate.fallbackCount > 0 : undefined,
-          detail: apiEstimate ? 'Prepared chart estimate' : 'Model/token data unavailable',
-          available: Boolean(apiEstimate)
-        }
-      }
-    }
+      cacheReadInputTokens: model.cacheReadInputTokens,
+      assistantMessages: model.assistantMessages
+    }))
   };
+}
+
+function chartForTodayBucket(bucket: ClaudeTodayUsageBucket | CodexCorrelatedDayBucket): UsageDashboardHistoryChart {
+  const isClaude = !('correlatedTurns' in bucket);
+  const point = historyPointFromBucket(bucket);
+  return isClaude
+    ? buildClaudeHistoryChart(undefined, [point])
+    : buildCodexHistoryChart(undefined, [point]);
 }
 
 function localDateKey(date: Date): string {
@@ -450,9 +451,13 @@ describe('provider tabs model', () => {
       assert.ok(fallback, `${scenario.label} chart fallback Overview cards exist`);
       assert.equal(direct.length, 5, `${scenario.label} direct Today has five Overview cards`);
       assert.equal(fallback.length, 5, `${scenario.label} chart fallback has five Overview cards`);
+      // `source` is intentionally stripped: provenance differs by design between the direct
+      // path (Today day-bucket source) and the chart-fallback path (1D-history source), and
+      // both are asserted separately below. `detailTooltip` is NOT stripped — it is
+      // byte-identical across both paths for all three scenarios and deepEqual should cover it.
       assert.deepEqual(
-        fallback.map(({ source: _source, detailTooltip: _detailTooltip, ...card }) => card),
-        direct.map(({ source: _source, detailTooltip: _detailTooltip, ...card }) => card),
+        fallback.map(({ source: _source, ...card }) => card),
+        direct.map(({ source: _source, ...card }) => card),
         `${scenario.label} all Overview card semantics match across paths`
       );
       assert.deepEqual(
