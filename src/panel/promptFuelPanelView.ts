@@ -45,10 +45,6 @@ export function buildPromptFuelPanelHtml(cssUri: string, scriptUri: string, cspS
       </div>
     </section>
 
-    <div id="usageToday" class="usage-today">
-      <div class="usage-empty">Loading today's usage...</div>
-    </div>
-
     <div id="usageDetails" class="usage-details">
       <div class="usage-empty">Loading usage details...</div>
     </div>

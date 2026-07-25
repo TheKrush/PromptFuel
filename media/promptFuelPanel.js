@@ -104,7 +104,7 @@
     }
   }
 
-  function renderUsageDetails(details, today, providers) {
+  function renderUsageDetails(details, providers) {
     var el = byId('usageDetails');
     if (!el) {
       return;
@@ -125,9 +125,9 @@
     hideHistoryTooltip();
 
     el.innerHTML =
-      renderUsageHistorySection(details, today, providers);
+      renderUsageHistorySection(details, providers);
 
-    bindHistoryRangeControls(details, today, providers);
+    bindHistoryRangeControls(details, providers);
     bindHistoryTooltipControls(el);
   }
 
@@ -145,7 +145,7 @@
     '</div>';
   }
 
-  function renderUsageHistorySection(details, today, providers) {
+  function renderUsageHistorySection(details, providers) {
     var aggregate = selectDashboardHistoryAggregate(details, providers);
     var aggregateBody = renderDashboardHistoryAggregateBody(aggregate);
     var gridClass = aggregate.provider === 'combined' ? 'usage-section-provider-grid combined' : 'usage-section-provider-grid';
@@ -353,7 +353,7 @@
     var tooltipAttrs = renderUsageNoteTooltipAttributes(card.label || 'API estimate', tooltip);
     var detail = card.detail || '';
     var detailLines = renderMetricDetailLines(card);
-    var visibleDetail = detailLines || (detail && detail.indexOf('not actual billing') < 0 ? esc(detail) : '');
+    var visibleDetail = detailLines || (detail ? esc(detail) : '');
     var parts = [esc(card.label || 'API estimate') + ': <span class="usage-api-estimate-value">' + esc(card.value || 'Unavailable') + '</span>'];
     if (visibleDetail) { parts.push(visibleDetail); }
     return '<div class="usage-api-estimate-strip' + unavailableClass + '"' + tooltipAttrs + '>' +
@@ -1457,7 +1457,7 @@
     historyTooltipEl.setAttribute('data-placement', placement);
   }
 
-  function bindHistoryRangeControls(details, today, providers) {
+  function bindHistoryRangeControls(details, providers) {
     var buttons = document.querySelectorAll('[data-usage-history-range]');
     Array.prototype.forEach.call(buttons, function(button) {
       button.addEventListener('click', function() {
@@ -1475,7 +1475,7 @@
           if (range === currentCodexHistoryRange) { return; }
           currentCodexHistoryRange = range;
         }
-        renderUsageDetails(details || lastUsageDetails, today, providers);
+        renderUsageDetails(details || lastUsageDetails, providers);
       });
     });
   }
@@ -2194,18 +2194,6 @@
       .filter(Boolean);
   }
 
-  function scopeTodayByTab(today, tab) {
-    if (!today || !today.cards || tab === 'overview') { return today; }
-    var providerCardFilter = function(c) {
-      if (tab === 'claude') { return c && c.key && c.key.indexOf('codexToday') !== 0 && c.key.indexOf('remoteTodayCodex') !== 0; }
-      if (tab === 'codex') { return c && c.key && (c.key.indexOf('codexToday') === 0 || c.key.indexOf('remoteTodayCodex') === 0); }
-      return true;
-    };
-    var filteredCards = today.cards.filter(providerCardFilter);
-    var filteredSplitCards = today.splitCards ? today.splitCards.filter(providerCardFilter) : undefined;
-    return Object.assign({}, today, { cards: filteredCards, splitCards: filteredSplitCards, overviewCards: undefined });
-  }
-
   function scopeDetailsByTab(details, tab) {
     if (!details) { return details; }
     if (tab === 'overview') {
@@ -2251,13 +2239,11 @@
   function renderUsageDashboardSections(model) {
     var tabKey = currentUsageProviderTab;
     var providers = scopeProvidersByTab(model.providers, tabKey);
-    var scopedToday = scopeTodayByTab(model.today, tabKey);
     var scopedDetails = scopeDetailsByTab(model.details, tabKey);
     renderDashboardForSources({
       tabKey: tabKey,
       label: dashboardTabLabel(model, tabKey),
       providers: providers,
-      today: scopedToday,
       details: scopedDetails
     });
   }
@@ -2279,50 +2265,12 @@
     }
     renderSourceModeControls(ctx);
     renderAtAGlanceTitle(sectionSourceFromProviderWindows(providers));
-    renderUsageToday(ctx && ctx.today);
-    renderUsageDetails(ctx && ctx.details, ctx && ctx.today, providers);
+    renderUsageDetails(ctx && ctx.details, providers);
   }
 
   function renderSourceModeControls(model) {
     var el = byId('usageSourceModeControls');
     if (el) { el.innerHTML = ''; }
-  }
-
-  function renderUsageToday(today) {
-    var el = byId('usageToday');
-    if (el) { el.innerHTML = ''; }
-  }
-
-  function buildTodayGroups(cards, isOverview, today) {
-    var groups = [];
-    if (isOverview) {
-      var claudeCards = (cards || []).filter(function(c) {
-        return c && c.key && c.key.indexOf('codexToday') !== 0 && c.key.indexOf('remoteTodayCodex') !== 0;
-      });
-      var codexCards = (cards || []).filter(function(c) {
-        return c && c.key && (c.key.indexOf('codexToday') === 0 || c.key.indexOf('remoteTodayCodex') === 0);
-      });
-      // Only show a provider group when it has a real data source (sectionLabel defined).
-      // Suppress "no activity" placeholders in overview when the other provider has real data.
-      var hasRealClaude = !!(today && today.claudeSectionLabel);
-      var hasRealCodex = !!(today && today.codexSectionLabel);
-      var showAll = !hasRealClaude && !hasRealCodex;
-      if (claudeCards.length > 0 && (hasRealClaude || showAll)) { groups.push({ label: (today && today.claudeSectionLabel) || 'Claude', cards: claudeCards }); }
-      if (codexCards.length > 0 && (hasRealCodex || showAll)) { groups.push({ label: (today && today.codexSectionLabel) || 'Codex', cards: codexCards }); }
-    } else {
-      var remotePrefix = currentUsageProviderTab === 'claude' ? 'remoteTodayClaude' : 'remoteTodayCodex';
-      var providerName = currentUsageProviderTab === 'claude' ? 'Claude' : 'Codex';
-      var localCards = (cards || []).filter(function(c) { return c && c.key && c.key.indexOf(remotePrefix) !== 0; });
-      var remoteCards = (cards || []).filter(function(c) { return c && c.key && c.key.indexOf(remotePrefix) === 0; });
-      var sectionLabel = currentUsageProviderTab === 'claude'
-        ? ((today && today.claudeSectionLabel) || 'Claude')
-        : ((today && today.codexSectionLabel) || 'Codex');
-      var remoteLabel = sectionLabel.replace(new RegExp('^' + providerName + ' \+ '), '') || 'Snapshot';
-      if (remoteLabel === sectionLabel) { remoteLabel = 'Snapshot'; }
-      if (localCards.length > 0) { groups.push({ label: providerName, cards: localCards }); }
-      if (remoteCards.length > 0) { groups.push({ label: remoteLabel, cards: remoteCards }); }
-    }
-    return groups;
   }
 
   function renderProviderUnavailable(message, reason) {
@@ -2349,7 +2297,6 @@
       renderSourceModeControls(undefined);
       renderAtAGlanceTitle();
       cards.innerHTML = '<div class="usage-empty">No provider usage state is available yet.</div>';
-      renderUsageToday(undefined);
       renderUsageDetails(undefined);
       return;
     }

@@ -13,15 +13,11 @@ import {
 import { readClaudeBridgeState } from './providers/claudeBridge';
 import {
   type ClaudeHistoryModelUsage,
-  type ClaudeTodayUsageBucket,
-  type ClaudeUsageHistory,
-  readClaudeTodayUsageBucket
+  type ClaudeUsageHistory
 } from './providers/claudeDayBucketScanner';
 import {
-  type CodexCorrelatedDayBucket,
   type CodexCorrelatedHistory,
-  type CodexCorrelatedHistoryModelUsage,
-  readCodexCorrelatedTodayBucket
+  type CodexCorrelatedHistoryModelUsage
 } from './providers/codexCorrelatedDayBucketScanner';
 import { readCodexUsageState } from './providers/codexSessionScanner';
 import { readCodexBridgeState } from './providers/codexState';
@@ -75,10 +71,8 @@ const authState = {
 
 const latest = {
   providerStates: [] as ProviderUsageState[],
-  claudeTodayUsage: undefined as ClaudeTodayUsageBucket | undefined,
   claudeUsageHistory: undefined as ClaudeUsageHistory | undefined,
   codexCorrelatedHistory: undefined as CodexCorrelatedHistory | undefined,
-  codexCorrelatedTodayUsage: undefined as CodexCorrelatedDayBucket | undefined,
   remoteProviderGroups: [] as GroupedRemoteProvider[],
   selectedRemoteProviders: [] as UsageDashboardProvider[],
   remoteUsage: undefined as RemoteUsageProjection | undefined
@@ -470,20 +464,16 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
 
   if (effectiveProviders.includes('claude')) {
     const dirPath = cfg.claudeProjectsPath;
-    latest.claudeTodayUsage = await readClaudeTodayUsageBucket(dirPath);
     latest.claudeUsageHistory = await readClaudeHistoryIncremental(dirPath, 365, claudeHistoryCache);
   } else {
-    latest.claudeTodayUsage = undefined;
     latest.claudeUsageHistory = undefined;
   }
 
   if (effectiveProviders.includes('codex')) {
     const dirPath = cfg.codexSessionsPath;
     latest.codexCorrelatedHistory = await readCodexHistoryIncremental(dirPath, 365, codexHistoryCache);
-    latest.codexCorrelatedTodayUsage = await readCodexCorrelatedTodayBucket(dirPath);
   } else {
     latest.codexCorrelatedHistory = undefined;
-    latest.codexCorrelatedTodayUsage = undefined;
   }
 
   const supplementedHistory = supplementLocalHistoryWithSelfArchives({
@@ -501,10 +491,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   if (!options.suppressPanelBroadcast) {
     const usageDashboardModel = buildUsageDashboardModel({
       states: latest.providerStates,
-      claudeTodayUsage: latest.claudeTodayUsage,
       claudeUsageHistory: latest.claudeUsageHistory,
       codexCorrelatedHistory: latest.codexCorrelatedHistory,
-      codexTodayUsage: latest.codexCorrelatedTodayUsage,
       enabledProviders: effectiveProviders,
       remoteProviderGroups: latest.remoteProviderGroups.length > 0 ? latest.remoteProviderGroups : undefined,
       selectedRemoteProviders: selectedDashboardRemoteProviders.length > 0 ? selectedDashboardRemoteProviders : undefined,

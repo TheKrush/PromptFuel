@@ -655,9 +655,6 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   background:var(--vscode-sideBar-background,rgba(127,127,127,.04));
   text-align:center
 }
-.usage-today{
-  margin-top:0
-}
 .usage-today-inline{
   margin-bottom:12px
 }

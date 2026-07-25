@@ -348,11 +348,6 @@ function main() {
 
   const claudeOnlyModel = buildUsageDashboardModel({ states: [], claudeUsageHistory: makeClaudeHistory(), enabledProviders: ['claude'] });
   assert.equal(claudeOnlyModel.details.combinedHistoryChart, undefined, 'single-provider history does not build combined chart');
-  assert.equal(
-    claudeOnlyModel.details.todayOverviewCards.find(card => card.key === 'overviewTodayTokens').detailLines,
-    undefined,
-    'single-provider Today aggregate does not emit redundant provider detailLines'
-  );
 
   const webviewScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
   assert.doesNotMatch(webviewScript, /function buildCombinedApiEquivalentCard\b/, 'renderer no longer builds combined API-equivalent cards');
@@ -360,7 +355,7 @@ function main() {
   assert.doesNotMatch(webviewScript, /function estimateApiEquivalentFromModelUsage\b/, 'renderer no longer calculates selected-range API-equivalent estimates');
   const instrumentedScript = webviewScript.replace(
     /\}\)\(\);\s*$/,
-    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeTodayByTab: scopeTodayByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange }; })();'
+    'globalThis.__combinedDashboardTest = { selectCombinedHistoryChartRange: selectCombinedHistoryChartRange, selectCombinedHistoryMetricCardsRange: selectCombinedHistoryMetricCardsRange, renderHistoryChart: renderHistoryChart, renderCombinedHistoryLegend: renderCombinedHistoryLegend, renderUsageHistorySection: renderUsageHistorySection, renderUsageMetricCard: renderUsageMetricCard, renderApiEstimateStrip: renderApiEstimateStrip, renderDashboardForSources: renderDashboardForSources, renderGlanceList: renderGlanceList, renderGlanceWindowCells: renderGlanceWindowCells, renderQuotaIssuesSection: renderQuotaIssuesSection, quotaIssuesForProviders: quotaIssuesForProviders, dashboardAggregateProviders: dashboardAggregateProviders, scopeProvidersByTab: scopeProvidersByTab, scopeDetailsByTab: scopeDetailsByTab, setCombinedHistoryRange: function(range) { currentCombinedHistoryRange = range; }, setClaudeHistoryRange: function(range) { currentClaudeHistoryRange = range; }, setCodexHistoryRange: function(range) { currentCodexHistoryRange = range; }, setProviderTab: function(tab) { currentUsageProviderTab = tab; }, computeSourceBreakdown: computeSourceBreakdown, formatSourceBreakdownLines: formatSourceBreakdownLines, selectClaudeHistoryMetricCardsRange: selectClaudeHistoryMetricCardsRange, selectCodexHistoryMetricCardsRange: selectCodexHistoryMetricCardsRange }; })();'
   );
   const fakeElements = {};
   const fakeElementForId = id => {
@@ -401,7 +396,7 @@ function main() {
   );
   assert.match(
     webviewScript,
-    /function renderUsageDashboardSections[\s\S]*scopeProvidersByTab[\s\S]*scopeTodayByTab[\s\S]*scopeDetailsByTab[\s\S]*renderDashboardForSources/,
+    /function renderUsageDashboardSections[\s\S]*scopeProvidersByTab[\s\S]*scopeDetailsByTab[\s\S]*renderDashboardForSources/,
     'renderUsageDashboardSections builds one context and enters renderDashboardForSources'
   );
 
@@ -719,16 +714,14 @@ function main() {
   assert.match(claudeScopedIssues, /Claude[\s\S]*Stale/, 'Claude tab includes its scoped issue');
   assert.doesNotMatch(claudeScopedIssues, /Codex|Missing/, 'Claude tab does not leak Codex issues');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1M');
-  const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
+  const combinedHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, selectedProviders);
   const combinedOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(selectedCombinedChart, '1M');
   const combinedOneMonthTokens = metricCardByKey(combinedOneMonthCards, 'combinedHistoryTokens');
   const combinedOneMonthApi = metricCardByKey(combinedOneMonthCards, 'combinedHistoryApiEquivalent');
-  const overviewTodayMessages = metricCardByKey(model.today.overviewCards, 'overviewTodayMessages');
   assert.match(combinedHistorySectionHtml, /usage-metric-card/, 'combined history renders metric cards');
   assert.match(combinedHistorySectionHtml, /usage-section-provider-grid combined/, 'dashboard history uses the combined provider grid');
   assert.equal(sectionProviderCardCount(combinedHistorySectionHtml), 1, 'Overview below At-a-glance renders exactly one aggregate card set');
   assert.match(combinedHistorySectionHtml, /usage-today-inline/, 'history section renders the Today card section');
-  assertDetailLineLabels(overviewTodayMessages, ['Claude', 'Codex'], 'Today overview card carries provider breakdown detailLines');
   assert.doesNotMatch(combinedHistorySectionHtml, /data-history-layout/, 'combined history section has no layout toggle controls');
   assert.doesNotMatch(combinedHistorySectionHtml, />Merged</, 'combined history section has no Merged button');
   assert.doesNotMatch(combinedHistorySectionHtml, />Separate</, 'combined history section has no Separate button');
@@ -742,7 +735,7 @@ function main() {
     codexCorrelatedHistory: withoutCache(makeCodexHistory()),
     enabledProviders: ['claude', 'codex']
   });
-  const oneProviderCacheHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(oneProviderCacheModel.details, oneProviderCacheModel.today, selectedProviders);
+  const oneProviderCacheHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(oneProviderCacheModel.details, selectedProviders);
   const oneProviderCacheChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(oneProviderCacheModel.details.combinedHistoryChart, '1M');
   const oneProviderCacheCard = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(oneProviderCacheChart, '1M')
     .find(card => card.key === 'combinedHistoryCache');
@@ -754,7 +747,7 @@ function main() {
   assertDetailLineLabels(combinedOneMonthApi, ['Claude', 'Codex'], 'combined history API-equivalent carries provider cost attribution');
   assert.equal(combinedOneMonthApi, selectedCombinedChart.apiEquivalentCard, 'selected 1M range uses the host-serialized API-equivalent card');
   sandbox.__combinedDashboardTest.setCombinedHistoryRange('1D');
-  const combinedOneDayHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
+  const combinedOneDayHistorySectionHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, selectedProviders);
   const selectedCombinedOneDayChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, '1D');
   const combinedOneDayApiCard = metricCardByKey(
     sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(selectedCombinedOneDayChart, '1D'),
@@ -806,29 +799,28 @@ function main() {
   assert.match(escapedApiHtml, /Claude: &lt;b&gt;\$57\.34&lt;\/b&gt;<br>Codex: \$114 &amp; fees/, 'API-equivalent detailLines are escaped and br-joined');
   assert.doesNotMatch(visibleTextFromHtml(escapedApiHtml), /Claude \$57\.34 \| Codex \$114/, 'API-equivalent detailLines suppress fallback detail text');
 
-  const partialOverviewToday = {
-    cards: [
-      { key: 'todayApiEquivalent', label: '1D API-equivalent', value: 'Unavailable', detail: 'No model data', available: false },
-      { key: 'codexTodayApiEquivalent', label: '1D API-equivalent', value: '$12.34', detail: 'Estimate · not actual billing', available: true }
-    ],
-    overviewCards: [{
-      key: 'overviewTodayApiEquivalent',
-      label: '1D API-equivalent',
-      value: '$12.34',
-      detail: 'Partial estimate · unavailable: Claude',
-      detailLines: ['Partial estimate · unavailable: Claude', 'Codex: $12.34'],
-      detailTooltip: '1D API-equivalent estimate partial: unavailable from Claude: no per-model token data. Not actual billing.',
-      available: true
-    }]
+  const disclosureWordingApiHtml = sandbox.__combinedDashboardTest.renderApiEstimateStrip({
+    key: 'disclosureWordingApiEquivalent',
+    label: '1D API-equivalent',
+    value: '$12.34',
+    detail: 'Claude $12.34; not actual billing',
+    available: true
+  });
+  assert.match(visibleTextFromHtml(disclosureWordingApiHtml), /Claude \$12\.34; not actual billing/, 'API-equivalent detail renders as-is regardless of its wording, since visibility no longer depends on detail text content');
+
+  const partialOverviewCard = {
+    key: 'overviewTodayApiEquivalent',
+    label: '1D API-equivalent',
+    value: '$12.34',
+    detail: 'Partial estimate · unavailable: Claude',
+    detailLines: ['Partial estimate · unavailable: Claude', 'Codex: $12.34'],
+    detailTooltip: '1D API-equivalent estimate partial: unavailable from Claude: no per-model token data. Not actual billing.',
+    available: true
   };
-  const partialOverviewCard = partialOverviewToday.overviewCards[0];
   const partialOverviewHtml = sandbox.__combinedDashboardTest.renderApiEstimateStrip(partialOverviewCard);
   assert.match(visibleTextFromHtml(partialOverviewHtml), /Partial estimate.*Claude/, 'Overview partial API-equivalent visibly discloses unavailable coverage');
   assert.match(partialOverviewHtml, /usage-api-estimate-strip(?! unavailable)/, 'Overview partial API-equivalent does not render as unavailable');
   assert.match(partialOverviewHtml, /aria-label="1D API-equivalent: 1D API-equivalent estimate partial: unavailable from Claude/, 'Overview partial API-equivalent exposes its disclosure through the custom tooltip fallback');
-  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'overview').overviewCards, partialOverviewToday.overviewCards, 'Overview retains the aggregate partial API-equivalent card');
-  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'claude').overviewCards, undefined, 'provider tabs do not reuse the Overview partial API-equivalent card');
-  assert.equal(sandbox.__combinedDashboardTest.scopeTodayByTab(partialOverviewToday, 'claude').cards.find(card => card.key === 'todayApiEquivalent').available, false, 'provider-specific unavailable card remains unavailable');
 
   assert.equal(combinedOneMonthTokens.detailLines.some(line => line.includes('stale')), false, 'stale context remains outside per-line breakdown data');
 
@@ -867,7 +859,6 @@ function main() {
   const partialCodexDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(partialApiModel.details, 'codex');
   const partialCodexHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     partialCodexDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(partialApiModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(partialApiModel.providers, 'codex')
   );
   const partialCodexCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
@@ -880,7 +871,7 @@ function main() {
   sandbox.__combinedDashboardTest.setProviderTab('overview');
   ['1W', '1M', '1Y', 'ALL'].forEach(range => {
     sandbox.__combinedDashboardTest.setCombinedHistoryRange(range);
-    const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, model.today, selectedProviders);
+    const rangeHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(model.details, selectedProviders);
     const rangeChart = sandbox.__combinedDashboardTest.selectCombinedHistoryChartRange(model.details.combinedHistoryChart, range);
     const rangeApiCard = metricCardByKey(
       sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(rangeChart, range),
@@ -895,9 +886,8 @@ function main() {
   ['overview', 'claude', 'codex'].forEach(tabKey => {
     sandbox.__combinedDashboardTest.setProviderTab(tabKey);
     const providers = sandbox.__combinedDashboardTest.scopeProvidersByTab(selectedProviders, tabKey);
-    const scopedToday = sandbox.__combinedDashboardTest.scopeTodayByTab(model.today, tabKey);
     const scopedDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(model.details, tabKey);
-    const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, scopedToday, providers);
+    const tabHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(scopedDetails, providers);
     assert.equal(sectionProviderCardCount(tabHtml), 1, `${tabKey} below At-a-glance renders exactly one aggregate card set`);
     assert.match(tabHtml, /usage-api-estimate-strip/, `${tabKey} 1M API-equivalent footer renders structurally`);
     assert.match(tabHtml, /usage-model-distribution/, `${tabKey} live history path renders model distribution content`);
@@ -916,7 +906,6 @@ function main() {
       tabKey,
       label: tabKey === 'overview' ? 'Overview' : tabKey === 'claude' ? 'Claude' : 'Codex',
       providers,
-      today: scopedToday,
       details: scopedDetails
     });
     assert.equal(glanceRowCount(fakeElements.usageDashboardCards.innerHTML), providers.length, `${tabKey} At-a-glance row count matches selected providers`);
@@ -935,7 +924,6 @@ function main() {
   const claudeLocalOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude');
   const claudeLocalOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     claudeLocalOneDayDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(claudeLocalRangeModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
   const claudeLocalOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
@@ -951,7 +939,6 @@ function main() {
   const claudeLocalOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(claudeLocalRangeModel.details, 'claude');
   const claudeLocalOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     claudeLocalOneMonthDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(claudeLocalRangeModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(claudeLocalRangeModel.providers, 'claude')
   );
   const claudeLocalOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
@@ -980,7 +967,6 @@ function main() {
   const overviewOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview');
   const overviewOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     overviewOneDayDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'overview'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
   const overviewOneDayCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
@@ -996,7 +982,6 @@ function main() {
   const overviewOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'overview');
   const overviewOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     overviewOneMonthDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'overview'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'overview')
   );
   const overviewOneMonthCards = sandbox.__combinedDashboardTest.selectCombinedHistoryMetricCardsRange(
@@ -1013,7 +998,6 @@ function main() {
   const claudeRemoteOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude');
   const claudeRemoteOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     claudeRemoteOneDayDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
   );
   const claudeRemoteOneDayCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
@@ -1028,7 +1012,6 @@ function main() {
   const claudeRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'claude');
   const claudeRemoteOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     claudeRemoteOneMonthDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'claude'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'claude')
   );
   const claudeRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectClaudeHistoryMetricCardsRange(
@@ -1044,7 +1027,6 @@ function main() {
   const codexRemoteOneDayDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
   const codexRemoteOneDayHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     codexRemoteOneDayDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
   const codexRemoteOneDayCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
@@ -1060,7 +1042,6 @@ function main() {
   const codexRemoteOneMonthDetails = sandbox.__combinedDashboardTest.scopeDetailsByTab(remoteAliasModel.details, 'codex');
   const codexRemoteOneMonthHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     codexRemoteOneMonthDetails,
-    sandbox.__combinedDashboardTest.scopeTodayByTab(remoteAliasModel.today, 'codex'),
     sandbox.__combinedDashboardTest.scopeProvidersByTab(remoteAliasModel.providers, 'codex')
   );
   const codexRemoteOneMonthCards = sandbox.__combinedDashboardTest.selectCodexHistoryMetricCardsRange(
@@ -1130,7 +1111,6 @@ function main() {
   sandbox.__combinedDashboardTest.setProviderTab('overview');
   const r2Html = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     sandbox.__combinedDashboardTest.scopeDetailsByTab(r2OneProviderHistoryModel.details, 'overview'),
-    sandbox.__combinedDashboardTest.scopeTodayByTab(r2OneProviderHistoryModel.today, 'overview'),
     selectedProviders
   );
   assert.equal(sectionProviderCardCount(r2Html), 1, 'R2 one-provider-history Overview renders exactly one below-glance set');
@@ -1147,7 +1127,6 @@ function main() {
   });
   const r2CodexHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     sandbox.__combinedDashboardTest.scopeDetailsByTab(r2CodexOnlyHistoryModel.details, 'overview'),
-    sandbox.__combinedDashboardTest.scopeTodayByTab(r2CodexOnlyHistoryModel.today, 'overview'),
     selectedProviders
   );
   assert.equal(sectionProviderCardCount(r2CodexHtml), 1, 'R2 Codex-only fallback renders exactly one below-glance set');
@@ -1168,7 +1147,6 @@ function main() {
   assert.ok(zeroHistoryModel.details.combinedHistoryChart.available, 'available zero combined history chart remains available');
   const zeroHistoryHtml = sandbox.__combinedDashboardTest.renderUsageHistorySection(
     sandbox.__combinedDashboardTest.scopeDetailsByTab(zeroHistoryModel.details, 'overview'),
-    sandbox.__combinedDashboardTest.scopeTodayByTab(zeroHistoryModel.today, 'overview'),
     selectedProviders
   );
   assert.equal(sectionProviderCardCount(zeroHistoryHtml), 1, 'available zero history Overview renders one aggregate set');

@@ -85,15 +85,6 @@ function main() {
 
     assert.deepEqual(model.providers.map(provider => provider.provider), ['claude'], 'providers array excludes disabled Codex');
 
-    const todayCards = model.today.cards;
-    assert.ok(todayCards.length > 0, 'today has cards when claude enabled and day-bucket data present');
-    assert.equal(model.today.source.confidence, 'trustedCompletedTurnUsage', 'claude-only today section source is trusted, not unavailable');
-
-    // Claude cards present
-    assert.ok(todayCards.find(c => c.key === 'todayTokens'), 'claude todayTokens card present');
-    // Codex cards absent
-    assert.equal(todayCards.find(c => c.key === 'codexTodayTokens'), undefined, 'codex todayTokens card absent when codex disabled');
-
     const codexHistoryKeys = ['codexHistoryRange', 'codexHistoryTokens', 'codexHistoryActivity', 'codexHistoryCache'];
     const codexHistoryCards = model.details.cards.filter(c => codexHistoryKeys.includes(c.key));
     assert.equal(codexHistoryCards.length, 0, 'codex history cards excluded when codex disabled');
@@ -112,18 +103,6 @@ function main() {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['codex'] });
 
     assert.deepEqual(model.providers.map(provider => provider.provider), ['codex'], 'providers array excludes disabled Claude');
-
-    // Codex today cards present
-    assert.ok(model.today.cards.find(c => c.key === 'codexTodayTokens'), 'codex todayTokens card present when codex enabled');
-    assert.equal(model.today.cards.find(c => c.key === 'codexTodayReasoning'), undefined, 'codex Today omits separate reasoning tile in provider-card layout');
-    assert.deepEqual(
-      model.today.cards.map(c => c.key),
-      ['codexTodayMessages', 'codexTodayTokens', 'codexTodayInputOutput', 'codexTodayCache', 'codexTodayApiEquivalent'],
-      'codex Today uses provider-scoped metric keys'
-    );
-    assert.equal(model.today.source.confidence, 'correlatedDayBucket', 'codex-only today section source is correlated, not unavailable');
-    // Claude cards absent
-    assert.equal(model.today.cards.find(c => c.key === 'todayTokens'), undefined, 'claude todayTokens card absent when claude disabled');
 
     const claudeHistoryKeys = ['historyRange', 'historyTokens', 'historyActivity', 'historyCache'];
     const claudeHistoryCards = model.details.cards.filter(c => claudeHistoryKeys.includes(c.key));
@@ -144,11 +123,6 @@ function main() {
   {
     const model = buildUsageDashboardModel({ states: [claudeState, codexState] });
 
-    // Enabled providers without Today data show zero-value cards (no activity today).
-    assert.ok(model.today.cards.find(c => c.key === 'todayTokens'), 'claude todayTokens card present (zero)');
-    assert.ok(model.today.cards.find(c => c.key === 'codexTodayTokens'), 'codex todayTokens card present (zero)');
-    assert.equal(model.today.cards.find(c => c.key === 'codexTodayTokens').available, true, 'codex todayTokens shows zero when no codex data today');
-
     const claudeHistoryKeys = ['historyRange', 'historyTokens', 'historyActivity', 'historyCache'];
     const claudeHistoryCards = model.details.cards.filter(c => claudeHistoryKeys.includes(c.key));
     assert.equal(claudeHistoryCards.length, 0, 'Claude no longer emits legacy base history cards; range views drive the renderer');
@@ -165,82 +139,6 @@ function main() {
     assert.equal(typeof model.details.codexModelDistribution, 'object', 'codex model distribution present when codex enabled');
 
     console.log('PASS: Both enabled preserves current sections');
-  }
-
-  {
-    const model = buildUsageDashboardModel({
-      states: [claudeState, codexState],
-      claudeTodayUsage: claudeTodayUsage,
-      codexTodayUsage: codexTodayUsage,
-      enabledProviders: ['claude', 'codex']
-    });
-    const overviewCards = model.today.overviewCards || [];
-    assert.equal(overviewCards.length, 5, 'overview renders one aggregate Today card set');
-    assert.deepEqual(
-      overviewCards.map(card => card.key),
-      [
-        'overviewTodayMessages',
-        'overviewTodayTokens',
-        'overviewTodayInputOutput',
-        'overviewTodayCache',
-        'overviewTodayApiEquivalent'
-      ],
-      'overview aggregate Today cards do not contain provider-specific card keys'
-    );
-    assert.equal(overviewCards.find(card => card.key === 'overviewTodayMessages').value, '44', 'overview Today messages include Claude and Codex');
-    assert.equal(overviewCards.find(card => card.key === 'overviewTodayTokens').value, '60.0K', 'overview Today tokens include Claude and Codex displayed tokens');
-    assert.deepEqual(
-      overviewCards.find(card => card.key === 'overviewTodayMessages').detailLines,
-      ['Claude: 42', 'Codex: 2'],
-      'overview Today messages carry provider detailLines'
-    );
-    assert.deepEqual(
-      overviewCards.find(card => card.key === 'overviewTodayTokens').detailLines,
-      ['Claude: 51.5K', 'Codex: 8.5K'],
-      'overview Today tokens carry provider detailLines'
-    );
-    assert.deepEqual(
-      overviewCards.find(card => card.key === 'overviewTodayInputOutput').detailLines,
-      ['Claude: 30.0K / 20.0K', 'Codex: 3.0K / 5.0K'],
-      'overview Today input/output carries provider detailLines'
-    );
-    assert.deepEqual(
-      overviewCards.find(card => card.key === 'overviewTodayCache').detailLines,
-      ['Claude: 1.5K', 'Codex: 500'],
-      'overview Today cache carries provider detailLines'
-    );
-    const overviewApiEquivalent = overviewCards.find(card => card.key === 'overviewTodayApiEquivalent');
-    const claudeApiEquivalent = model.today.cards.find(card => card.key === 'todayApiEquivalent');
-    const codexApiEquivalent = model.today.cards.find(card => card.key === 'codexTodayApiEquivalent');
-    assert.equal(overviewApiEquivalent.available, true, 'overview Today API-equivalent retains the valid Claude contribution when Codex is incomplete');
-    assert.equal(overviewApiEquivalent.value, claudeApiEquivalent.value, 'overview Today partial estimate equals the valid Claude contribution');
-    assert.match(overviewApiEquivalent.detail, /Partial estimate.*Codex/, 'overview Today API-equivalent visibly discloses missing Codex coverage');
-    assert.ok(overviewApiEquivalent.detailLines && overviewApiEquivalent.detailLines.some(line => /Partial estimate.*Codex/.test(line)), 'overview Today API-equivalent emits visible partial coverage detail');
-    assert.match(overviewApiEquivalent.detailTooltip, /partial: unavailable from Codex/i, 'overview Today API-equivalent tooltip discloses missing Codex coverage');
-    assert.equal(codexApiEquivalent.available, false, 'Codex provider API-equivalent remains unavailable');
-    assert.equal(model.today.cards.find(card => card.key === 'todayTokens').value, '51.5K', 'Claude provider Today card remains scoped');
-    assert.equal(model.today.cards.find(card => card.key === 'codexTodayTokens').value, '8.5K', 'Codex provider Today card remains scoped');
-    console.log('PASS: Overview Today cards aggregate providers while provider cards stay scoped');
-  }
-
-  {
-    const model = buildUsageDashboardModel({ states: [claudeState, codexState], claudeTodayUsage: claudeTodayUsage, enabledProviders: ['claude', 'codex'] });
-    const codexTodayTokens = model.today.cards.find(c => c.key === 'codexTodayTokens');
-    assert.ok(codexTodayTokens, 'codex zero card appears when codex enabled but missing today data');
-    assert.equal(codexTodayTokens.available, true, 'codex zero card is available (no activity today)');
-    assert.equal(model.today.cards.filter(c => c.key.startsWith('codexToday')).length, 5, 'codex zero provider has one card per Today metric including Messages/Turns');
-    assert.equal(model.today.source.confidence, 'trustedCompletedTurnUsage', 'section source follows available Claude data');
-    console.log('PASS: Missing enabled Codex Today data renders zero cards beside Claude data');
-  }
-
-  {
-    const model = buildUsageDashboardModel({ states: [claudeState, codexState], codexTodayUsage: codexTodayUsage, enabledProviders: ['claude', 'codex'] });
-    const claudeTodayTokens = model.today.cards.find(c => c.key === 'todayTokens');
-    assert.ok(claudeTodayTokens, 'claude zero card appears when claude enabled but missing today data');
-    assert.equal(claudeTodayTokens.available, true, 'claude zero card is available (no activity today)');
-    assert.equal(model.today.cards.filter(c => !c.key.startsWith('codexToday')).length, 5, 'claude zero provider has one card per Today metric including Messages/Turns');
-    assert.equal(model.today.source.confidence, 'correlatedDayBucket', 'section source follows available Codex data');
-    console.log('PASS: Missing enabled Claude Today data renders zero cards beside Codex data');
   }
 
   {
@@ -357,16 +255,11 @@ function main() {
     assert.match(refreshControllerSource, /suppressPanelBroadcast: current\.suppressPanelBroadcast \|\| incoming\.suppressPanelBroadcast/, 'queued panel refresh keeps broadcast suppression when refresh options merge');
     assert.match(extensionSource, /getUsageDashboardModel: \(\) => \{[\s\S]*buildUsageDashboardModel\([\s\S]*enabledProviders:/, 'panel-open dashboard model uses configured provider filtering');
     assert.match(refreshControllerSource, /const effectiveProviders = cfg\.enabledProviders;/, 'refresh path derives effective providers from config');
-    assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('claude'\)\) \{[\s\S]*readClaudeTodayUsageBucket/, 'excluded Claude provider does not refresh dashboard history inputs');
+    assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('claude'\)\) \{[\s\S]*readClaudeHistoryIncremental/, 'excluded Claude provider does not refresh dashboard history inputs');
     assert.match(refreshControllerSource, /if \(effectiveProviders\.includes\('codex'\)\) \{[\s\S]*readCodexHistoryIncremental/, 'excluded Codex provider does not refresh dashboard history inputs');
 
     const panelScript = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.js'), 'utf8');
     const styles = fs.readFileSync(path.join(repoRoot, 'media', 'promptFuelPanel.css'), 'utf8');
-    // Overview-vs-provider-tab card scoping (overviewCards presence on overview, stripped
-    // on provider tabs, no fallback to provider-scoped cards) is covered behaviorally via
-    // real buildUsageDashboardModel() output earlier in this file (Scenario 4, lines ~170-224)
-    // and via direct scopeTodayByTab() calls in smoke-dashboard-rendering.cjs (~L726-731, L829-831).
-    assert.match(panelScript, /scopeTodayByTab[\s\S]*tab === 'overview'[\s\S]*return today/, 'Provider tabs keep scopeTodayByTab unchanged');
     assert.match(panelScript, /setUsageLoading\(true\)/, 'refresh path dims existing dashboard frames instead of blanking them');
     assert.doesNotMatch(panelScript, /Refreshing today section/, 'refresh path no longer blanks the Today section');
     assert.match(panelScript, /data-glance-col="provider"/, 'At-a-glance rows emit a stable provider column marker');
@@ -392,11 +285,6 @@ function main() {
   const model = buildUsageDashboardModel({ states: [codexState], enabledProviders: ['codex'] });
   assert.equal(model.providers.length, 1, 'providers has only codex when claude state excluded');
   assert.equal(model.providers[0].provider, 'codex', 'remaining provider is codex');
-  assert.equal(model.today.source.confidence, 'unavailable', 'no today data -> unavailable');
-  // Enabled provider with no today data renders zero-value cards (no activity today)
-  assert.equal(model.today.cards.length, 5, 'codex zero cards present when enabled but missing today data');
-  assert.equal(model.today.cards[0].available, true, 'codex zero cards are available (no activity today)');
-  assert.ok(model.today.cards.every(card => card.key.startsWith('codex')), 'codex-only dashboard does not include claude today cards');
 
   // Same with claude-only
   const claudeModel = buildUsageDashboardModel({ states: [claudeState], enabledProviders: ['claude'] });

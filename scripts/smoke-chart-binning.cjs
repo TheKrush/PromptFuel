@@ -401,9 +401,6 @@ function main() {
   assert.match(panelScript, /filter\(function\(r\) \{ return r && r\.available; \}\)/, 'range renderer hides unavailable 1D controls');
   assert.match(panelScript, /range\.available && chart\.available && chart\.points && chart\.points\.length/, 'selection mapping preserves unavailable ranges');
   assert.match(panelScript, /role="img"/, 'chart bars expose an ARIA image role');
-  assert.match(panelScript, /remoteTodayCodex/, 'Today card routing includes remoteTodayCodex prefix check');
-  assert.match(panelScript, /c\.key\.indexOf\('remoteTodayCodex'\) !== 0/, 'claudeCards filter excludes remoteTodayCodex keys');
-  assert.match(panelScript, /c\.key\.indexOf\('remoteTodayCodex'\) === 0/, 'codexCards filter includes remoteTodayCodex keys');
 
   console.log('PASS: chart binning smoke tests passed.');
 }

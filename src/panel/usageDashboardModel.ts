@@ -7,9 +7,7 @@ import {
   SourceConfigEntry,
   UsageTracing
 } from '../types';
-import type { ClaudeTodayUsageBucket } from '../providers/claudeDayBucketScanner';
 import type { ClaudeUsageHistory } from '../providers/claudeDayBucketScanner';
-import type { CodexCorrelatedDayBucket } from '../providers/codexCorrelatedDayBucketScanner';
 import type { CodexCorrelatedHistory } from '../providers/codexCorrelatedDayBucketScanner';
 import { sumCostIfComplete } from '../display/apiEquivalentCost';
 import type { RemoteUsageProjection } from '../snapshot/remoteUsageProjection';
@@ -22,7 +20,6 @@ import {
   sourceInfo, AUTH_DISABLED_STATUSES, buildUnavailableBreakdownCard
 } from './dashboard/format';
 
-import { buildToday, buildTodayOverviewFromCharts } from './dashboard/today';
 import { buildClaudeHistoryChart, buildCodexHistoryChart, buildCombinedHistoryChart } from './dashboard/historyChart';
 import { buildClaudeModelDistribution, buildCodexModelDistribution } from './dashboard/modelDistribution';
 import { annotateSourceConfidence } from './dashboard/sourceConfidence';
@@ -37,7 +34,6 @@ export interface UsageDashboardTab {
 export interface UsageDashboardModel {
   generatedAtIso: string;
   providers: UsageDashboardProvider[];
-  today: UsageDashboardToday;
   details: UsageDashboardDetails;
   remoteProviders?: GroupedRemoteProvider[];
   tabs: UsageDashboardTab[];
@@ -99,17 +95,6 @@ export interface UsageDashboardSourceInfo {
   unavailableReason?: string;
 }
 
-export interface UsageDashboardToday {
-  available: boolean;
-  scopeLabel: string;
-  cards: UsageDashboardMetricCard[];
-  splitCards?: UsageDashboardMetricCard[];
-  source?: UsageDashboardSourceInfo;
-  claudeSectionLabel?: string;
-  codexSectionLabel?: string;
-  overviewCards?: UsageDashboardMetricCard[];
-}
-
 export interface UsageDashboardDetails {
   available: boolean;
   scopeLabel: string;
@@ -127,7 +112,6 @@ export interface UsageDashboardDetails {
   codexModelDistributionSectionLabel?: string;
   combinedHistorySectionLabel?: string;
   combinedModelDistributionSectionLabel?: string;
-  todayOverviewCards?: UsageDashboardMetricCard[];
   claudeSourceHistoryPanels?: UsageDashboardSourceHistoryPanel[];
   codexSourceHistoryPanels?: UsageDashboardSourceHistoryPanel[];
   claudeSourceModelDistributionPanels?: UsageDashboardSourceModelDistributionPanel[];
@@ -306,10 +290,8 @@ interface NumericAggregate {
 
 export interface BuildUsageDashboardModelOptions {
   states: ProviderUsageState[];
-  claudeTodayUsage?: ClaudeTodayUsageBucket;
   claudeUsageHistory?: ClaudeUsageHistory;
   codexCorrelatedHistory?: CodexCorrelatedHistory;
-  codexTodayUsage?: CodexCorrelatedDayBucket;
   enabledProviders?: ProviderName[];
   remoteProviderGroups?: GroupedRemoteProvider[];
   selectedRemoteProviders?: UsageDashboardProvider[];
@@ -323,10 +305,8 @@ export interface BuildUsageDashboardModelOptions {
 export function buildUsageDashboardModel(options: BuildUsageDashboardModelOptions): UsageDashboardModel {
   const {
     states,
-    claudeTodayUsage,
     claudeUsageHistory,
     codexCorrelatedHistory,
-    codexTodayUsage,
     enabledProviders,
     remoteProviderGroups,
     selectedRemoteProviders,
@@ -388,21 +368,14 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
   const model: UsageDashboardModel = {
     generatedAtIso: new Date().toISOString(),
     providers: scopedProviders,
-    ...(() => {
-      const details = buildDetails(localStates, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap, normalizedSources);
-      const today = buildToday(claudeTodayUsage, codexTodayUsage, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap);
-      return {
-        today: today.overviewCards ? today : details.todayOverviewCards ? { ...today, overviewCards: details.todayOverviewCards } : today,
-        details
-      };
-    })(),
+    details: buildDetails(localStates, claudeUsageHistory, codexCorrelatedHistory, effectiveClaudeEnabled, effectiveCodexEnabled, remoteUsage, aliasMap, normalizedSources),
     ...(filteredRemoteGroups && filteredRemoteGroups.length > 0 ? { remoteProviders: filteredRemoteGroups } : {}),
     tabs,
     selectedTab: scopedToProvider ?? 'overview',
     weekStartsOn: weekStartsOn ?? 0
   };
 
-  return annotateSourceConfidence(model, claudeTodayUsage, codexTodayUsage, remoteUsage);
+  return annotateSourceConfidence(model);
 }
 
 function sourceLabel(provider: string, normalizedSources?: Record<string, SourceConfigEntry>): string {
@@ -703,8 +676,6 @@ function buildDetails(
     ? buildCombinedSectionLabel(combinedBase, claudeModelRemote, codexModelRemote, aliasMap)
     : undefined;
 
-  const todayOverviewCards = buildTodayOverviewFromCharts(historyChart, codexHistoryChart, claudeEnabled, codexEnabled);
-
   return {
     available,
     scopeLabel: 'Current normalized provider snapshot — not daily history yet',
@@ -724,8 +695,7 @@ function buildDetails(
     ...(claudeSourceHistoryPanels ? { claudeSourceHistoryPanels } : {}),
     ...(codexSourceHistoryPanels ? { codexSourceHistoryPanels } : {}),
     ...(claudeSourceModelDistributionPanels ? { claudeSourceModelDistributionPanels } : {}),
-    ...(codexSourceModelDistributionPanels ? { codexSourceModelDistributionPanels } : {}),
-    ...(todayOverviewCards ? { todayOverviewCards } : {})
+    ...(codexSourceModelDistributionPanels ? { codexSourceModelDistributionPanels } : {})
   };
 }
 

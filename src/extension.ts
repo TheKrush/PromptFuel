@@ -66,10 +66,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const state = getLatestUsageState();
       return buildUsageDashboardModel({
         states: state.providerStates,
-        claudeTodayUsage: state.claudeTodayUsage,
         claudeUsageHistory: state.claudeUsageHistory,
         codexCorrelatedHistory: state.codexCorrelatedHistory,
-        codexTodayUsage: state.codexCorrelatedTodayUsage,
         enabledProviders: cfg.enabledProviders,
         remoteProviderGroups: state.remoteProviderGroups.length > 0 ? state.remoteProviderGroups : undefined,
         selectedRemoteProviders: state.selectedRemoteProviders.length > 0 ? state.selectedRemoteProviders : undefined,
