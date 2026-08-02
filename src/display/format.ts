@@ -7,7 +7,8 @@ import {
   ProviderName,
   ProviderUsageState,
   QuotaSourceKind,
-  SourceConfigEntry
+  SourceConfigEntry,
+  UsageMeter
 } from '../types';
 import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime, isStale } from '../usageTime';
 
@@ -256,7 +257,7 @@ function getDisplayedWindows(
   }
 
   for (const meter of state.meters ?? []) {
-    if (isUsableWindow(meter.window)) {
+    if (isStatusBarMeterVisible(state, meter)) {
       windows.push({ label: meter.label, value: meter.window });
     }
   }
@@ -342,7 +343,8 @@ function providerAlertSeverity(
 }
 
 function providerQuotaEmoji(state: ProviderUsageState, resolved: ResolvedDisplayParts): string {
-  if (!state.fiveHour && !state.sevenDay && !(state.meters?.length)) {
+  const visibleMeters = (state.meters ?? []).filter(meter => isStatusBarMeterVisible(state, meter));
+  if (!state.fiveHour && !state.sevenDay && !(visibleMeters.length)) {
     return '\u26AB';
   }
 
@@ -457,7 +459,7 @@ function formatCombinedQuotaSummaryLines(
     rows.push(formatCombinedQuotaWindowRow(state, '7d', state.sevenDay, options));
     rows.push(formatCombinedQuotaWindowRow(state, '5h', state.fiveHour, options));
     for (const meter of state.meters ?? []) {
-      if (isUsableWindow(meter.window)) {
+      if (isStatusBarMeterVisible(state, meter)) {
         rows.push(formatCombinedQuotaWindowRow(state, meter.label, meter.window, options));
       }
     }
@@ -607,7 +609,8 @@ function formatFreshnessLine(states: ProviderUsageState[]): string | undefined {
     ...states.flatMap(state => [
       state.sevenDay?.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0,
       state.fiveHour?.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0,
-      ...(state.meters ?? []).map(meter => meter.window.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0),
+      ...(state.meters ?? []).filter(meter => isStatusBarMeterVisible(state, meter))
+        .map(meter => meter.window.sourceUpdatedEpochMs ?? state.lastUpdatedEpochMs ?? 0),
       state.lastAuthenticatedRefreshEpochMs ?? 0
     ])
   );
@@ -655,7 +658,7 @@ function formatQuotaSummaryLines(state: ProviderUsageState, options: FormatOptio
   rows.push(formatQuotaWindowRow('5h', state.fiveHour, options));
 
   for (const meter of state.meters ?? []) {
-    if (isUsableWindow(meter.window)) {
+    if (isStatusBarMeterVisible(state, meter)) {
       rows.push(formatQuotaWindowRow(meter.label, meter.window, options));
     }
   }
@@ -722,11 +725,38 @@ function formatWindowPercent(value: number, showPercentSymbol: boolean, preserve
 }
 
 function hasUsableQuota(state: ProviderUsageState): boolean {
-  return isUsableWindow(state.fiveHour) || isUsableWindow(state.sevenDay) || (state.meters ?? []).some(meter => isUsableWindow(meter.window));
+  return isUsableWindow(state.fiveHour) || isUsableWindow(state.sevenDay)
+    || (state.meters ?? []).some(meter => isStatusBarMeterVisible(state, meter));
 }
 
 function isUsableWindow(window: LimitWindow | undefined): boolean {
   return window?.usedPercentage !== undefined;
+}
+
+function isStatusBarMeterVisible(state: ProviderUsageState, meter: UsageMeter): boolean {
+  if (!isUsableWindow(meter.window)) {
+    return false;
+  }
+  if (state.provider !== 'claude') {
+    return true;
+  }
+  const id = normalizeStatusMeterId(meter.id);
+  const label = normalizeStatusMeterLabel(meter.label);
+  const isClaudeExtraUsage = id === 'extra-usage' || label === 'extra usage';
+  return !isClaudeExtraUsage || (meter.window.usedPercentage ?? 0) > 0;
+}
+
+function normalizeStatusMeterId(value: string): string {
+  return value
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function normalizeStatusMeterLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function formatSharedDetails(states: ProviderUsageState[], options: FormatOptions): string[] {
@@ -858,7 +888,7 @@ function summarizeProviderStatus(state: ProviderUsageState): string | undefined 
   if (state.stale) {
     return 'stale snapshot';
   }
-  if (!state.fiveHour && !state.sevenDay && !(state.meters?.length)) {
+  if (!state.fiveHour && !state.sevenDay && !(state.meters ?? []).some(meter => isStatusBarMeterVisible(state, meter))) {
     return 'quota unavailable';
   }
   return undefined;
@@ -868,7 +898,9 @@ function formatQuotaFreshnessSummary(states: ProviderUsageState[], options: Form
   const labels = unique(
     states
       .flatMap(state =>
-        [state.sevenDay, state.fiveHour, ...(state.meters ?? []).map(meter => meter.window)]
+        [state.sevenDay, state.fiveHour, ...(state.meters ?? [])
+          .filter(meter => isStatusBarMeterVisible(state, meter))
+          .map(meter => meter.window)]
           .filter(isUsableWindow)
           .map(window => formatFreshnessLabel(derivePresentableQuotaWindowState(state, window, options).freshness))
       )
@@ -1078,7 +1110,9 @@ function expiredFallbackWindowLabels(state: ProviderUsageState): string[] {
   return [
     { label: '7d', window: state.sevenDay },
     { label: '5h', window: state.fiveHour },
-    ...(state.meters ?? []).map(meter => ({ label: meter.label, window: meter.window }))
+    ...(state.meters ?? [])
+      .filter(meter => isStatusBarMeterVisible(state, meter))
+      .map(meter => ({ label: meter.label, window: meter.window }))
   ]
     .filter(item => isExpiredFallbackWindow(item.window))
     .map(item => `${provider} ${item.label}`);
@@ -1115,7 +1149,15 @@ function fallbackQuotaDescription(state: ProviderUsageState): string {
   if (expiredFallbackWindowLabels(state).length > 0) {
     return 'expired cached quota';
   }
-  const sourceKinds = unique([state.fiveHour?.sourceKind, state.sevenDay?.sourceKind, ...(state.meters ?? []).map(meter => meter.window.sourceKind)].filter((value): value is QuotaSourceKind => Boolean(value)));
+  const sourceKinds = unique(
+    [
+      state.fiveHour?.sourceKind,
+      state.sevenDay?.sourceKind,
+      ...(state.meters ?? [])
+        .filter(meter => isStatusBarMeterVisible(state, meter))
+        .map(meter => meter.window.sourceKind)
+    ].filter((value): value is QuotaSourceKind => Boolean(value))
+  );
   if (sourceKinds.includes('cache')) {
     return 'cached quota';
   }
@@ -1192,7 +1234,9 @@ function normalizeSourceSummary({ label, kind }: { label: string; kind?: QuotaSo
 }
 
 function quotaSourceLabels(state: ProviderUsageState): { label: string; kind?: QuotaSourceKind }[] {
-  const windows = [state.sevenDay, state.fiveHour, ...(state.meters ?? []).map(meter => meter.window)]
+  const windows = [state.sevenDay, state.fiveHour, ...(state.meters ?? [])
+    .filter(meter => isStatusBarMeterVisible(state, meter))
+    .map(meter => meter.window)]
     .filter((w): w is LimitWindow & { sourceLabel: string } => Boolean(w?.sourceLabel));
   if (windows.length > 0) {
     const seen = new Set<string>();

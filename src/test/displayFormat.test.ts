@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { addThousandsSeparators, formatStatus, formatTokenCount, quotaIndicatorForRemaining, quotaLevelForRemaining, type FormatOptions } from '../display/format';
+import { formatAgeLabel } from '../usageTime';
 import type { ProviderUsageState } from '../types';
 
 function makeState(usedPercentSevenDay: number, usedPercentFiveHour = usedPercentSevenDay): ProviderUsageState[] {
@@ -20,6 +21,24 @@ function baseOptions(): FormatOptions {
     displayMode: 'compact',
     statusMode: 'remaining'
   };
+}
+
+function claudeStateWithExtraUsage(extraUsedPercent: number): ProviderUsageState[] {
+  const reset = Math.floor(Date.now() / 1000) + 86_400;
+  return [{
+    provider: 'claude',
+    source: 'extra usage fixture',
+    stale: false,
+    lastUpdatedEpochMs: Date.now(),
+    sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+    fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+    meters: [{
+      id: 'extra_usage',
+      label: 'Extra usage',
+      scope: 'model',
+      window: { usedPercentage: extraUsedPercent, resetsAtEpochSeconds: reset }
+    }]
+  }];
 }
 
 describe('display formatting', () => {
@@ -235,5 +254,145 @@ describe('display formatting', () => {
     assert.equal(formatStatus(makeState(60), opts).severity, 'low');
     assert.equal(formatStatus(makeState(80), opts).severity, 'warning');
     assert.equal(formatStatus(makeState(95), opts).severity, 'critical');
+  });
+
+  it('omits Claude extra usage at exactly 0% from standard status bar text', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(0), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.text, /65%/);
+    assert.match(status.text, /80%/);
+    assert.doesNotMatch(status.text, /100%/);
+  });
+
+  it('omits Claude extra usage at exactly 0% from compact status bar text', () => {
+    const text = formatStatus(claudeStateWithExtraUsage(0), baseOptions()).text;
+    assert.match(text, /65%/);
+    assert.doesNotMatch(text, /100%/);
+  });
+
+  it('omits Claude extra usage at exactly 0% from the provider status tooltip', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(0), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.doesNotMatch(status.providers[0].tooltip, /\| Extra usage \|/);
+    assert.doesNotMatch(status.providers[0].tooltip, /\*\*100%\*\*/);
+  });
+
+  it('omits Claude extra usage at exactly 0% from the combined status tooltip', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(0), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.doesNotMatch(status.tooltip, /\| Claude \| Extra usage \|/);
+    assert.doesNotMatch(status.tooltip, /\*\*100%\*\*/);
+  });
+
+  it('excludes the hidden zero Claude extra usage meter from tooltip freshness', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const older = Date.now() - 10 * 60 * 1000;
+    const state: ProviderUsageState[] = [{
+      provider: 'claude',
+      source: 'freshness fixture',
+      stale: false,
+      lastUpdatedEpochMs: older,
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset, sourceUpdatedEpochMs: older },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset, sourceUpdatedEpochMs: older },
+      meters: [{
+        id: 'extra_usage',
+        label: 'Extra usage',
+        scope: 'model',
+        window: { usedPercentage: 0, resetsAtEpochSeconds: reset, sourceUpdatedEpochMs: Date.now() }
+      }]
+    }];
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.ok(status.providers[0].tooltip.includes(`Updated ${formatAgeLabel(older)} ago`));
+    assert.doesNotMatch(status.providers[0].tooltip, /Updated (under 1m|just now)/);
+  });
+
+  it('recognizes the Claude extra usage meter by normalized exact label alone', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const state: ProviderUsageState[] = [{
+      provider: 'claude',
+      source: 'extra usage label fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'some-other-meter',
+        label: 'EXTRA  USAGE',
+        scope: 'model',
+        window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
+      }]
+    }];
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.doesNotMatch(status.text, /100%/);
+    assert.doesNotMatch(status.providers[0].tooltip, /\| EXTRA\s+USAGE \|/);
+  });
+
+  it('keeps Claude extra usage visible when nonzero', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(5), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.text, /95%/);
+    assert.match(status.providers[0].tooltip, /\| Extra usage \|/);
+    assert.match(status.tooltip, /\| Claude \| Extra usage \|/);
+  });
+
+  it('keeps an unrelated generic meter visible at zero usage', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const state: ProviderUsageState[] = [{
+      provider: 'claude',
+      source: 'generic meter fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'batch-preview',
+        label: 'Batch preview 1d',
+        scope: 'model',
+        window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
+      }]
+    }];
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.text, /100%/);
+    assert.match(status.providers[0].tooltip, /\| Batch preview 1d \|/);
+    assert.match(status.tooltip, /\| Claude \| Batch preview 1d \|/);
+  });
+
+  it('does not suppress the Claude Opus generic meter at zero', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const state: ProviderUsageState[] = [{
+      provider: 'claude',
+      source: 'opus meter fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'claude-seven-day-opus',
+        label: 'opus 7d',
+        scope: 'modelFamily',
+        window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
+      }]
+    }];
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.text, /100%/);
+    assert.match(status.providers[0].tooltip, /\| opus 7d \|/);
+  });
+
+  it('does not suppress a Codex meter with the same extra usage id or label at zero', () => {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    const state: ProviderUsageState[] = [{
+      provider: 'codex',
+      source: 'codex extra usage fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'extra_usage',
+        label: 'Extra usage',
+        scope: 'model',
+        window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
+      }]
+    }];
+    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.text, /100%/);
+    assert.match(status.providers[0].tooltip, /\| Extra usage \|/);
+    assert.match(status.tooltip, /\| Codex \| Extra usage \|/);
   });
 });
