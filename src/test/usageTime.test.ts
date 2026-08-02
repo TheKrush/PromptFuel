@@ -1,5 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+
+const FIXED_NOW_MS = 2_000_000_000_000;
+
+function countdownFromNow(diffMs: number, expiredLabel?: string): string {
+  const epochSeconds = (FIXED_NOW_MS + diffMs) / 1000;
+  return expiredLabel === undefined
+    ? formatCountdown(epochSeconds)
+    : formatCountdown(epochSeconds, expiredLabel);
+}
 import {
   formatCountdown,
   formatRelativeTime,
@@ -25,22 +34,33 @@ describe('formatCountdown', () => {
     assert.equal(formatCountdown(1, 'now'), 'now');
   });
 
-  it('returns minutes for < 1 hour', () => {
-    const future = (Date.now() + 5 * 60 * 1000) / 1000;
-    const result = formatCountdown(future);
-    assert.match(result, /^\d+m$/);
+  it('returns minutes only under one hour', (t) => {
+    t.mock.method(Date, 'now', () => FIXED_NOW_MS);
+    assert.equal(countdownFromNow(5 * 60 * 1000), '5m');
+    assert.equal(countdownFromNow(59 * 60 * 1000), '59m');
   });
 
-  it('returns hours for < 1 day', () => {
-    const future = (Date.now() + 3 * 3600 * 1000) / 1000;
-    const result = formatCountdown(future);
-    assert.match(result, /^\d+h$/);
+  it('formats hours with zero-padded minutes', (t) => {
+    t.mock.method(Date, 'now', () => FIXED_NOW_MS);
+    assert.equal(countdownFromNow(1 * 3600 * 1000), '1h00m');
+    assert.equal(countdownFromNow((1 * 3600 + 5 * 60) * 1000), '1h05m');
+    assert.equal(countdownFromNow((1 * 3600 + 55 * 60) * 1000), '1h55m');
+    assert.equal(countdownFromNow((23 * 3600 + 59 * 60) * 1000), '23h59m');
   });
 
-  it('returns days for >= 1 day', () => {
-    const future = (Date.now() + 2 * 86400 * 1000) / 1000;
-    const result = formatCountdown(future);
-    assert.match(result, /^\d+d$/);
+  it('formats days with remaining hours and no minutes', (t) => {
+    t.mock.method(Date, 'now', () => FIXED_NOW_MS);
+    assert.equal(countdownFromNow(1 * 86400 * 1000), '1d0h');
+    assert.equal(countdownFromNow((1 * 86400 + 5 * 3600) * 1000), '1d5h');
+    assert.equal(countdownFromNow((1 * 86400 + 23 * 3600) * 1000), '1d23h');
+    assert.equal(countdownFromNow((2 * 86400 + 5 * 3600) * 1000), '2d5h');
+  });
+
+  it('rounds a remaining partial minute upward', (t) => {
+    t.mock.method(Date, 'now', () => FIXED_NOW_MS);
+    assert.equal(countdownFromNow(4 * 60 * 1000 + 30 * 1000), '5m');
+    assert.equal(countdownFromNow((1 * 3600 + 5 * 60) * 1000 + 30 * 1000), '1h06m');
+    assert.equal(countdownFromNow((1 * 86400 + 4 * 3600 + 59 * 60) * 1000 + 30 * 1000), '1d5h');
   });
 });
 

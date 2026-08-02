@@ -20,8 +20,8 @@ export function formatCountdown(epochSeconds: number | undefined, expiredLabel =
   if (!Number.isFinite(diffMs)) return '?';
   if (diffMs <= 0) return expiredLabel;
   const { days, hours, minutes } = computeCountdownParts(diffMs);
-  if (days > 0) return `${days}d`;
-  if (hours > 0) return `${hours}h`;
+  if (days > 0) return `${days}d${hours}h`;
+  if (hours > 0) return `${hours}h${minutes.toString().padStart(2, '0')}m`;
   return `${minutes}m`;
 }
 

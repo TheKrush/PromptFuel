@@ -167,8 +167,8 @@ function assertCompactRemoteTooltip(markdown, label) {
 {
   const future4d = Math.floor((Date.now() + (4 * 24 + 6) * 60 * 60 * 1000) / 1000);
   const future3h = Math.floor((Date.now() + (3 * 60 + 3) * 60 * 1000) / 1000);
-  assert.match(formatCountdown(future4d), /^\d+d$/);
-  assert.match(formatCountdown(future3h), /^\d+h$/);
+  assert.match(formatCountdown(future4d), /^\d+d\d+h$/);
+  assert.match(formatCountdown(future3h), /^\d+h\d{2}m$/);
   assert.equal(formatCountdown(undefined), '?');
   assert.equal(formatCountdown(1), '?');
   console.log('formatCountdown: PASS');
