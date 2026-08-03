@@ -23,6 +23,7 @@ import {
 import { buildClaudeHistoryChart, buildCodexHistoryChart, buildCombinedHistoryChart } from './dashboard/historyChart';
 import { buildClaudeModelDistribution, buildCodexModelDistribution } from './dashboard/modelDistribution';
 import { annotateSourceConfidence } from './dashboard/sourceConfidence';
+import { formatHistoryProgressNote, type ProviderHistoryProgress } from '../providers/progressiveHistory';
 
 export interface UsageDashboardTab {
   key: string;
@@ -39,6 +40,8 @@ export interface UsageDashboardModel {
   tabs: UsageDashboardTab[];
   selectedTab: string;
   weekStartsOn: number;  // 0=Sun..6=Sat, display ordering only
+  historyProgress?: ProviderHistoryProgress[];
+  historyProgressNote?: string;
 }
 
 export interface GroupedRemoteProvider {
@@ -300,6 +303,7 @@ export interface BuildUsageDashboardModelOptions {
   normalizedSources?: Record<string, SourceConfigEntry>;
   scopedToProvider?: ProviderName;
   weekStartsOn?: number;  // 0=Sun..6=Sat, display ordering only
+  historyProgress?: ProviderHistoryProgress[];
 }
 
 export function buildUsageDashboardModel(options: BuildUsageDashboardModelOptions): UsageDashboardModel {
@@ -314,7 +318,8 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     aliasMap,
     normalizedSources,
     scopedToProvider,
-    weekStartsOn
+    weekStartsOn,
+    historyProgress
   } = options;
   const ep = enabledProviders ? new Set(enabledProviders) : new Set(states.map(s => s.provider));
   const hasRemoteClaude = Boolean(
@@ -372,7 +377,9 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     ...(filteredRemoteGroups && filteredRemoteGroups.length > 0 ? { remoteProviders: filteredRemoteGroups } : {}),
     tabs,
     selectedTab: scopedToProvider ?? 'overview',
-    weekStartsOn: weekStartsOn ?? 0
+    weekStartsOn: weekStartsOn ?? 0,
+    ...(historyProgress && historyProgress.length > 0 ? { historyProgress } : {}),
+    ...(historyProgress && historyProgress.length > 0 ? { historyProgressNote: formatHistoryProgressNote(historyProgress) } : {})
   };
 
   return annotateSourceConfidence(model);

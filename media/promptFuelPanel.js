@@ -2232,6 +2232,7 @@
     setUsageLoading(false);
 
     lastUsageDashboardModel = model;
+    renderHistoryProgressNote(model);
 
     if (model && model.tabs && !model.tabs.some(function(t) { return t.key === currentUsageProviderTab; })) {
       currentUsageProviderTab = 'overview';
@@ -2248,6 +2249,19 @@
     }
 
     renderUsageDashboardSections(model);
+  }
+
+  function renderHistoryProgressNote(model) {
+    var el = byId('usageHistoryProgressNote');
+    if (!el) { return; }
+    var note = model && model.historyProgressNote ? String(model.historyProgressNote).trim() : '';
+    if (note) {
+      el.hidden = false;
+      el.textContent = note;
+    } else {
+      el.hidden = true;
+      el.textContent = '';
+    }
   }
 
   function renderGlanceList(providers) {

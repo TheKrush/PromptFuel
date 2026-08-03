@@ -836,11 +836,7 @@ export async function listCodexJsonlFiles(root: string): Promise<CodexJsonlFileI
   return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export async function scanCodexFileContribution(
-  file: string,
-  startMs: number,
-  endMs: number
-): Promise<CodexFileContribution> {
+export async function scanCodexFileContribution(file: string): Promise<CodexFileContribution> {
   const contribution: CodexFileContribution = {
     days: new Map(),
     recordsRead: 0,
@@ -934,8 +930,8 @@ export async function scanCodexFileContribution(
       if (!currentTurn) { contribution.skippedCloseWithoutTurn++; continue; }
 
       const completedAtMs = resolveCompletedAt(record);
-      if (completedAtMs === 0 || completedAtMs < startMs || completedAtMs >= endMs) {
-        if (completedAtMs === 0) { contribution.skippedCompletionTimestampMissing++; }
+      if (completedAtMs === 0) {
+        contribution.skippedCompletionTimestampMissing++;
         currentTurn = null;
         continue;
       }

@@ -16,6 +16,7 @@ import {
 } from './watchers';
 import {
   clearResetRefreshTimer,
+  disposeRefreshController,
   getLatestUsageState,
   initRefreshController,
   refreshNow
@@ -53,7 +54,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       combinedStatusItem,
       text,
       tooltip
-    )
+    ),
+    onHistoryFullyLoaded: () => {
+      // A plain info message with no action buttons; VS Code auto-dismisses it
+      // into the bell icon after a few seconds, so this never requires interaction.
+      void vscode.window.showInformationMessage('PromptFuel: full usage history loaded.');
+    }
   });
 
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.refresh', () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true })));
@@ -74,7 +80,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         remoteUsage: state.remoteUsage,
         aliasMap: cfg.snapshot.remoteMachineLabels,
         normalizedSources: cfg.normalizedSources,
-        weekStartsOn: cfg.weekStartsOn
+        weekStartsOn: cfg.weekStartsOn,
+        historyProgress: state.historyProgress
       });
     }
   });
@@ -104,6 +111,7 @@ export function deactivate(): void {
   cancelDebouncedRefresh();
   clearResetRefreshTimer();
   disposeWatchers();
+  disposeRefreshController();
   disposePromptFuelLogger();
 }
 

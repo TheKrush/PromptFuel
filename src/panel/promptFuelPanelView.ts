@@ -50,6 +50,8 @@ export function buildPromptFuelPanelHtml(cssUri: string, scriptUri: string, cspS
     </div>
 
     <div id="usageRefreshStatus" class="usage-status">Waiting for usage refresh...</div>
+
+    <div id="usageHistoryProgressNote" class="usage-history-progress-note" aria-live="polite" hidden></div>
   </div>
 </section>
 

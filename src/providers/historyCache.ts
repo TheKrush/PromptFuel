@@ -103,17 +103,18 @@ function mergeClaudeContributions(
   }>();
 
   const globalModels = new Map<string, ClaudeHistoryModelUsage>();
+  const rangeStartKey = formatLocalDateKey(new Date(range.startMs));
+  const rangeEndKey = formatLocalDateKey(new Date(range.endMs - 1));
   let totalRecordsRead = 0;
-  let totalRecordsMatched = 0;
   let filesInspected = 0;
 
   for (const [filePath, entry] of cache.entries) {
     if (!relevantPaths.has(filePath)) { continue; }
     filesInspected++;
     totalRecordsRead += entry.contribution.recordsRead;
-    totalRecordsMatched += entry.contribution.recordsMatched;
 
     for (const [dateKey, dayContrib] of entry.contribution.days) {
+      if (dateKey < rangeStartKey || dateKey > rangeEndKey) { continue; }
       let mergedDay = mergedDays.get(dateKey);
       if (!mergedDay) {
         mergedDay = { assistantMessages: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, modelBreakdown: new Map() };
@@ -187,6 +188,8 @@ function mergeClaudeContributions(
       };
     });
 
+  const totalRecordsMatched = days.reduce((sum, day) => sum + day.recordsMatched, 0);
+
   const modelUsage = Array.from(globalModels.values()).sort((a, b) => b.totalTokens - a.totalTokens);
 
   let assistantMessages = 0, inputTokens = 0, outputTokens = 0, cacheCreationInputTokens = 0, cacheReadInputTokens = 0, totalTokens = 0;
@@ -238,11 +241,11 @@ export async function readClaudeHistoryIncremental(
   const dateKey = getLocalDateKey(targetDate);
   const range = getRecentLocalDayRange(days, targetDate);
 
-  if (cache.dirPath !== dirPath || cache.dateKey !== dateKey) {
+  if (cache.dirPath !== dirPath) {
     cache.entries.clear();
     cache.dirPath = dirPath;
-    cache.dateKey = dateKey;
   }
+  cache.dateKey = dateKey;
 
   let files: ClaudeJsonlFileInfo[];
   try {
@@ -256,6 +259,15 @@ export async function readClaudeHistoryIncremental(
     };
   }
 
+  // Prune cache entries for files no longer present on disk before the
+  // no-files early return below, so a directory that drops to zero JSONL
+  // files (all sessions deleted) still clears stale contributions instead of
+  // leaving them cached indefinitely.
+  const currentPaths = new Set(files.map(f => f.file));
+  for (const cachedPath of cache.entries.keys()) {
+    if (!currentPaths.has(cachedPath)) { cache.entries.delete(cachedPath); }
+  }
+
   if (files.length === 0) {
     return {
       available: false, rangeLabel: range.rangeLabel, totalDays: range.totalDays, activeDays: 0, days: [],
@@ -263,11 +275,6 @@ export async function readClaudeHistoryIncremental(
       totalTokens: 0, modelUsage: [], filesFound: 0, filesInspected: 0, recordsRead: 0, recordsMatched: 0,
       fileReadErrors: 0, error: 'No Claude JSONL project files found.'
     };
-  }
-
-  const currentPaths = new Set(files.map(f => f.file));
-  for (const cachedPath of cache.entries.keys()) {
-    if (!currentPaths.has(cachedPath)) { cache.entries.delete(cachedPath); }
   }
 
   let fileReadErrors = 0;
@@ -281,7 +288,7 @@ export async function readClaudeHistoryIncremental(
     if (existing && existing.mtimeMs === candidate.mtimeMs && existing.size === candidate.size) { continue; }
 
     try {
-      const contribution = await scanClaudeFileContribution(candidate.file, range.startMs, range.endMs);
+      const contribution = await scanClaudeFileContribution(candidate.file);
       cache.entries.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, contribution });
     } catch {
       fileReadErrors++;
@@ -323,8 +330,9 @@ function mergeCodexContributions(
   }>();
 
   const globalModels = new Map<string, CodexCorrelatedHistoryModelUsage>();
+  const startKey = formatLocalDateKey(new Date(range.startMs));
+  const endKey = formatLocalDateKey(new Date(range.endMs - 1));
   let totalRecordsRead = 0;
-  let totalRecordsMatched = 0;
   let filesInspected = 0;
   let skippedMissingTokenData = 0, skippedMissingModel = 0, skippedMissingBaseline = 0, skippedNegativeDelta = 0;
   let skippedTaskStartedWithoutTurnId = 0, skippedTokenCountOutsideTurn = 0, skippedCloseWithoutTurn = 0, skippedCompletionTimestampMissing = 0;
@@ -333,7 +341,6 @@ function mergeCodexContributions(
     if (!relevantPaths.has(filePath)) { continue; }
     filesInspected++;
     totalRecordsRead += entry.contribution.recordsRead;
-    totalRecordsMatched += entry.contribution.recordsMatched;
     skippedMissingTokenData += entry.contribution.skippedMissingTokenData;
     skippedMissingModel += entry.contribution.skippedMissingModel;
     skippedMissingBaseline += entry.contribution.skippedMissingBaseline;
@@ -344,6 +351,7 @@ function mergeCodexContributions(
     skippedCompletionTimestampMissing += entry.contribution.skippedCompletionTimestampMissing;
 
     for (const [dateKey, dayContrib] of entry.contribution.days) {
+      if (dateKey < startKey || dateKey > endKey) { continue; }
       let mergedDay = mergedDays.get(dateKey);
       if (!mergedDay) {
         mergedDay = { correlatedTurns: 0, inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, modelBreakdown: new Map() };
@@ -388,8 +396,6 @@ function mergeCodexContributions(
   }
 
   // Build day array filling zeros for all calendar days in range
-  const startKey = formatLocalDateKey(new Date(range.startMs));
-  const endKey = formatLocalDateKey(new Date(range.endMs - 1));
   const days: CodexCorrelatedHistoryBucket[] = [];
   let activeDays = 0;
 
@@ -450,6 +456,8 @@ function mergeCodexContributions(
 
   const modelUsage = Array.from(globalModels.values()).sort((a, b) => b.totalTokens - a.totalTokens);
 
+  const totalRecordsMatched = days.reduce((sum, day) => sum + day.recordsMatched, 0);
+
   let assistantMessages = 0, inputTokens = 0, outputTokens = 0, cacheCreationInputTokens = 0, cacheReadInputTokens = 0, reasoningOutputTokens = 0, totalTokens = 0;
   for (const d of days) {
     assistantMessages += d.assistantMessages;
@@ -508,11 +516,11 @@ export async function readCodexHistoryIncremental(
   const dateKey = getLocalDateKey(targetDate);
   const range = getRecentLocalDayRange(days, targetDate);
 
-  if (cache.dirPath !== dirPath || cache.dateKey !== dateKey) {
+  if (cache.dirPath !== dirPath) {
     cache.entries.clear();
     cache.dirPath = dirPath;
-    cache.dateKey = dateKey;
   }
+  cache.dateKey = dateKey;
 
   let files: CodexJsonlFileInfo[];
   try {
@@ -529,6 +537,15 @@ export async function readCodexHistoryIncremental(
     };
   }
 
+  // Prune cache entries for files no longer present on disk before the
+  // no-files early return below, so a directory that drops to zero JSONL
+  // files (all sessions deleted) still clears stale contributions instead of
+  // leaving them cached indefinitely.
+  const currentPaths = new Set(files.map(f => f.file));
+  for (const cachedPath of cache.entries.keys()) {
+    if (!currentPaths.has(cachedPath)) { cache.entries.delete(cachedPath); }
+  }
+
   if (files.length === 0) {
     return {
       available: false, rangeLabel: range.rangeLabel, totalDays: range.totalDays, activeDays: 0, days: [],
@@ -539,11 +556,6 @@ export async function readCodexHistoryIncremental(
       skippedTaskStartedWithoutTurnId: 0, skippedTokenCountOutsideTurn: 0, skippedCloseWithoutTurn: 0, skippedCompletionTimestampMissing: 0,
       error: 'No Codex JSONL session files found.'
     };
-  }
-
-  const currentPaths = new Set(files.map(f => f.file));
-  for (const cachedPath of cache.entries.keys()) {
-    if (!currentPaths.has(cachedPath)) { cache.entries.delete(cachedPath); }
   }
 
   let fileReadErrors = 0;
@@ -557,7 +569,7 @@ export async function readCodexHistoryIncremental(
     if (existing && existing.mtimeMs === candidate.mtimeMs && existing.size === candidate.size) { continue; }
 
     try {
-      const contribution = await scanCodexFileContribution(candidate.file, range.startMs, range.endMs);
+      const contribution = await scanCodexFileContribution(candidate.file);
       cache.entries.set(candidate.file, { mtimeMs: candidate.mtimeMs, size: candidate.size, contribution });
     } catch {
       fileReadErrors++;

@@ -766,6 +766,19 @@ code{font-family:var(--vscode-editor-font-family,monospace);font-size:.9em}
   justify-content:flex-end;
   margin:-2px 0 10px
 }
+.usage-history-progress-note{
+  margin:0 0 10px;
+  padding:6px 10px;
+  border:1px solid var(--ab-keyline);
+  border-radius:4px;
+  background:var(--vscode-editorWidget-background);
+  color:var(--vscode-descriptionForeground);
+  font-size:11px;
+  line-height:1.4
+}
+.usage-history-progress-note[hidden]{
+  display:none
+}
 .usage-history-chart-meta{
   margin-top:3px;
   color:var(--vscode-descriptionForeground);

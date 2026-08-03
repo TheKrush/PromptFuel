@@ -165,6 +165,10 @@ function postUsageDashboardModel(
   }
 }
 
+export function isUsageDashboardOpen(): boolean {
+  return Boolean(panel?.webview);
+}
+
 export function postUsageDashboardRefreshIfOpen(model: UsageDashboardModel): void {
   const webview = panel?.webview;
   if (!webview) {

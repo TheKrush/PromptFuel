@@ -202,7 +202,7 @@ function main() {
     const extensionSource = fs.readFileSync(path.join(repoRoot, 'src', 'extension.ts'), 'utf8');
     const refreshControllerSource = fs.readFileSync(path.join(repoRoot, 'src', 'refreshController.ts'), 'utf8');
     assert.match(extensionSource, /refreshNow: \(\) => refreshNow\(\{[^}]*suppressPanelBroadcast: true[^}]*\}\)/, 'panel-triggered refresh suppresses shared dashboard broadcast');
-    assert.match(refreshControllerSource, /if \(!options\.suppressPanelBroadcast\) \{[\s\S]*postUsageDashboardRefreshIfOpen\(usageDashboardModel\);/, 'shared refresh broadcasts dashboard model only when not panel-owned');
+    assert.match(refreshControllerSource, /if \(!options\.suppressPanelBroadcast[^{]*\{[\s\S]*postUsageDashboardRefreshIfOpen\(usageDashboardModel\);/, 'shared refresh broadcasts dashboard model only when not panel-owned');
     assert.match(refreshControllerSource, /suppressPanelBroadcast: current\.suppressPanelBroadcast \|\| incoming\.suppressPanelBroadcast/, 'queued panel refresh keeps broadcast suppression when refresh options merge');
     assert.match(extensionSource, /getUsageDashboardModel: \(\) => \{[\s\S]*buildUsageDashboardModel\([\s\S]*enabledProviders:/, 'panel-open dashboard model uses configured provider filtering');
     assert.match(refreshControllerSource, /const effectiveProviders = cfg\.enabledProviders;/, 'refresh path derives effective providers from config');

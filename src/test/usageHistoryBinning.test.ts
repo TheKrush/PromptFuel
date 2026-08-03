@@ -101,7 +101,7 @@ describe('usage history binning', () => {
     assert.equal(views.ALL.points.length, 12);
     assert.equal(sumTokens(views.ALL.points), 250);
     assert.ok(views.ALL.points.some(point => point.label === '2026-02' && point.isEmpty));
-    assert.match(views.ALL.limitation ?? '', /12-month history window/);
+    assert.match(views.ALL.limitation ?? '', /most recent 12 months of the loaded history window/);
   });
 
   it('preserves per-model attribution across source days', () => {

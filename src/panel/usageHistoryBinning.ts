@@ -220,10 +220,10 @@ function rangeConfig(key: UsageHistoryRangeKey): RangeConfig {
         rangeLabel: 'ALL / monthly bins (12M loaded)',
         granularityLabel: 'Monthly bins',
         axisLabel: 'Monthly bins',
-        ariaLabel: 'Token trend chart, monthly bins across the loaded 12-month history window.',
+        ariaLabel: 'Token trend chart, monthly bins across the loaded history window.',
         activeUnitLabel: 'months',
         emptyReason: 'No usage records in the loaded history range.',
-        limitation: 'ALL is bounded to the loaded 12-month history window to keep the chart readable.'
+        limitation: 'ALL is bounded to the most recent 12 months of the loaded history window to keep the chart readable.'
       };
   }
 }

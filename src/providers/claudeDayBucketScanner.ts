@@ -184,12 +184,26 @@ function readClaudeHistoryUsageSample(
   startMs: number,
   endMs: number
 ): ClaudeHistoryUsageSample | undefined {
+  const sample = readClaudeUsageSample(record);
+  if (!sample) {
+    return undefined;
+  }
+  if (sample.timestampMs < startMs || sample.timestampMs >= endMs) {
+    return undefined;
+  }
+  return sample;
+}
+
+// Range-independent usage sample extraction. Scans bucket every usage record by
+// its local date key; range filtering happens at merge time so that one scan of
+// a file serves every progressive stage (1d, 7d, 30d, 365d) without re-reading.
+function readClaudeUsageSample(record: ClaudeJsonlRecord): ClaudeHistoryUsageSample | undefined {
   if (record.type !== 'assistant') {
     return undefined;
   }
 
   const timestampMs = parseTimestampMs(record.timestamp);
-  if (timestampMs === undefined || timestampMs < startMs || timestampMs >= endMs) {
+  if (timestampMs === undefined) {
     return undefined;
   }
 
@@ -485,11 +499,7 @@ export async function listClaudeJsonlFiles(root: string): Promise<ClaudeJsonlFil
   return found.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export async function scanClaudeFileContribution(
-  file: string,
-  startMs: number,
-  endMs: number
-): Promise<ClaudeFileContribution> {
+export async function scanClaudeFileContribution(file: string): Promise<ClaudeFileContribution> {
   const contribution: ClaudeFileContribution = {
     days: new Map(),
     recordsRead: 0,
@@ -512,7 +522,7 @@ export async function scanClaudeFileContribution(
       continue;
     }
 
-    const sample = readClaudeHistoryUsageSample(record, startMs, endMs);
+    const sample = readClaudeUsageSample(record);
     if (!sample) { continue; }
 
     const dateKey = formatLocalDateKey(new Date(sample.timestampMs));
