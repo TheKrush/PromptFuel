@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.15
+
+**Included in this release:**
+
+- Made startup snappier by publishing quota and reset status before the slower local history discovery and scanning work, so the status bar reflects usage right away; the Codex foreground path no longer waits for the full local session scan before showing its initial status.
+- Added progressive history loading in stages — 1 day, 7 days, 30 days, 365 days, then all available history — with the dashboard noting when only part of the history window has loaded so far. The ALL chart still shows the most recent 12 months of the loaded history window to keep it readable.
+- Persisted per-file history contributions across VS Code sessions so unchanged history files are reused instead of reparsed on every load; changed and deleted files are still detected and rescanned.
+- Made warm refreshes efficient: when valid full history is already cached, a refresh re-checks the whole window in a single pass instead of replaying the full progressive sequence, reducing unnecessary dashboard and status work and avoiding briefly showing a narrow or partial history window during an ordinary refresh.
+- Skipped building expensive dashboard models while the Usage dashboard is closed, kept the history-loading progress banner consistent and anchored to the bottom of the History section, and added a one-time notification when a genuine first history load finishes — not on every VS Code startup when a valid persisted cache already exists.
+- Made reset countdowns more precise: minutes under an hour, hours and minutes under a day, and days and hours at a day or more (for example `1h55m` or `2d5h`), while partial remaining minutes are still rounded upward.
+- Hid Claude's disabled or unused Extra usage meter from the status bar and tooltips when it is exactly 0%, while nonzero Extra usage remains visible; other meters, including Codex, are unaffected.
+- Stopped treating live Codex tracing and context-window token counters as dated correlated usage history. Codex history buckets without turn or model evidence are now rejected when creating snapshots, reading self archives, importing remote/shared history, and building combined dashboard totals, preventing false large token totals with zero turns and no model attribution, including totals combined across shared machines.
+- Ignored already-written malformed snapshot and archive data: the corrected behavior leaves it out of display and stops it from being perpetuated, and existing snapshot and archive files are not automatically rewritten or deleted. No manual data cleanup is required for normal corrected behavior once all participating machines are updated.
+
 ## 1.0.14
 
 **Included in this release:**
