@@ -1,7 +1,7 @@
 import type { ClaudeHistoryModelUsage, ClaudeHistoryUsageBucket, ClaudeUsageHistory } from '../providers/claudeDayBucketScanner';
 import type { CodexCorrelatedHistory, CodexCorrelatedHistoryBucket, CodexCorrelatedHistoryModelUsage } from '../providers/codexCorrelatedDayBucketScanner';
 import type { ValidatedSnapshot } from './readMachineSnapshots';
-import { cloneSnapshotHistoryBucket, shouldReplaceHistoryBucket } from './historyBucketMerge';
+import { cloneSnapshotHistoryBucket, codexBucketHasCorrelatedEvidence, shouldReplaceHistoryBucket } from './historyBucketMerge';
 import type { SanitizedHistorySource, SnapshotBucketModel, SnapshotHistoryBucket, SnapshotProviderName } from './types';
 import { displayTotalTokens, normalizeTokenComponents, sumTokens, type NormalizedTokenComponents } from './tokenMath';
 
@@ -89,7 +89,7 @@ function collectSelfArchiveBuckets(
     }
     for (const bucket of source.historyBuckets ?? []) {
       const cloned = cloneSnapshotHistoryBucket(bucket);
-      if (!cloned || !snapshotBucketHasData(cloned)) {
+      if (!cloned || !snapshotBucketHasData(cloned, provider)) {
         continue;
       }
       const existing = byDate.get(cloned.dateKey);
@@ -150,7 +150,10 @@ function supplementCodexHistory(
   return rebuildCodexHistory(history, Array.from(daysByDate.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey)));
 }
 
-function snapshotBucketHasData(bucket: SnapshotHistoryBucket): boolean {
+function snapshotBucketHasData(bucket: SnapshotHistoryBucket, provider: SnapshotProviderName): boolean {
+  if (provider === 'codex') {
+    return codexBucketHasCorrelatedEvidence(bucket);
+  }
   if (displayTotalTokens(bucket) > 0) {
     return true;
   }

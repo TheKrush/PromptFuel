@@ -640,8 +640,13 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   }
   if (latest.codexCorrelatedHistory?.days && latest.codexCorrelatedHistory.days.length > 0) {
     historyData.codex = {
+      // Codex history is turn-correlated; a nonzero totalTokens alone (e.g. from
+      // a live tracing/context-window gauge standing in before real history has
+      // loaded) is not valid correlated-turn evidence and must not be written
+      // into the shared snapshot as if it were. See selfArchiveSupplement.ts's
+      // matching Codex-specific validity check on the read side.
       buckets: latest.codexCorrelatedHistory.days
-        .filter(day => day.totalTokens > 0 || day.correlatedTurns > 0 || day.modelUsage.length > 0)
+        .filter(day => day.correlatedTurns > 0 || day.modelUsage.length > 0)
         .map(day => ({
           dateKey: day.dateKey,
           inputTokens: day.inputTokens,

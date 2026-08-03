@@ -224,6 +224,22 @@ describe('snapshotWriter', () => {
       assertRemovedProviderFieldsAbsent(provider);
     });
 
+    it('does not promote Codex tracing tokens into a dated historyBuckets entry (no turn/model evidence)', () => {
+      const snap = buildMachineSnapshot(
+        { enabled: true, machineLabel: 'desktop', path: '' },
+        [mockStateWithTracing({ provider: 'codex' })]
+      );
+      const buckets = snap.providerUsage?.[0]?.historyBuckets;
+      assert.ok(buckets, 'a today-only placeholder bucket is still present');
+      assert.equal(buckets.length, 1);
+      assert.match(buckets[0].dateKey, /^\d{4}-\d{2}-\d{2}$/);
+      assert.equal(buckets[0].inputTokens, undefined, 'Codex tracing must not seed a token-bearing correlated-history bucket');
+      assert.equal(buckets[0].outputTokens, undefined);
+      assert.equal(buckets[0].cacheReadTokens, undefined);
+      assert.equal(buckets[0].turns, undefined);
+      assert.equal(buckets[0].models, undefined);
+    });
+
     it('exports scanner history bucket models with component fields and no derived token fields', () => {
       const snap = buildMachineSnapshot(
         { enabled: true, machineLabel: 'desktop', path: '' },

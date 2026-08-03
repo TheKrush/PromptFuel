@@ -237,6 +237,16 @@ function buildHistoryBuckets(
   if (!state.tracing) {
     return [{ dateKey: todayKey }];
   }
+  if (state.provider === 'codex') {
+    // Codex tracing is a live context-window/cost gauge -- it carries token
+    // counts but never turn or message counts, so a bucket built from it can
+    // never satisfy Codex's turn-correlated history validity check downstream
+    // (selfArchiveSupplement.ts's snapshotBucketHasData) and must not be
+    // written into the shared snapshot as if it were correlated history.
+    // Tracing itself remains available elsewhere for live-quota diagnostics;
+    // only its promotion into a dated historyBuckets entry is excluded here.
+    return [{ dateKey: todayKey }];
+  }
   const t = state.tracing;
   const bucket: SnapshotHistoryBucket = { dateKey: todayKey };
 

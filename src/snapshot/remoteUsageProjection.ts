@@ -1,7 +1,7 @@
 import { isSupportedSchemaVersion, type SanitizedHistorySource, type SnapshotHistoryBucket, type SnapshotBucketModel } from './types';
 import { displayTotalTokens, sumTokens } from './tokenMath';
 import type { UsageHistoryModelUsage, UsageHistoryPoint } from '../panel/usageHistoryBinning';
-import { shouldReplaceHistoryBucket } from './historyBucketMerge';
+import { codexBucketHasCorrelatedEvidence, shouldReplaceHistoryBucket } from './historyBucketMerge';
 
 export interface RemoteSourceTodaySummary {
   inputTokens: number;
@@ -191,6 +191,13 @@ function collectSelectedBuckets(
     }
 
     for (const bucket of source.historyBuckets ?? []) {
+      // Defense in depth alongside the write-side and self-archive filters: a
+      // token-only Codex bucket with no turn/model evidence must not display
+      // as correlated activity on the remote/combined dashboard either,
+      // regardless of how it ended up in a source snapshot.
+      if (isCodex && !codexBucketHasCorrelatedEvidence(bucket)) {
+        continue;
+      }
       const key = `${source.machineLabel}\0${source.provider}\0${bucket.dateKey}`;
       const existing = byKey.get(key);
       if (!existing || shouldReplaceHistoryBucket(existing.bucket, bucket)) {

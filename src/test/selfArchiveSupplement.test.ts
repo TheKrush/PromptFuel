@@ -270,6 +270,30 @@ describe('self archive history supplement', () => {
     assert.equal(projection.claudeHistoryPoints.length, 0);
   });
 
+  it('excludes a token-only remote Codex bucket from the combined/remote dashboard projection', () => {
+    // dateKey deliberately does not depend on "today": buildRemoteUsageProjection
+    // derives todayKey from the real system clock with no injection point, so a
+    // fixed historical date keeps this test's outcome independent of when it runs.
+    const malformedRemote: SnapshotHistoryBucket = {
+      dateKey: '2026-08-02',
+      inputTokens: 125_855_477,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      turns: 0,
+      models: []
+    };
+    const sources = [
+      source('WATCHER', 'codex', [malformedRemote]),
+      source('WATCHER', 'codex', [bucket('2026-08-01', 700, 'codex')])
+    ];
+
+    const projection = buildRemoteUsageProjection(sources, new Set(['WATCHER/codex']));
+
+    assert.equal(projection.codexHistoryPoints.length, 1, 'the malformed bucket must not contribute a history point');
+    assert.equal(projection.codexHistoryPoints[0].dateKey, '2026-08-01');
+  });
+
   it('filters self source IDs and snapshots out of visible remote surfaces', () => {
     assert.deepEqual(
       filterSelfSourceIds(['PHOENIX/claude', 'WATCHER/codex', 'PHOENIX/codex'], 'PHOENIX'),
@@ -289,6 +313,75 @@ describe('self archive history supplement', () => {
     assert.deepEqual(filterSelfSourceIds(sourceIds, undefined), sourceIds);
     assert.deepEqual(filterSelfSnapshots(snapshots, '').map(item => item.snapshot.machineLabel), ['PHOENIX', 'WATCHER']);
     assert.deepEqual(filterSelfSnapshots(snapshots, undefined).map(item => item.snapshot.machineLabel), ['PHOENIX', 'WATCHER']);
+  });
+
+  it('rejects a token-only Codex archive bucket with zero turns and no models (tracing-seeded corruption)', () => {
+    const malformed: SnapshotHistoryBucket = {
+      dateKey: '2026-08-02',
+      inputTokens: 15_675_355,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      turns: 0,
+      models: []
+    };
+    const result = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [source('PHOENIX', 'codex', [malformed])],
+      codexCorrelatedHistory: codexHistory([])
+    });
+
+    assert.equal(result.codexCorrelatedHistory?.days.length, 0, 'a token-only, turn-less Codex bucket must not be supplemented');
+    assert.equal(result.codexCorrelatedHistory?.totalTokens, 0);
+  });
+
+  it('preserves a valid turn-correlated Codex archive bucket', () => {
+    const result = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [source('PHOENIX', 'codex', [bucket('2026-08-02', 5000, 'codex')])],
+      codexCorrelatedHistory: codexHistory([])
+    });
+
+    assert.equal(result.codexCorrelatedHistory?.days.length, 1);
+    assert.equal(result.codexCorrelatedHistory?.days[0].totalTokens, 5000);
+    assert.equal(result.codexCorrelatedHistory?.days[0].correlatedTurns, 1);
+  });
+
+  it('accepts a Codex archive bucket with only model-level evidence (no top-level turns)', () => {
+    const withModelOnly: SnapshotHistoryBucket = {
+      dateKey: '2026-08-02',
+      inputTokens: 500,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      models: [{ model: 'gpt-5.5', inputTokens: 500, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, turns: 1 }]
+    };
+    const result = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [source('PHOENIX', 'codex', [withModelOnly])],
+      codexCorrelatedHistory: codexHistory([])
+    });
+
+    assert.equal(result.codexCorrelatedHistory?.days.length, 1, 'model-level evidence alone is sufficient without top-level turns');
+  });
+
+  it('leaves Claude token-only bucket acceptance unchanged (Claude has no turn-correlation concept)', () => {
+    const claudeTokenOnly: SnapshotHistoryBucket = {
+      dateKey: '2026-08-02',
+      inputTokens: 4000,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0
+      // no messages, no models -- previously and still sufficient for Claude via displayTotalTokens > 0.
+    };
+    const result = supplementLocalHistoryWithSelfArchives({
+      machineLabel: 'PHOENIX',
+      archiveSources: [source('PHOENIX', 'claude', [claudeTokenOnly])],
+      claudeUsageHistory: claudeHistory([])
+    });
+
+    assert.equal(result.claudeUsageHistory?.days.length, 1, 'Claude behavior must be unchanged by the Codex-specific tightening');
+    assert.equal(result.claudeUsageHistory?.days[0].totalTokens, 4000);
   });
 
   it('ignores empty Codex marker buckets', () => {

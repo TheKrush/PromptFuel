@@ -1,4 +1,25 @@
 import type { SnapshotBucketModel, SnapshotHistoryBucket } from './types';
+import { displayTotalTokens } from './tokenMath';
+
+/**
+ * Codex history is turn-correlated; a token total alone is not valid
+ * correlated-turn evidence. A token-only bucket (turns absent or zero, no
+ * models) can be seeded by a live tracing/context-window gauge standing in
+ * for a day before real correlated history has loaded (see
+ * writeMachineSnapshot.ts's buildHistoryBuckets tracing fallback), which
+ * carries token counts but never turns or models. Shared by every read path
+ * that ingests or displays Codex history buckets -- self-archive
+ * supplementation and remote/combined-dashboard aggregation -- so a
+ * malformed bucket cannot re-enter local history or display as if it were
+ * correlated activity through either path.
+ */
+export function codexBucketHasCorrelatedEvidence(bucket: SnapshotHistoryBucket): boolean {
+  const turns = bucket.turns ?? bucket.requests ?? 0;
+  if (turns > 0) {
+    return true;
+  }
+  return (bucket.models ?? []).some(model => displayTotalTokens(model) > 0);
+}
 
 const BUCKET_NUMERIC_FIELDS = [
   'inputTokens',
