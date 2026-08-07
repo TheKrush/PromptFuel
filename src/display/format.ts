@@ -743,7 +743,12 @@ function isStatusBarMeterVisible(state: ProviderUsageState, meter: UsageMeter): 
   const id = normalizeStatusMeterId(meter.id);
   const label = normalizeStatusMeterLabel(meter.label);
   const isClaudeExtraUsage = id === 'extra-usage' || label === 'extra usage';
-  return !isClaudeExtraUsage || (meter.window.usedPercentage ?? 0) > 0;
+  if (!isClaudeExtraUsage) {
+    return true;
+  }
+  const used = meter.window.usedPercentage ?? 0;
+  const remaining = 100 - used;
+  return used > 0 && remaining > 0;
 }
 
 function normalizeStatusMeterId(value: string): string {

@@ -331,6 +331,18 @@ describe('display formatting', () => {
     assert.match(status.tooltip, /\| Claude \| Extra usage \|/);
   });
 
+  it('hides Claude extra usage when fully exhausted (0% remaining)', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(100), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.doesNotMatch(status.providers[0].tooltip, /\| Extra usage \|/);
+    assert.doesNotMatch(status.tooltip, /\| Claude \| Extra usage \|/);
+  });
+
+  it('keeps Claude extra usage visible with a small positive remainder', () => {
+    const status = formatStatus(claudeStateWithExtraUsage(99.9), { displayMode: 'standard', statusMode: 'remaining' });
+    assert.match(status.providers[0].tooltip, /\| Extra usage \|/);
+    assert.match(status.tooltip, /\| Claude \| Extra usage \|/);
+  });
+
   it('keeps an unrelated generic meter visible at zero usage', () => {
     const reset = Math.floor(Date.now() / 1000) + 86_400;
     const state: ProviderUsageState[] = [{
