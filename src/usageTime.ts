@@ -14,25 +14,34 @@ function computeCountdownParts(diffMs: number): { days: number; hours: number; m
   };
 }
 
+function formatCompactDuration(diffMs: number): string {
+  if (diffMs < 60000) return '<1m';
+  const { days, hours, minutes } = computeCountdownParts(diffMs);
+  if (days > 0) {
+    if (hours > 0) return `${days}d${hours}h`;
+    if (minutes > 0) return `${days}d${minutes.toString().padStart(2, '0')}m`;
+    return `${days}d`;
+  }
+  if (hours > 0) {
+    if (minutes > 0) return `${hours}h${minutes.toString().padStart(2, '0')}m`;
+    return `${hours}h`;
+  }
+  return `${minutes}m`;
+}
+
 export function formatCountdown(epochSeconds: number | undefined, expiredLabel = '?'): string {
   if (!epochSeconds) return '?';
   const diffMs = epochSeconds * 1000 - Date.now();
   if (!Number.isFinite(diffMs)) return '?';
   if (diffMs <= 0) return expiredLabel;
-  const { days, hours, minutes } = computeCountdownParts(diffMs);
-  if (days > 0) return `${days}d${hours}h`;
-  if (hours > 0) return `${hours}h${minutes.toString().padStart(2, '0')}m`;
-  return `${minutes}m`;
+  return formatCompactDuration(diffMs);
 }
 
 export function formatRelativeTime(epochSeconds: number | undefined): string | undefined {
   if (typeof epochSeconds !== 'number' || !Number.isFinite(epochSeconds) || epochSeconds <= 0) return undefined;
   const diffMs = epochSeconds * 1000 - Date.now();
   if (!Number.isFinite(diffMs) || diffMs <= 0) return 'now';
-  const { days, hours, minutes } = computeCountdownParts(diffMs);
-  if (days > 0) return `in ${days}d${hours}h`;
-  if (hours > 0) return `in ${hours}h${minutes.toString().padStart(2, '0')}m`;
-  return `in ${minutes}m`;
+  return `in ${formatCompactDuration(diffMs)}`;
 }
 
 export function formatAgeLabel(epochMs: number | undefined, compact?: boolean): string {
