@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.16
+
+**Included in this release:**
+
+* Improved reset countdown formatting to omit empty time units and show the next meaningful unit instead — for example, `5d27m` instead of `5d0h`; exact-day and exact-hour values stay compact, and positive durations under one minute display as `<1m`.
+* Hid Claude's Extra usage meter from the status bar and tooltips when it is fully exhausted, while preserving the existing behavior that also hides the meter when Extra usage has not been used yet. Extra usage remains visible while it has been partially consumed and still has quota remaining; other meters, including Codex, are unaffected.
+
 ## 1.0.15
 
 **Included in this release:**
