@@ -168,6 +168,7 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | `promptFuel.sources` | Complete source configuration. A non-empty object replaces the default local source set; include `claude` and `codex` entries to keep them enabled. An empty object uses the defaults. Each entry supports `enabled`, `label`, `shortLabel`, and `statusBar` fields. | `{ "claude": { "enabled": true, "label": "Claude", "shortLabel": "C", "statusBar": true }, "codex": { "enabled": true, "label": "Codex", "shortLabel": "X", "statusBar": true } }` |
 | `promptFuel.refreshIntervalMinutes` | Minimum interval in minutes for periodic refresh (local scanning and authenticated quota). | `5` |
 | `promptFuel.statusBarDensity` | Status bar label density: `standard` uses full source labels and reset countdowns; `compact` uses source `shortLabel` values and compact quota windows. | `"standard"` |
+| `promptFuel.weekStartsOn` | First day of week for the historical "By Day of Week" breakdown. Affects display order only; totals and percentages are unaffected. | `"sunday"` |
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |
