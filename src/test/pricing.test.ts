@@ -112,11 +112,32 @@ describe('pricing estimates', () => {
     assert.equal(estimate.isFallback, false);
   });
 
-  it('uses explicit GPT-5.6 OpenAI cache-write pricing', () => {
-    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-sol']);
+  it('uses explicit GPT-5.6 OpenAI cache-write pricing (pre-promotion)', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-sol'], '2026-08-20');
     assertApprox(estimate.costUsd, 0.0915);
     assert.equal(estimate.matchedModel, 'gpt-5.6-sol');
     assert.equal(estimate.isFallback, false);
+  });
+
+  it('uses promotional GPT-5.6 Sol pricing on and after 2026-08-21', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-sol'], '2026-08-21');
+    assertApprox(estimate.costUsd, 0.0652);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-sol');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('selects GPT-5.6 Sol promotional rates via findConfiguredModelPricing', () => {
+    const before = findConfiguredModelPricing('codex', 'gpt-5.6-sol', '2026-08-20');
+    assert.ok(before);
+    assert.equal(before.inputPerMillion, 5);
+    assert.equal(before.outputPerMillion, 30);
+
+    const after = findConfiguredModelPricing('codex', 'gpt-5.6-sol', '2026-08-21');
+    assert.ok(after);
+    assert.equal(after.inputPerMillion, 4);
+    assert.equal(after.outputPerMillion, 20);
+    assert.equal(after.cacheWritePerMillion, 5);
+    assert.equal(after.cacheReadPerMillion, 0.40);
   });
 
   it('prices an all-cache-read turn with zero uncached input tokens', () => {

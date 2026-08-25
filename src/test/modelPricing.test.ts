@@ -17,7 +17,8 @@ function sampleCsv(): string {
     'claude,claude-sonnet-5,2,10,2.50,4,0.20,USD,2026-06-30,Claude Sonnet 5 intro',
     'claude,claude-sonnet-5,3,15,3.75,6,0.30,USD,2026-09-01,Claude Sonnet 5 standard',
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
-    'codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,GPT-5.6 Sol',
+    'codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,GPT-5.6 Sol pre-promotion',
+    'codex,gpt-5.6-sol,4,20,5,5,0.40,USD,2026-08-21,GPT-5.6 Sol promotional',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
     'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
     'claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,Claude Opus 4.8'
@@ -27,7 +28,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 9);
+    assert.equal(rows.length, 10);
   });
 
   it('parses numeric values correctly', () => {
@@ -205,12 +206,38 @@ describe('findModelPricingInTable', () => {
     assert.equal(hyphenated.matchedKey, 'gpt-5.4');
   });
 
-  it('finds GPT-5.6 Codex rows by exact model id', () => {
+  it('finds GPT-5.6 Codex rows by exact model id (promotional pricing as of today)', () => {
     const result = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol');
     assert.ok(result);
     assert.equal(result.matchedKey, 'gpt-5.6-sol');
+    assert.equal(result.row.inputPer1m, 4);
+    assert.equal(result.row.outputPer1m, 20);
+    assert.equal(result.row.cacheWrite5mPer1m, 5);
+    assert.equal(result.row.cacheReadPer1m, 0.40);
+  });
+
+  it('selects pre-promotion GPT-5.6 Sol pricing before 2026-08-21', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol', '2026-08-20');
+    assert.ok(result);
+    assert.equal(result.matchedKey, 'gpt-5.6-sol');
+    assert.equal(result.row.inputPer1m, 5);
+    assert.equal(result.row.outputPer1m, 30);
     assert.equal(result.row.cacheWrite5mPer1m, 6.25);
     assert.equal(result.row.cacheReadPer1m, 0.50);
+  });
+
+  it('selects promotional GPT-5.6 Sol pricing on and after 2026-08-21', () => {
+    const onDate = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol', '2026-08-21');
+    assert.ok(onDate);
+    assert.equal(onDate.row.inputPer1m, 4);
+    assert.equal(onDate.row.outputPer1m, 20);
+    assert.equal(onDate.row.cacheWrite5mPer1m, 5);
+    assert.equal(onDate.row.cacheReadPer1m, 0.40);
+
+    const later = findModelPricingInTable(table, 'codex', 'gpt-5.6-sol', '2026-11-21');
+    assert.ok(later);
+    assert.equal(later.row.inputPer1m, 4);
+    assert.equal(later.row.outputPer1m, 20);
   });
 
   it('rejects prefix collisions that are not approved version suffixes', () => {

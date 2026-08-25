@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.17
+
+**Included in this release:**
+
+* Added effective-dated GPT-5.6 Sol promotional pricing ($4.00/1M input, $0.40/1M cached input, $20.00/1M output) effective 2026-08-21, using the existing scheduled-pricing mechanism. The pre-promotion row ($5.00/1M input, $0.50/1M cached input, $30.00/1M output, effective 2026-07-09) is preserved as historical pricing. The promotion is stated to remain available at least through 2026-11-21; no speculative reversion row was added. Pricing remains short-context only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing schema.
+
 ## 1.0.16
 
 **Included in this release:**
