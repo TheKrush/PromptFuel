@@ -2,7 +2,7 @@
   "name": "prompt-fuel",
   "displayName": "PromptFuel",
   "description": "Track AI coding assistant usage history and live quota status from the VS Code status bar.",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "publisher": "thekrush",
   "author": "TheKrush",
   "license": "MIT",
@@ -177,7 +177,9 @@
         },
         "promptFuel.visibleUsageMeters": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Generic provider usage meters to display, listed by normalized meter ID (for example \"meter-id\"). Empty hides all generic meters. Use \"*\" to show every generic meter currently reported; \"*\" does not affect Extra usage, which is controlled by promptFuel.showExtraUsage. Run \"PromptFuel: Show Available Usage Meters\" to list the IDs currently reported. Displaying a meter does not mean PromptFuel understands what that provider field measures."
         }
