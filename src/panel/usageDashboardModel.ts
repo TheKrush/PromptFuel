@@ -13,6 +13,7 @@ import { sumCostIfComplete } from '../display/apiEquivalentCost';
 import type { RemoteUsageProjection } from '../snapshot/remoteUsageProjection';
 import { formatDetailedAgeLabel, formatEpochToIso, formatEpochSecondsToIso, formatRelativeTime, isStale } from '../usageTime';
 import { quotaLevelForRemaining } from '../display/format';
+import { selectVisibleMeters, type MeterVisibilityPolicy } from '../display/meterVisibility';
 
 import {
   formatCount, formatUsd, formatPercent, formatPercentSuffix, clamp,
@@ -304,6 +305,7 @@ export interface BuildUsageDashboardModelOptions {
   scopedToProvider?: ProviderName;
   weekStartsOn?: number;  // 0=Sun..6=Sat, display ordering only
   historyProgress?: ProviderHistoryProgress[];
+  meterVisibility?: MeterVisibilityPolicy;
 }
 
 export function buildUsageDashboardModel(options: BuildUsageDashboardModelOptions): UsageDashboardModel {
@@ -319,7 +321,8 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
     normalizedSources,
     scopedToProvider,
     weekStartsOn,
-    historyProgress
+    historyProgress,
+    meterVisibility
   } = options;
   const ep = enabledProviders ? new Set(enabledProviders) : new Set(states.map(s => s.provider));
   const hasRemoteClaude = Boolean(
@@ -336,7 +339,7 @@ export function buildUsageDashboardModel(options: BuildUsageDashboardModelOption
   const codexEnabled = ep.has('codex') || hasRemoteCodex;
 
   const localStates = enabledProviders ? states.filter(s => ep.has(s.provider)) : states;
-  const localProviders = localStates.map(s => buildProvider(s, normalizedSources));
+  const localProviders = localStates.map(s => buildProvider(s, normalizedSources, meterVisibility));
   const allProviders = selectedRemoteProviders && selectedRemoteProviders.length > 0
     ? [...localProviders, ...selectedRemoteProviders]
     : localProviders;
@@ -425,11 +428,15 @@ function buildProviderTabs(
   return tabs;
 }
 
-function buildProvider(state: ProviderUsageState, normalizedSources?: Record<string, SourceConfigEntry>): UsageDashboardProvider {
+function buildProvider(
+  state: ProviderUsageState,
+  normalizedSources?: Record<string, SourceConfigEntry>,
+  meterVisibility?: MeterVisibilityPolicy
+): UsageDashboardProvider {
   const windows = [
     buildWindow('sevenDay', '7d', state.sevenDay, dashboardAuthenticatedWindowState(state.sevenDay, state.authenticatedWindows?.sevenDay), state),
     buildWindow('fiveHour', '5h', state.fiveHour, dashboardAuthenticatedWindowState(state.fiveHour, state.authenticatedWindows?.fiveHour), state),
-    ...(state.meters ?? [])
+    ...selectVisibleMeters(state.meters, meterVisibility)
       .filter(meter => meter.window.usedPercentage !== undefined)
       .map(meter => buildMeterWindow(meter))
   ];

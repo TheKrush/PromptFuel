@@ -11,7 +11,9 @@ import {
   isMachineSnapshotPayload
 } from '../snapshot/writeMachineSnapshot';
 import { cleanupSnapshotFiles } from '../snapshot/cleanupSnapshotFiles';
+import { readMachineSnapshots } from '../snapshot/readMachineSnapshots';
 import { SNAPSHOT_HISTORY_ARCHIVE_SCHEMA_VERSION, SNAPSHOT_SCHEMA_V1 } from '../snapshot/types';
+import { isMeterSelected } from '../display/meterVisibility';
 
 let tmpDir: string;
 
@@ -360,6 +362,33 @@ describe('snapshotWriter', () => {
       const files = await fs.readdir(dir);
       const tmpFiles = files.filter(f => f.includes('.tmp.'));
       assert.equal(tmpFiles.length, 0);
+    });
+
+    it('retains a generic meter in the written and re-read payload even though the active policy hides it', async () => {
+      const hiddenMeter = {
+        id: 'nimbus-quill',
+        label: 'Nimbus Quill',
+        scope: 'model' as const,
+        window: { usedPercentage: 12, resetsAtEpochSeconds: 1_810_000_000 }
+      };
+      // The default policy (empty visibleUsageMeters) hides this generic meter at display time.
+      assert.equal(isMeterSelected(hiddenMeter), false);
+
+      const snap = buildMachineSnapshot(
+        { enabled: true, machineLabel: 'desktop', path: '' },
+        [mockState({ meters: [hiddenMeter] })]
+      );
+      const dir = path.join(tmpDir, 'retention');
+      const filePath = path.join(dir, 'retention-latest.json');
+      await writeMachineSnapshotToPath(filePath, snap);
+
+      const result = await readMachineSnapshots({ readEnabled: true, readPath: dir });
+      assert.equal(result.errors.length, 0);
+      const readMeter = result.snapshots[0]?.snapshot.providerUsage?.[0]?.meters?.[0];
+
+      assert.ok(readMeter, 'hidden generic meter must still be present in the written and re-read snapshot');
+      assert.equal(readMeter?.id, 'nimbus-quill');
+      assert.equal(readMeter?.usedPercent, 12);
     });
   });
 

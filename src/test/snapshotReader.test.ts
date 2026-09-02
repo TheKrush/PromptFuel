@@ -597,7 +597,13 @@ describe('snapshotReader', () => {
         }]
       };
 
-      const dp = snapshotProviderToDashboardProvider(snapProvider, 'desktop', false, Date.now());
+      const dp = snapshotProviderToDashboardProvider(
+        snapProvider,
+        'desktop',
+        false,
+        Date.now(),
+        { showExtraUsage: true, visibleUsageMeters: ['*'] }
+      );
       const meterWindow = dp.windows.find(w => w.key === 'meter:fake-scoped-meter');
 
       assert.ok(meterWindow);

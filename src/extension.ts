@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { getConfig, setInternalStateDirectory } from './config';
+import { buildUsageMeterDiscoveryItems, UsageMeterDiscoveryItem } from './display/meterDiscovery';
 import { disposePromptFuelLogger, logPromptFuel } from './logger';
 import { registerPromptFuelPanelCommands } from './panel/promptFuelPanel';
 import { buildUsageDashboardModel } from './panel/usageDashboardModel';
@@ -21,6 +22,7 @@ import {
   initRefreshController,
   refreshNow
 } from './refreshController';
+import { formatCountdown } from './usageTime';
 
 let combinedStatusItem: vscode.StatusBarItem;
 
@@ -65,6 +67,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.refresh', () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true })));
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.openDataFolder', () => openStateFolder()));
   context.subscriptions.push(vscode.commands.registerCommand('promptFuel.upgradeSnapshotFiles', () => validateSnapshotFiles()));
+  context.subscriptions.push(vscode.commands.registerCommand('promptFuel.showAvailableUsageMeters', () => showAvailableUsageMeters()));
   registerPromptFuelPanelCommands(context, {
     refreshNow: () => refreshNow({ allowAuthenticated: true, manual: true, bypassAuthenticatedBackoff: true, suppressPanelBroadcast: true }),
     getUsageDashboardModel: () => {
@@ -81,7 +84,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         aliasMap: cfg.snapshot.remoteMachineLabels,
         normalizedSources: cfg.normalizedSources,
         weekStartsOn: cfg.weekStartsOn,
-        historyProgress: state.historyProgress
+        historyProgress: state.historyProgress,
+        meterVisibility: cfg.meterVisibility
       });
     }
   });
@@ -148,5 +152,68 @@ async function validateSnapshotFiles(): Promise<void> {
   } else {
     void vscode.window.showInformationMessage(`PromptFuel: Snapshot validation complete. ${validated} compatible snapshot file(s) validated.`);
   }
+}
+
+interface UsageMeterQuickPickItem extends vscode.QuickPickItem {
+  meterId: string;
+}
+
+async function showAvailableUsageMeters(): Promise<void> {
+  try {
+    const cfg = getConfig();
+    const state = getLatestUsageState();
+    const discovered = buildUsageMeterDiscoveryItems(state.providerStates, cfg.meterVisibility);
+
+    if (discovered.length === 0) {
+      void vscode.window.showInformationMessage('PromptFuel: no provider usage meters are currently reported.');
+      return;
+    }
+
+    const items = discovered.map(item => toUsageMeterQuickPickItem(item));
+    const selected = await vscode.window.showQuickPick(items, {
+      title: 'PromptFuel: Available Usage Meters',
+      placeHolder: 'Select a meter to copy its ID',
+      matchOnDescription: true,
+      matchOnDetail: true
+    });
+
+    if (!selected) {
+      return;
+    }
+
+    await vscode.env.clipboard.writeText(selected.meterId);
+    void vscode.window.showInformationMessage(
+      `PromptFuel: copied meter ID "${selected.meterId}". Paste it into promptFuel.visibleUsageMeters to show it.`
+    );
+  } catch (err) {
+    logSwallowedError('Showing available usage meters', err);
+  }
+}
+
+function toUsageMeterQuickPickItem(item: UsageMeterDiscoveryItem): UsageMeterQuickPickItem {
+  const descriptionParts = [item.label];
+  if (item.usedPercentage !== undefined) {
+    descriptionParts.push(`${item.usedPercentage}% used`);
+  }
+
+  const governingSetting = item.category === 'extraUsage' ? 'promptFuel.showExtraUsage' : 'promptFuel.visibleUsageMeters';
+  const detailParts = [
+    `Provider: ${item.provider}`,
+    item.visible ? 'Currently shown' : 'Currently hidden',
+    `Governed by ${governingSetting}`
+  ];
+  if (item.resetsAtEpochSeconds !== undefined) {
+    detailParts.push(`Resets ${formatCountdown(item.resetsAtEpochSeconds)}`);
+  }
+  if (item.windowSeconds !== undefined) {
+    detailParts.push(`Window ${item.windowSeconds}s`);
+  }
+
+  return {
+    label: item.id,
+    description: descriptionParts.join(' · '),
+    detail: detailParts.join(' · '),
+    meterId: item.id
+  };
 }
 

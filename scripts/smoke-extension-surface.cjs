@@ -22,6 +22,7 @@ assert.deepEqual(commandIds.sort(), [
   'promptFuel.openDashboard',
   'promptFuel.openDataFolder',
   'promptFuel.refresh',
+  'promptFuel.showAvailableUsageMeters',
   'promptFuel.upgradeSnapshotFiles'
 ], 'expected PromptFuel commands are contributed');
 for (const command of commands) {
@@ -49,7 +50,9 @@ const expectedSettingKeys = [
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
   'promptFuel.snapshot.path',
-  'promptFuel.weekStartsOn'
+  'promptFuel.weekStartsOn',
+  'promptFuel.showExtraUsage',
+  'promptFuel.visibleUsageMeters'
 ];
 const removedSettingKeys = [
   'promptFuel.stateDirectory',
@@ -83,6 +86,11 @@ assert.equal(settings['promptFuel.weekStartsOn']?.type, 'string', 'weekStartsOn 
 assert.deepEqual(settings['promptFuel.weekStartsOn']?.enum, ['sunday', 'monday', 'saturday'], 'weekStartsOn supports sunday, monday, saturday');
 assert.equal(settings['promptFuel.weekStartsOn']?.default, 'sunday', 'weekStartsOn defaults to sunday');
 assert.match(String(settings['promptFuel.weekStartsOn']?.description || ''), /display order only/i, 'weekStartsOn description stays display-order only');
+assert.equal(settings['promptFuel.showExtraUsage']?.type, 'boolean', 'showExtraUsage is a boolean setting');
+assert.equal(settings['promptFuel.showExtraUsage']?.default, true, 'showExtraUsage defaults to true');
+assert.equal(settings['promptFuel.visibleUsageMeters']?.type, 'array', 'visibleUsageMeters is an array setting');
+assert.equal(settings['promptFuel.visibleUsageMeters']?.items?.type, 'string', 'visibleUsageMeters items are strings');
+assert.deepEqual(settings['promptFuel.visibleUsageMeters']?.default, [], 'visibleUsageMeters defaults to an empty array, keeping generic meters opt-in');
 for (const key of removedSettingKeys) {
   assert.equal(settingKeys.includes(key), false, `removed public setting is absent: ${key}`);
 }
@@ -96,6 +104,16 @@ for (const included of ['!package.json', '!CHANGELOG.md', '!SUPPORT.md', '!asset
 }
 
 assert.ok(fs.existsSync(path.join(repoRoot, 'data', 'model-pricing-estimates.csv')), 'model pricing CSV exists for packaging');
+
+// The settings reader looks these up by string key, so a typo there would silently
+// leave a contributed setting inert with nothing else failing. Pin the pairing.
+const configSource = fs.readFileSync(path.join(repoRoot, 'src', 'config.ts'), 'utf8');
+for (const key of ['showExtraUsage', 'visibleUsageMeters']) {
+  assert.ok(
+    configSource.includes(`'${key}'`),
+    `src/config.ts reads the contributed promptFuel.${key} setting by its exact key`
+  );
+}
 
 const forbiddenBrandTokens = [
   ['Agent', 'Bridge'].join(''),

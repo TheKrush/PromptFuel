@@ -15,6 +15,7 @@ import type { UsageDashboardProvider, UsageDashboardWindow } from '../panel/usag
 import { formatSourceLabel, parsePerWindowReset } from './remoteSourceHelper';
 import { formatCountdown } from '../usageTime';
 import { quotaLevelForRemaining } from '../display/format';
+import { selectVisibleMeters, type MeterVisibilityPolicy } from '../display/meterVisibility';
 import { archiveToSanitizedHistorySources, validateHistoryArchivePayload } from './historyArchive';
 
 export interface SnapshotReaderConfig {
@@ -605,7 +606,8 @@ export function snapshotProviderToDashboardProvider(
   snapProvider: SnapshotProviderUsageV2,
   machineLabel: string,
   snapshotStale: boolean,
-  snapshotGeneratedAtEpochMs: number | undefined
+  snapshotGeneratedAtEpochMs: number | undefined,
+  meterVisibility?: MeterVisibilityPolicy
 ): UsageDashboardProvider {
   const sevenDayReset = resolveResetEpoch(snapProvider, 'sevenDay');
   const fiveHourReset = resolveResetEpoch(snapProvider, 'fiveHour');
@@ -622,7 +624,7 @@ export function snapshotProviderToDashboardProvider(
     snapProvider.fiveHourUsedPercent !== undefined
       ? buildSnapshotWindow('fiveHour', '5h', snapProvider.fiveHourUsedPercent, fiveHourReset)
       : { key: 'fiveHour', label: '5h', available: false },
-    ...(snapProvider.meters ?? []).map(meter => buildSnapshotMeterWindow(meter))
+    ...selectVisibleMeters(snapProvider.meters, meterVisibility).map(meter => buildSnapshotMeterWindow(meter))
   ].map(window => ({
     ...window,
     health: !window.available ? 'missing' : stale ? 'stale' : undefined,
@@ -648,12 +650,13 @@ export function snapshotProviderToDashboardProvider(
 
 export function buildRemoteProvidersFromSnapshots(
   snapshots: ValidatedSnapshot[],
-  selectedSources?: Set<string>
+  selectedSources?: Set<string>,
+  meterVisibility?: MeterVisibilityPolicy
 ): GroupedRemoteProvider[] {
   return snapshots.map(vs => {
     const machineLabel = vs.snapshot.machineLabel;
     const providers = (vs.snapshot.providerUsage ?? [])
-      .map(sp => snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs));
+      .map(sp => snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs, meterVisibility));
 
     const hasSelectedSources = selectedSources !== undefined && (vs.snapshot.providerUsage ?? []).some(sp =>
       selectedSources.has(`${machineLabel}/${sp.provider}`)
@@ -676,7 +679,8 @@ export function buildRemoteProvidersFromSnapshots(
 export function buildSelectedRemoteSourceProviders(
   snapshots: ValidatedSnapshot[],
   selectedSources: Set<string>,
-  aliasMap: Record<string, string>
+  aliasMap: Record<string, string>,
+  meterVisibility?: MeterVisibilityPolicy
 ): UsageDashboardProvider[] {
   const providers: UsageDashboardProvider[] = [];
 
@@ -687,7 +691,7 @@ export function buildSelectedRemoteSourceProviders(
       if (!selectedSources.has(sourceId)) {
         continue;
       }
-      const dp = snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs);
+      const dp = snapshotProviderToDashboardProvider(sp, machineLabel, vs.stale, vs.snapshot.generatedAtEpochMs, meterVisibility);
       dp.label = formatSourceLabel(sp.provider, machineLabel, aliasMap);
       providers.push(dp);
     }

@@ -93,8 +93,8 @@ function dashboardWindow(state: ProviderUsageState, key: 'fiveHour' | 'sevenDay'
   return window;
 }
 
-function dashboardMeter(state: ProviderUsageState, id: string) {
-  const dashboard = buildUsageDashboardModel({ states: [state] });
+function dashboardMeter(state: ProviderUsageState, id: string, meterVisibility?: FormatOptions['meterVisibility']) {
+  const dashboard = buildUsageDashboardModel({ states: [state], meterVisibility });
   const provider = dashboard.providers[0];
 
   assert.ok(provider);
@@ -893,7 +893,10 @@ describe('quota fallback regression coverage', () => {
     assert.equal(opusOnly.fiveHour?.usedPercentage, 30);
     assert.equal(opusOnly.sevenDay?.usedPercentage, 50);
     assert.equal(opusOnly.meters?.[0]?.window.usedPercentage, 70);
-    assert.equal(dashboardMeter(opusOnly, CLAUDE_OPUS_USAGE_METER_ID).remainingPercent, 30);
+    assert.equal(
+      dashboardMeter(opusOnly, CLAUDE_OPUS_USAGE_METER_ID, { showExtraUsage: true, visibleUsageMeters: ['*'] }).remainingPercent,
+      30
+    );
 
     const codexMerged = mergeLocalAndAuthenticated(localState('codex'), liveState('codex'));
     assert.equal(codexMerged.meters, undefined);
@@ -920,7 +923,10 @@ describe('quota fallback regression coverage', () => {
 
     assert.equal(expiredCached.meters?.[0]?.window.usedPercentage, 0);
     assert.equal(expiredCached.meters?.[0]?.window.sourceKind, 'cache');
-    assert.equal(dashboardMeter(expiredCached, meterId).remainingPercent, 100);
+    assert.equal(
+      dashboardMeter(expiredCached, meterId, { showExtraUsage: true, visibleUsageMeters: ['*'] }).remainingPercent,
+      100
+    );
   });
 
   it('reset-time refresh treats expired cached quota as reset after live failure', () => {

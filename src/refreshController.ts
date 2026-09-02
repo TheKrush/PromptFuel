@@ -519,7 +519,7 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
     readPath: cfg.snapshot.path
   }).catch((): ReadSnapshotResult => ({ snapshots: [], errors: [] }));
   const remoteSnapshots = filterSelfSnapshots(readResult.snapshots, cfg.snapshot.machineLabel);
-  latest.remoteProviderGroups = buildRemoteProvidersFromSnapshots(remoteSnapshots);
+  latest.remoteProviderGroups = buildRemoteProvidersFromSnapshots(remoteSnapshots, undefined, cfg.meterVisibility);
   historySupplementContext = {
     machineLabel: cfg.snapshot.machineLabel,
     archiveSources: readResult.archiveSources ?? []
@@ -539,7 +539,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
   const selectedDashboardRemoteProviders = buildSelectedRemoteSourceProviders(
     remoteSnapshots,
     selectedRemoteSourceSet,
-    aliasMap
+    aliasMap,
+    cfg.meterVisibility
   );
   latest.selectedRemoteProviders = selectedDashboardRemoteProviders;
   const remoteUsage = buildRemoteUsageProjection(
@@ -604,7 +605,8 @@ async function performRefresh(options: RefreshOptions): Promise<void> {
       aliasMap: aliasMap,
       normalizedSources: cfg.normalizedSources,
       weekStartsOn: cfg.weekStartsOn,
-      historyProgress: currentHistoryProgress()
+      historyProgress: currentHistoryProgress(),
+      meterVisibility: cfg.meterVisibility
     });
     postUsageDashboardRefreshIfOpen(usageDashboardModel);
   }
@@ -779,7 +781,8 @@ function publishHistoryProgress(_provider: ProviderName, _progress: ProviderHist
       aliasMap: cfg.snapshot.remoteMachineLabels,
       normalizedSources: cfg.normalizedSources,
       weekStartsOn: cfg.weekStartsOn,
-      historyProgress: latest.historyProgress
+      historyProgress: latest.historyProgress,
+      meterVisibility: cfg.meterVisibility
     });
     postUsageDashboardRefreshIfOpen(usageDashboardModel);
   }
@@ -904,7 +907,8 @@ function publishEarlyStatus(cfg: ReturnType<typeof getConfig>, states: ProviderU
     statusMode: cfg.statusMode,
     nextResetRefreshEpochMs: scheduledResetRefreshEpochMs,
     modelBreakdown: undefined,
-    normalizedSources: cfg.normalizedSources
+    normalizedSources: cfg.normalizedSources,
+    meterVisibility: cfg.meterVisibility
   }, lastStatusContext?.remoteStatusBarItems);
   // Only claim history is loading when a provider session is actually running;
   // a warm refresh of already-loaded history must not assert this on every cycle.
@@ -974,7 +978,8 @@ function publishStatusFromLatest(): void {
     statusMode: ctx.cfg.statusMode,
     nextResetRefreshEpochMs: scheduledResetRefreshEpochMs,
     modelBreakdown: modelBreakdownData,
-    normalizedSources: ctx.cfg.normalizedSources
+    normalizedSources: ctx.cfg.normalizedSources,
+    meterVisibility: ctx.cfg.meterVisibility
   }, ctx.remoteStatusBarItems);
   _onStatusUpdate?.(
     formatted.text,

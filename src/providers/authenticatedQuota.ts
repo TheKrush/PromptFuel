@@ -22,7 +22,7 @@ const HARD_DEADLINE_MS = 10000;
 const MAX_RESPONSE_BYTES = 128 * 1024;
 const FIVE_HOUR_SECONDS = 18_000;
 const SEVEN_DAY_SECONDS = 604_800;
-const KNOWN_CLAUDE_PRIMARY_KEYS = new Set(['five_hour', 'seven_day', 'seven_day_opus']);
+const KNOWN_CLAUDE_PRIMARY_KEYS = new Set(['five_hour', 'seven_day']);
 const CODEX_PRIMARY_WINDOW_ALIASES: ReadonlyArray<{
   alias: string;
   fallbackKey: AuthenticatedQuotaWindowKey;
@@ -345,13 +345,6 @@ export function parseClaudeQuotaPayload(body: Record<string, unknown> | undefine
   const fiveHour = parseClaudeWindow(asRecord(body.five_hour));
   const sevenDay = parseClaudeWindow(asRecord(body.seven_day));
   const meters = collectUsageMeters([
-    buildUsageMeter(
-      CLAUDE_OPUS_USAGE_METER_ID,
-      'opus 7d',
-      'modelFamily',
-      parseClaudeWindow(asRecord(body.seven_day_opus)),
-      { windowSeconds: SEVEN_DAY_SECONDS }
-    ),
     ...Object.entries(body).map(([key, value]) => {
       if (KNOWN_CLAUDE_PRIMARY_KEYS.has(key)) {
         return undefined;
@@ -621,6 +614,10 @@ function cacheWindow(
 function cachedMetersForState(state: ProviderUsageState): UsageMeter[] | undefined {
   const record = state as ProviderUsageState & Record<string, unknown>;
   const meters = Array.isArray(record.meters) ? record.meters as UsageMeter[] : [];
+  // Reconstructs a historical PromptFuel cache field only: pre-1.0.10 caches stored
+  // a dedicated sevenDayOpus field alongside the primary windows. Live responses are
+  // not routed through here — a seven_day_opus key in a current provider payload is
+  // parsed as an ordinary generic meter instead of receiving this dedicated treatment.
   const legacyOpus = state.provider === 'claude'
     ? buildUsageMeter(
       CLAUDE_OPUS_USAGE_METER_ID,
@@ -727,7 +724,7 @@ function buildUsageMeter(
   };
 }
 
-function normalizeUsageMeterId(value: string): string {
+export function normalizeUsageMeterId(value: string): string {
   return value
     .trim()
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')

@@ -9,6 +9,11 @@ import {
   getSnapshotSourcesFromSources,
   normalizeStatusBarDensity
 } from './configSources';
+import {
+  MeterVisibilityPolicy,
+  normalizeVisibleUsageMeters,
+  normalizeShowExtraUsage
+} from './display/meterVisibility';
 
 export interface PromptFuelConfig {
   enabledProviders: ProviderName[];
@@ -23,6 +28,7 @@ export interface PromptFuelConfig {
   freshResetToleranceSeconds: number;
   snapshot: SnapshotConfig;
   weekStartsOn: number;  // 0=Sun..6=Sat, display ordering only
+  meterVisibility: MeterVisibilityPolicy;
 }
 
 export interface AuthenticatedQuotaConfig {
@@ -84,7 +90,11 @@ export function getConfig(): PromptFuelConfig {
       statusBarSources: snapshotSources.statusBarSources,
       remoteMachineLabels: snapshotSources.remoteMachineLabels
     },
-    weekStartsOn: weekStartsOnToIndex(cfg.get<string>('weekStartsOn') ?? 'sunday')
+    weekStartsOn: weekStartsOnToIndex(cfg.get<string>('weekStartsOn') ?? 'sunday'),
+    meterVisibility: {
+      showExtraUsage: normalizeShowExtraUsage(cfg.get<unknown>('showExtraUsage')),
+      visibleUsageMeters: normalizeVisibleUsageMeters(cfg.get<unknown>('visibleUsageMeters'))
+    }
   };
 }
 

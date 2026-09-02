@@ -101,7 +101,7 @@ describe('authenticated quota parsing', () => {
     );
   });
 
-  it('parses Claude generic meters and migrates the Opus meter into the generic path', () => {
+  it('parses a Claude seven_day_opus field as an ordinary generic meter, not a dedicated live meter', () => {
     const parsed = parseClaudeQuotaPayload({
       five_hour: { used_percentage: 25, reset_at: S_EPOCH },
       seven_day: { used_percentage: 40, reset_at: S_EPOCH },
@@ -121,10 +121,9 @@ describe('authenticated quota parsing', () => {
     assert.equal(parsed?.sevenDay?.usedPercentage, 40);
     assert.deepEqual(parsed?.meters, [
       {
-        id: CLAUDE_OPUS_USAGE_METER_ID,
-        label: 'opus 7d',
-        scope: 'modelFamily',
-        windowSeconds: SEVEN_DAY_S,
+        id: 'seven-day-opus',
+        label: 'seven day opus',
+        scope: 'unknown',
         window: { usedPercentage: 75, resetsAtEpochSeconds: S_EPOCH }
       },
       {
@@ -136,6 +135,18 @@ describe('authenticated quota parsing', () => {
         temporary: true
       }
     ]);
+    assert.ok(!parsed?.meters?.some(meter => meter.id === CLAUDE_OPUS_USAGE_METER_ID));
+  });
+
+  it('parses a Claude payload with no seven_day_opus field without producing an Opus meter', () => {
+    const parsed = parseClaudeQuotaPayload({
+      five_hour: { used_percentage: 25, reset_at: S_EPOCH },
+      seven_day: { used_percentage: 40, reset_at: S_EPOCH }
+    });
+
+    assert.equal(parsed?.fiveHour?.usedPercentage, 25);
+    assert.equal(parsed?.sevenDay?.usedPercentage, 40);
+    assert.equal(parsed?.meters, undefined);
   });
 
   it('parses non-5h/7d Codex windows as generic meters instead of dropping them', () => {

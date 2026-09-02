@@ -79,6 +79,7 @@ These are unofficial, undocumented usage endpoints. They are not part of any pub
 | `promptFuel.refresh` | PromptFuel: Refresh Now |
 | `promptFuel.openDataFolder` | PromptFuel: Open Data Folder |
 | `promptFuel.upgradeSnapshotFiles` | PromptFuel: Validate Snapshot Files for Compatibility |
+| `promptFuel.showAvailableUsageMeters` | PromptFuel: Show Available Usage Meters |
 
 ## Machine Snapshots
 
@@ -172,6 +173,55 @@ Remote sources appear alongside local providers in the dashboard with a "snapsho
 | `promptFuel.snapshot.enabled` | Enable sanitized machine snapshot writing | `false` |
 | `promptFuel.snapshot.machineLabel` | Safe machine label included in snapshot payload and filename | `""` |
 | `promptFuel.snapshot.path` | Optional shared folder for reading compatible snapshots and copying this machine's written snapshot | `""` |
+| `promptFuel.showExtraUsage` | Show the Extra usage meter in the status bar, tooltip, and dashboard when a provider reports one. Applies to any provider that reports an extra usage meter, not only Claude. | `true` |
+| `promptFuel.visibleUsageMeters` | Generic provider usage meters to display, listed by normalized meter ID. Empty hides all generic meters; `"*"` shows every generic meter currently reported. | `[]` |
+
+### Usage meters
+
+PromptFuel distinguishes three kinds of provider usage meter:
+
+- **Primary quota windows** (5h / 7d) are first-class and always shown when the provider reports them; they are not controlled by either setting below.
+- **Extra usage** has its own toggle, `promptFuel.showExtraUsage` (default `true`). This applies to any provider reporting an extra usage meter, not only Claude.
+- **Every other meter a provider reports** is generic and hidden by default. Show one by adding its normalized ID to `promptFuel.visibleUsageMeters`, or use `"*"` to temporarily show every generic meter currently reported.
+
+`"*"` covers generic meters only — it does not re-enable Extra usage when `promptFuel.showExtraUsage` is `false`.
+
+Run `PromptFuel: Show Available Usage Meters` to see the current meter IDs. It lists hidden meters too, reads only already-loaded state, and does not trigger a provider request.
+
+Example `settings.json` entries, where `meter-id` stands for a real ID from the discovery command:
+
+```json
+"promptFuel.visibleUsageMeters": []
+```
+
+```json
+"promptFuel.visibleUsageMeters": ["meter-id"]
+```
+
+```json
+"promptFuel.visibleUsageMeters": ["*"]
+```
+
+Providers may report additional undocumented meters. PromptFuel displays the provider's own reported values as-is; showing a meter does not mean PromptFuel knows what that provider field measures.
+
+#### Claude's Opus meter
+
+Earlier versions gave Claude's `seven_day_opus` field dedicated handling. It is now an ordinary generic meter, so it is hidden by default. To show it:
+
+```json
+"promptFuel.visibleUsageMeters": ["seven-day-opus"]
+```
+
+Earlier versions used a different ID for the same meter, so `seven-day-opus` alone may not cover everything you see:
+
+- A quota cache written by an earlier version carries the older ID `claude-seven-day-opus` until the next live refresh replaces it.
+- Machine snapshots written by an earlier version also carry the older ID. In a mixed-version setup, machines still on an earlier version keep reporting `claude-seven-day-opus` until they are updated, while updated machines report `seven-day-opus`.
+
+List both IDs to cover every case:
+
+```json
+"promptFuel.visibleUsageMeters": ["seven-day-opus", "claude-seven-day-opus"]
+```
 
 ## Development
 

@@ -11,6 +11,7 @@ import {
   UsageMeter
 } from '../types';
 import { RESET_EXPIRY_GRACE_MS, formatCountdown, formatAgeLabel, formatRelativeTime, isStale } from '../usageTime';
+import { applyMeterVisibility, MeterVisibilityPolicy } from './meterVisibility';
 
 export interface ModelBreakdownEntry {
   label: string;
@@ -29,6 +30,7 @@ export interface FormatOptions {
   nextResetRefreshEpochMs?: number;
   modelBreakdown?: ModelBreakdownData;
   normalizedSources?: Record<string, SourceConfigEntry>;
+  meterVisibility?: MeterVisibilityPolicy;
 }
 
 export type StatusSeverity = 'normal' | 'low' | 'warning' | 'critical';
@@ -106,7 +108,9 @@ export function formatStatus(
   options: FormatOptions,
   remoteSources?: FormattedProviderStatus[]
 ): FormattedStatus {
-  const active = states.filter(state => Boolean(state) && isStatusBarSourceVisible(state, options));
+  const active = states
+    .filter(state => Boolean(state) && isStatusBarSourceVisible(state, options))
+    .map(state => applyMeterVisibility(state, options.meterVisibility));
   if (active.length === 0 && (!remoteSources || remoteSources.length === 0)) {
     return {
       text: '$(circle-slash) AI usage unavailable',

@@ -23,7 +23,8 @@ const commands = pkg.contributes?.commands ?? [];
 const expectedCommands = new Set([
   'promptFuel.openDashboard',
   'promptFuel.refresh',
-  'promptFuel.openDataFolder'
+  'promptFuel.openDataFolder',
+  'promptFuel.showAvailableUsageMeters'
 ]);
 for (const command of commands) {
   if (!command.command?.startsWith('promptFuel.')) fail(`command ${command.command} is not promptFuel namespaced`);
@@ -39,7 +40,8 @@ for (const event of [
   'onStartupFinished',
   'onCommand:promptFuel.openDashboard',
   'onCommand:promptFuel.refresh',
-  'onCommand:promptFuel.openDataFolder'
+  'onCommand:promptFuel.openDataFolder',
+  'onCommand:promptFuel.showAvailableUsageMeters'
 ]) {
   if (!activationEvents.includes(event)) fail(`missing activation event ${event}`);
 }
@@ -52,7 +54,9 @@ const expectedSettings = [
   'promptFuel.snapshot.enabled',
   'promptFuel.snapshot.machineLabel',
   'promptFuel.snapshot.path',
-  'promptFuel.weekStartsOn'
+  'promptFuel.weekStartsOn',
+  'promptFuel.showExtraUsage',
+  'promptFuel.visibleUsageMeters'
 ];
 const removedSettings = [
   'promptFuel.stateDirectory',
@@ -88,6 +92,15 @@ if (JSON.stringify(weekStartsOnSetting?.enum ?? []) !== JSON.stringify(['sunday'
 }
 if (weekStartsOnSetting?.default !== 'sunday') fail('promptFuel.weekStartsOn default must be sunday');
 if (!/display order only/i.test(String(weekStartsOnSetting?.description || ''))) fail('promptFuel.weekStartsOn description must stay display-order only');
+const showExtraUsageSetting = properties['promptFuel.showExtraUsage'];
+if (showExtraUsageSetting?.type !== 'boolean') fail('promptFuel.showExtraUsage must be a boolean setting');
+if (showExtraUsageSetting?.default !== true) fail('promptFuel.showExtraUsage default must be true');
+const visibleUsageMetersSetting = properties['promptFuel.visibleUsageMeters'];
+if (visibleUsageMetersSetting?.type !== 'array') fail('promptFuel.visibleUsageMeters must be an array setting');
+if (visibleUsageMetersSetting?.items?.type !== 'string') fail('promptFuel.visibleUsageMeters items must be strings');
+if (!Array.isArray(visibleUsageMetersSetting?.default) || visibleUsageMetersSetting.default.length !== 0) {
+  fail('promptFuel.visibleUsageMeters default must be an empty array');
+}
 for (const oldKey of removedSettings) {
   if (Object.prototype.hasOwnProperty.call(properties, oldKey)) fail(`removed public setting remains: ${oldKey}`);
 }

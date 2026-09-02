@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.18
+
+**Included in this release:**
+
+* Added two new settings governing which provider usage meters are displayed: `promptFuel.showExtraUsage` (default `true`) controls the Extra usage meter for any provider that reports one, and `promptFuel.visibleUsageMeters` (default `[]`, an empty array) opts in individual generic provider meters by their normalized ID, or accepts `"*"` to show every generic meter currently reported. `"*"` covers generic meters only and does not re-enable Extra usage when `promptFuel.showExtraUsage` is `false`. Primary quota windows (5h/7d) are unaffected by either setting.
+* Added the `PromptFuel: Show Available Usage Meters` command, which lists every currently reported meter ID (including hidden ones) from already-loaded state, without triggering a provider request, and copies a selected ID to the clipboard for pasting into `promptFuel.visibleUsageMeters`.
+* Changed generic provider usage meters — any meter that is not a primary 5h/7d window and not Extra usage — to be hidden by default and shown only when their normalized ID is listed in `promptFuel.visibleUsageMeters`. Extra usage keeps its existing value-based behavior of hiding at exactly 0% and when fully exhausted, unaffected by this change.
+* Changed Claude's `seven_day_opus` field to no longer receive dedicated live handling; it now flows through the same generic meter parsing path as any other provider-reported field, which means it is hidden by default like any other generic meter. To keep showing it, set `"promptFuel.visibleUsageMeters": ["seven-day-opus"]`. Cached quota data and machine snapshots written by earlier versions still read correctly, but carry the older ID `claude-seven-day-opus` until a live refresh replaces them; list both IDs to cover cached, snapshot, and mixed-version cases.
+
 ## 1.0.17
 
 **Included in this release:**

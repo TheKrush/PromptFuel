@@ -48,7 +48,8 @@
     "onStartupFinished",
     "onCommand:promptFuel.openDashboard",
     "onCommand:promptFuel.refresh",
-    "onCommand:promptFuel.openDataFolder"
+    "onCommand:promptFuel.openDataFolder",
+    "onCommand:promptFuel.showAvailableUsageMeters"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -68,6 +69,10 @@
       {
         "command": "promptFuel.upgradeSnapshotFiles",
         "title": "PromptFuel: Validate Snapshot Files for Compatibility"
+      },
+      {
+        "command": "promptFuel.showAvailableUsageMeters",
+        "title": "PromptFuel: Show Available Usage Meters"
       }
     ],
     "configuration": {
@@ -164,6 +169,17 @@
           ],
           "default": "sunday",
           "description": "First day of week for the historical 'By Day of Week' breakdown. Affects display order only; totals and percentages are unaffected."
+        },
+        "promptFuel.showExtraUsage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Extra usage meter in the status bar, tooltip, and dashboard when a provider reports one. Applies to any provider that reports an extra usage meter, not only Claude."
+        },
+        "promptFuel.visibleUsageMeters": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Generic provider usage meters to display, listed by normalized meter ID (for example \"meter-id\"). Empty hides all generic meters. Use \"*\" to show every generic meter currently reported; \"*\" does not affect Extra usage, which is controlled by promptFuel.showExtraUsage. Run \"PromptFuel: Show Available Usage Meters\" to list the IDs currently reported. Displaying a meter does not mean PromptFuel understands what that provider field measures."
         }
       }
     }
@@ -183,7 +199,7 @@
     "smoke:dashboard": "node scripts/smoke-dashboard-hide-disabled-providers.cjs && node scripts/smoke-chart-binning.cjs && node scripts/smoke-chart-tooltip.cjs && node scripts/smoke-dashboard-rendering.cjs && node scripts/smoke-dashboard-pricing-cards.cjs && node scripts/smoke-model-distribution-no-other.cjs",
     "smoke:snapshots": "node scripts/smoke-remote-sources.cjs && node scripts/smoke-remote-history-merge.cjs",
     "smoke:codex": "node scripts/smoke-codex-correlated-day-bucket-scanner.cjs",
-    "test:unit": "node --test out/test/config.test.js out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/codexSessionScanner.test.js out/test/codexCorrelatedDayBucketScanner.test.js out/test/displayFormat.test.js out/test/incrementalHistoryCache.test.js out/test/modelPricing.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/selfArchiveSupplement.test.js out/test/statusBar.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js out/test/weekdayActivity.test.js out/test/modelDistribution.test.js out/test/historyCacheStore.test.js out/test/progressiveHistory.test.js out/test/historySessionGate.test.js",
+    "test:unit": "node --test out/test/config.test.js out/test/authenticatedQuota.test.js out/test/authenticatedStatus.test.js out/test/codexState.test.js out/test/codexSessionScanner.test.js out/test/codexCorrelatedDayBucketScanner.test.js out/test/displayFormat.test.js out/test/incrementalHistoryCache.test.js out/test/modelPricing.test.js out/test/pricing.test.js out/test/quotaFallback.test.js out/test/meterVisibility.test.js out/test/refreshPolicy.test.js out/test/resetRefresh.test.js out/test/snapshotWriter.test.js out/test/snapshotReader.test.js out/test/selfArchiveSupplement.test.js out/test/statusBar.test.js out/test/tokenMath.test.js out/test/providerTabs.test.js out/test/usageHistoryBinning.test.js out/test/usageTime.test.js out/test/weekdayActivity.test.js out/test/modelDistribution.test.js out/test/historyCacheStore.test.js out/test/progressiveHistory.test.js out/test/historySessionGate.test.js",
     "package": "npx --yes @vscode/vsce package --no-dependencies",
     "maintenance:normalize-snapshot-schema": "node scripts/normalize-snapshot-schema-v1.cjs"
   },

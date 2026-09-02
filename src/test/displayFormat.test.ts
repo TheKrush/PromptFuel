@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { addThousandsSeparators, formatStatus, formatTokenCount, quotaIndicatorForRemaining, quotaLevelForRemaining, type FormatOptions } from '../display/format';
 import { formatAgeLabel } from '../usageTime';
 import type { ProviderUsageState } from '../types';
+import { buildUsageDashboardModel } from '../panel/usageDashboardModel';
+import { snapshotProviderToDashboardProvider } from '../snapshot/readMachineSnapshots';
+import type { SnapshotProviderUsageV2 } from '../snapshot/types';
 
 function makeState(usedPercentSevenDay: number, usedPercentFiveHour = usedPercentSevenDay): ProviderUsageState[] {
   const reset = Math.floor(Date.now() / 1000) + 86_400;
@@ -213,7 +216,11 @@ describe('display formatting', () => {
       }]
     }];
 
-    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    const status = formatStatus(state, {
+      displayMode: 'standard',
+      statusMode: 'remaining',
+      meterVisibility: { showExtraUsage: true, visibleUsageMeters: ['*'] }
+    });
     assert.match(status.tooltip ?? '', /\| preview 1d \|/);
   });
   it('separates compact status bar providers with pipe', () => {
@@ -359,7 +366,11 @@ describe('display formatting', () => {
         window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
       }]
     }];
-    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    const status = formatStatus(state, {
+      displayMode: 'standard',
+      statusMode: 'remaining',
+      meterVisibility: { showExtraUsage: true, visibleUsageMeters: ['*'] }
+    });
     assert.match(status.text, /100%/);
     assert.match(status.providers[0].tooltip, /\| Batch preview 1d \|/);
     assert.match(status.tooltip, /\| Claude \| Batch preview 1d \|/);
@@ -381,7 +392,11 @@ describe('display formatting', () => {
         window: { usedPercentage: 0, resetsAtEpochSeconds: reset }
       }]
     }];
-    const status = formatStatus(state, { displayMode: 'standard', statusMode: 'remaining' });
+    const status = formatStatus(state, {
+      displayMode: 'standard',
+      statusMode: 'remaining',
+      meterVisibility: { showExtraUsage: true, visibleUsageMeters: ['*'] }
+    });
     assert.match(status.text, /100%/);
     assert.match(status.providers[0].tooltip, /\| opus 7d \|/);
   });
@@ -406,5 +421,121 @@ describe('display formatting', () => {
     assert.match(status.text, /100%/);
     assert.match(status.providers[0].tooltip, /\| Extra usage \|/);
     assert.match(status.tooltip, /\| Codex \| Extra usage \|/);
+  });
+});
+
+describe('generic meter visibility is consistent across surfaces', () => {
+  const reset = Math.floor(Date.now() / 1000) + 86_400;
+  const HIDDEN_POLICY: FormatOptions['meterVisibility'] = { showExtraUsage: true, visibleUsageMeters: [] };
+  const SHOW_ALL_POLICY: FormatOptions['meterVisibility'] = { showExtraUsage: true, visibleUsageMeters: ['*'] };
+
+  function claudeStateWithGenericMeter(): ProviderUsageState[] {
+    return [{
+      provider: 'claude',
+      source: 'cross-surface fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters: [{
+        id: 'nimbus-quill',
+        label: 'Nimbus Quill',
+        scope: 'model',
+        window: { usedPercentage: 40, resetsAtEpochSeconds: reset }
+      }]
+    }];
+  }
+
+  function snapshotProviderWithGenericMeter(): SnapshotProviderUsageV2 {
+    return {
+      provider: 'claude',
+      sourceLabel: 'Claude',
+      fiveHourUsedPercent: 20,
+      sevenDayUsedPercent: 35,
+      fiveHourResetAtEpochSeconds: reset,
+      sevenDayResetAtEpochSeconds: reset,
+      stale: false,
+      source: 'authenticated',
+      sourceConfidence: 'quotaState',
+      meters: [{
+        id: 'nimbus-quill',
+        label: 'Nimbus Quill',
+        scope: 'model',
+        usedPercent: 40,
+        resetAtEpochSeconds: reset
+      }]
+    };
+  }
+
+  it('hides the same generic meter by default in the status/tooltip path', () => {
+    const status = formatStatus(claudeStateWithGenericMeter(), {
+      displayMode: 'standard',
+      statusMode: 'remaining',
+      meterVisibility: HIDDEN_POLICY
+    });
+    assert.doesNotMatch(status.tooltip, /Nimbus Quill/);
+  });
+
+  it('shows the same generic meter under "*" in the status/tooltip path', () => {
+    const status = formatStatus(claudeStateWithGenericMeter(), {
+      displayMode: 'standard',
+      statusMode: 'remaining',
+      meterVisibility: SHOW_ALL_POLICY
+    });
+    assert.match(status.tooltip ?? '', /Nimbus Quill/);
+  });
+
+  it('hides the same generic meter by default in the local dashboard path', () => {
+    const dashboard = buildUsageDashboardModel({ states: claudeStateWithGenericMeter(), meterVisibility: HIDDEN_POLICY });
+    const window = dashboard.providers[0]?.windows.find(w => w.key === 'meter:nimbus-quill');
+    assert.equal(window, undefined);
+  });
+
+  it('shows the same generic meter under "*" in the local dashboard path', () => {
+    const dashboard = buildUsageDashboardModel({ states: claudeStateWithGenericMeter(), meterVisibility: SHOW_ALL_POLICY });
+    const window = dashboard.providers[0]?.windows.find(w => w.key === 'meter:nimbus-quill');
+    assert.ok(window);
+  });
+
+  it('hides the same generic meter by default in the snapshot-backed dashboard path', () => {
+    const dp = snapshotProviderToDashboardProvider(snapshotProviderWithGenericMeter(), 'desktop', false, Date.now(), HIDDEN_POLICY);
+    assert.equal(dp.windows.find(w => w.key === 'meter:nimbus-quill'), undefined);
+  });
+
+  it('shows the same generic meter under "*" in the snapshot-backed dashboard path', () => {
+    const dp = snapshotProviderToDashboardProvider(snapshotProviderWithGenericMeter(), 'desktop', false, Date.now(), SHOW_ALL_POLICY);
+    assert.ok(dp.windows.find(w => w.key === 'meter:nimbus-quill'));
+  });
+});
+
+describe('hiding generic meters does not affect primary quota rendering', () => {
+  function claudeStateWithMeters(meters: ProviderUsageState['meters']): ProviderUsageState[] {
+    const reset = Math.floor(Date.now() / 1000) + 86_400;
+    return [{
+      provider: 'claude',
+      source: 'primary quota regression fixture',
+      stale: false,
+      lastUpdatedEpochMs: Date.now(),
+      sevenDay: { usedPercentage: 35, resetsAtEpochSeconds: reset },
+      fiveHour: { usedPercentage: 20, resetsAtEpochSeconds: reset },
+      meters
+    }];
+  }
+
+  it('renders identical status/severity/tooltip freshness whether hidden generic meters are present or absent', () => {
+    const hiddenMeterState = claudeStateWithMeters([
+      { id: 'nimbus-quill', label: 'Nimbus Quill', scope: 'model', window: { usedPercentage: 40, resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 86_400 } }
+    ]);
+    const noMeterState = claudeStateWithMeters(undefined);
+
+    const opts: FormatOptions = { displayMode: 'standard', statusMode: 'remaining', meterVisibility: { showExtraUsage: true, visibleUsageMeters: [] } };
+    const withHiddenMeter = formatStatus(hiddenMeterState, opts);
+    const withoutMeter = formatStatus(noMeterState, opts);
+
+    assert.equal(withHiddenMeter.text, withoutMeter.text);
+    assert.equal(withHiddenMeter.severity, withoutMeter.severity);
+    assert.equal(withHiddenMeter.providers[0].tooltip, withoutMeter.providers[0].tooltip);
+    assert.doesNotMatch(withHiddenMeter.tooltip, /AI usage unavailable/i);
+    assert.doesNotMatch(withHiddenMeter.tooltip, /Nimbus Quill/);
   });
 });
