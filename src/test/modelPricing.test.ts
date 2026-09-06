@@ -19,6 +19,11 @@ function sampleCsv(): string {
     'claude,claude-sonnet-4-6,3,15,3.75,6,0.30,USD,2026-06-04,Claude Sonnet 4.6',
     'codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,GPT-5.6 Sol pre-promotion',
     'codex,gpt-5.6-sol,4,20,5,5,0.40,USD,2026-08-21,GPT-5.6 Sol promotional',
+    'codex,gpt-5.6-terra,2.50,15,3.125,3.125,0.25,USD,2026-07-09,GPT-5.6 Terra historical',
+    'codex,gpt-5.6-terra,2,12,2.5,2.5,0.20,USD,2026-07-30,GPT-5.6 Terra reduction',
+    'codex,gpt-5.6-luna,1,6,1.25,1.25,0.10,USD,2026-07-09,GPT-5.6 Luna historical',
+    'codex,gpt-5.6-luna,0.20,1.20,0.25,0.25,0.02,USD,2026-07-30,GPT-5.6 Luna reduction',
+    'codex,gpt-6-astra,10,50,12.5,12.5,1,USD,2026-09-03,GPT-6 Astra',
     'codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,GPT-5.4',
     'codex,codex-auto-review,1.75,14,,,0.175,USD,2026-06-04,Codex Auto Review',
     'claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,Claude Opus 4.8'
@@ -28,7 +33,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 10);
+    assert.equal(rows.length, 14);
   });
 
   it('parses numeric values correctly', () => {
@@ -121,8 +126,11 @@ describe('buildPricingTable', () => {
     assert.ok(table.has('claude'));
     assert.ok(table.has('codex'));
     assert.equal(table.get('claude')!.size, 5);
-    assert.equal(table.get('codex')!.size, 3);
+    assert.equal(table.get('codex')!.size, 6);
     assert.equal(table.get('claude')!.get('claude-sonnet-5')!.length, 2);
+    assert.equal(table.get('codex')!.get('gpt-5.6-sol')!.length, 2);
+    assert.equal(table.get('codex')!.get('gpt-5.6-terra')!.length, 2);
+    assert.equal(table.get('codex')!.get('gpt-5.6-luna')!.length, 2);
   });
 });
 
@@ -238,6 +246,74 @@ describe('findModelPricingInTable', () => {
     assert.ok(later);
     assert.equal(later.row.inputPer1m, 4);
     assert.equal(later.row.outputPer1m, 20);
+  });
+
+  it('selects pre-reduction GPT-5.6 Terra pricing before 2026-07-30', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-5.6-terra', '2026-07-29');
+    assert.ok(result);
+    assert.equal(result.matchedKey, 'gpt-5.6-terra');
+    assert.equal(result.row.inputPer1m, 2.50);
+    assert.equal(result.row.outputPer1m, 15);
+    assert.equal(result.row.cacheWrite5mPer1m, 3.125);
+    assert.equal(result.row.cacheReadPer1m, 0.25);
+  });
+
+  it('selects reduced GPT-5.6 Terra pricing on and after 2026-07-30', () => {
+    const onDate = findModelPricingInTable(table, 'codex', 'gpt-5.6-terra', '2026-07-30');
+    assert.ok(onDate);
+    assert.equal(onDate.row.inputPer1m, 2);
+    assert.equal(onDate.row.outputPer1m, 12);
+    assert.equal(onDate.row.cacheWrite5mPer1m, 2.5);
+    assert.equal(onDate.row.cacheReadPer1m, 0.20);
+
+    const later = findModelPricingInTable(table, 'codex', 'gpt-5.6-terra', '2026-12-01');
+    assert.ok(later);
+    assert.equal(later.row.inputPer1m, 2);
+    assert.equal(later.row.outputPer1m, 12);
+  });
+
+  it('selects pre-reduction GPT-5.6 Luna pricing before 2026-07-30', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-5.6-luna', '2026-07-29');
+    assert.ok(result);
+    assert.equal(result.matchedKey, 'gpt-5.6-luna');
+    assert.equal(result.row.inputPer1m, 1);
+    assert.equal(result.row.outputPer1m, 6);
+    assert.equal(result.row.cacheWrite5mPer1m, 1.25);
+    assert.equal(result.row.cacheReadPer1m, 0.10);
+  });
+
+  it('selects reduced GPT-5.6 Luna pricing on and after 2026-07-30', () => {
+    const onDate = findModelPricingInTable(table, 'codex', 'gpt-5.6-luna', '2026-07-30');
+    assert.ok(onDate);
+    assert.equal(onDate.row.inputPer1m, 0.20);
+    assert.equal(onDate.row.outputPer1m, 1.20);
+    assert.equal(onDate.row.cacheWrite5mPer1m, 0.25);
+    assert.equal(onDate.row.cacheReadPer1m, 0.02);
+
+    const later = findModelPricingInTable(table, 'codex', 'gpt-5.6-luna', '2026-12-01');
+    assert.ok(later);
+    assert.equal(later.row.inputPer1m, 0.20);
+    assert.equal(later.row.outputPer1m, 1.20);
+  });
+
+  it('returns undefined for GPT-6 Astra before its effective date', () => {
+    const result = findModelPricingInTable(table, 'codex', 'gpt-6-astra', '2026-09-02');
+    assert.equal(result, undefined);
+  });
+
+  it('finds GPT-6 Astra on and after its effective date', () => {
+    const onDate = findModelPricingInTable(table, 'codex', 'gpt-6-astra', '2026-09-03');
+    assert.ok(onDate);
+    assert.equal(onDate.matchedKey, 'gpt-6-astra');
+    assert.equal(onDate.row.inputPer1m, 10);
+    assert.equal(onDate.row.outputPer1m, 50);
+    assert.equal(onDate.row.cacheWrite5mPer1m, 12.5);
+    assert.equal(onDate.row.cacheWrite1hPer1m, 12.5);
+    assert.equal(onDate.row.cacheReadPer1m, 1);
+
+    const later = findModelPricingInTable(table, 'codex', 'gpt-6-astra', '2026-12-01');
+    assert.ok(later);
+    assert.equal(later.row.inputPer1m, 10);
   });
 
   it('rejects prefix collisions that are not approved version suffixes', () => {

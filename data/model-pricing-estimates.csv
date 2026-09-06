@@ -21,8 +21,11 @@ claude,claude-opus-4-6-fast,30,150,,,,USD,2026-06-04,Fast mode
 codex,gpt-5.5,5,30,,,0.50,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
 codex,gpt-5.6-sol,5,30,6.25,6.25,0.50,USD,2026-07-09,Official OpenAI API Standard short-context pricing (pre-promotion); cache writes use the single published cache-write rate in both cache-write fields
 codex,gpt-5.6-sol,4,20,5,5,0.40,USD,2026-08-21,Promotional pricing effective 2026-08-21; stated to remain available at least through 2026-11-21; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
-codex,gpt-5.6-terra,2.50,15,3.125,3.125,0.25,USD,2026-07-09,Official OpenAI API Standard short-context pricing; cache writes use the single published cache-write rate in both cache-write fields
-codex,gpt-5.6-luna,1,6,1.25,1.25,0.10,USD,2026-07-09,Official OpenAI API Standard short-context pricing; cache writes use the single published cache-write rate in both cache-write fields
+codex,gpt-5.6-terra,2.50,15,3.125,3.125,0.25,USD,2026-07-09,Official OpenAI API Standard short-context pricing (historical); cache writes use the single published cache-write rate in both cache-write fields
+codex,gpt-5.6-terra,2,12,2.5,2.5,0.20,USD,2026-07-30,Official OpenAI API price reduction effective 2026-07-30; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
+codex,gpt-5.6-luna,1,6,1.25,1.25,0.10,USD,2026-07-09,Official OpenAI API Standard short-context pricing (historical); cache writes use the single published cache-write rate in both cache-write fields
+codex,gpt-5.6-luna,0.20,1.20,0.25,0.25,0.02,USD,2026-07-30,Official OpenAI API price reduction effective 2026-07-30; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
+codex,gpt-6-astra,10,50,12.5,12.5,1,USD,2026-09-03,Official OpenAI API pricing effective 2026-09-03; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
 codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
 codex,gpt-5.4-mini,0.75,4.50,,,0.075,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
 codex,gpt-5.4-nano,0.20,1.25,,,0.02,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m

@@ -140,6 +140,84 @@ describe('pricing estimates', () => {
     assert.equal(after.cacheReadPerMillion, 0.40);
   });
 
+  it('estimates GPT-5.6 Terra at reduced rates effective 2026-07-30', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-terra'], '2026-07-30');
+    assertApprox(estimate.costUsd, 0.0366);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-terra');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('uses pre-reduction GPT-5.6 Terra pricing before 2026-07-30', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-terra'], '2026-07-29');
+    assertApprox(estimate.costUsd, 0.0566);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-terra');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('selects GPT-5.6 Terra reduction rates via findConfiguredModelPricing', () => {
+    const before = findConfiguredModelPricing('codex', 'gpt-5.6-terra', '2026-07-29');
+    assert.ok(before);
+    assert.equal(before.inputPerMillion, 2.50);
+    assert.equal(before.outputPerMillion, 15);
+
+    const after = findConfiguredModelPricing('codex', 'gpt-5.6-terra', '2026-07-30');
+    assert.ok(after);
+    assert.equal(after.inputPerMillion, 2);
+    assert.equal(after.outputPerMillion, 12);
+    assert.equal(after.cacheWritePerMillion, 2.5);
+    assert.equal(after.cacheReadPerMillion, 0.20);
+  });
+
+  it('estimates GPT-5.6 Luna at reduced rates effective 2026-07-30', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-luna'], '2026-07-30');
+    assertApprox(estimate.costUsd, 0.00366);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-luna');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('uses pre-reduction GPT-5.6 Luna pricing before 2026-07-30', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-luna'], '2026-07-29');
+    assertApprox(estimate.costUsd, 0.0141);
+    assert.equal(estimate.matchedModel, 'gpt-5.6-luna');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('selects GPT-5.6 Luna reduction rates via findConfiguredModelPricing', () => {
+    const before = findConfiguredModelPricing('codex', 'gpt-5.6-luna', '2026-07-29');
+    assert.ok(before);
+    assert.equal(before.inputPerMillion, 1);
+    assert.equal(before.outputPerMillion, 6);
+
+    const after = findConfiguredModelPricing('codex', 'gpt-5.6-luna', '2026-07-30');
+    assert.ok(after);
+    assert.equal(after.inputPerMillion, 0.20);
+    assert.equal(after.outputPerMillion, 1.20);
+    assert.equal(after.cacheWritePerMillion, 0.25);
+    assert.equal(after.cacheReadPerMillion, 0.02);
+  });
+
+  it('falls back for GPT-6 Astra before its effective date', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-6-astra'], '2026-09-02');
+    assert.equal(estimate.matchedModel, undefined);
+    assert.equal(estimate.isFallback, true);
+  });
+
+  it('estimates GPT-6 Astra costs on and after its effective date', () => {
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-6-astra'], '2026-09-03');
+    assertApprox(estimate.costUsd, 0.163);
+    assert.equal(estimate.matchedModel, 'gpt-6-astra');
+    assert.equal(estimate.isFallback, false);
+  });
+
+  it('selects GPT-6 Astra rates via findConfiguredModelPricing', () => {
+    const result = findConfiguredModelPricing('codex', 'gpt-6-astra', '2026-09-03');
+    assert.ok(result);
+    assert.equal(result.inputPerMillion, 10);
+    assert.equal(result.outputPerMillion, 50);
+    assert.equal(result.cacheWritePerMillion, 12.5);
+    assert.equal(result.cacheReadPerMillion, 1);
+  });
+
   it('prices an all-cache-read turn with zero uncached input tokens', () => {
     const estimate = estimateCodexCostUsd(0, 0, 4_000, 0, ['gpt-5.4']);
     assertApprox(estimate.costUsd, 0.001);

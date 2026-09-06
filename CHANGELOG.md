@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.19
+
+**Included in this release:**
+
+* Added API-equivalent pricing estimates for GPT-6 Astra (`gpt-6-astra`) at $10.00/1M input, $50.00/1M output, $1.00/1M cached input, effective 2026-09-03, sourced from official OpenAI API pricing. Long-context pricing above 272K input tokens is not represented by the flat pricing schema.
+* Added effective-dated GPT-5.6 Terra price reduction ($2.00/1M input, $12.00/1M output, $0.20/1M cached input) effective 2026-07-30, and GPT-5.6 Luna price reduction ($0.20/1M input, $1.20/1M output, $0.02/1M cached input) effective 2026-07-30, using the existing scheduled-pricing mechanism. Historical rows (effective 2026-07-09) are preserved so earlier dates continue to estimate correctly.
+
 ## 1.0.18
 
 **Included in this release:**

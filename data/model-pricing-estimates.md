@@ -4,7 +4,7 @@ This folder contains PromptFuel's local source-of-truth pricing table for API-eq
 
 ## Source Scope
 
-Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30. GPT-5.6 Sol, Terra, and Luna rows were added from official OpenAI API pricing on 2026-07-09. Claude Opus 5 row was added from official Anthropic pricing on 2026-07-25, using the same standard global API rates as Claude Opus 4.8.
+Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30. GPT-5.6 Sol, Terra, and Luna rows were added from official OpenAI API pricing on 2026-07-09. Claude Opus 5 row was added from official Anthropic pricing on 2026-07-25, using the same standard global API rates as Claude Opus 4.8. GPT-5.6 Terra and Luna effective-dated price reductions were added from official OpenAI API pricing on 2026-09-06, with the prior 2026-07-09 rows retained as historical pricing. GPT-6 Astra was added from official OpenAI API pricing on 2026-09-06.
 
 - Anthropic Claude model pricing: https://platform.claude.com/docs/en/about-claude/pricing
 - Anthropic Claude Sonnet 5 launch pricing: https://www.anthropic.com/news/claude-sonnet-5
@@ -12,6 +12,8 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 - OpenAI API pricing: https://developers.openai.com/api/docs/pricing
 - OpenAI public API pricing summary: https://openai.com/api/pricing/
 - OpenAI GPT-5.5 model page: https://developers.openai.com/api/docs/models/gpt-5.5
+- OpenAI GPT-6 Astra model page: https://developers.openai.com/api/docs/models/gpt-6-astra
+- OpenAI GPT-5.6 pricing and updates: https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/
 
 ## Modeling Notes
 
@@ -23,4 +25,6 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 - Codex rows use standard OpenAI API pricing for the listed models. PromptFuel does not model OpenAI batch, flex, priority, long-context, regional processing, or private-contract modifiers.
 - OpenAI cached input is represented as `cache_read_per_1m` because PromptFuel's Codex token counters expose cached input as read-style cache usage.
 - GPT-5.6 OpenAI cache writes use the single published cache-write rate in both CSV cache-write fields.
+- GPT-5.6 Terra and Luna each have two effective-dated rows: the original 2026-07-09 standard rates (historical) and the 2026-07-30 price reductions. The resolver selects the correct row by `effective_date` the same way Claude Sonnet 5's scheduled rows are resolved.
+- GPT-6 Astra has separate long-context pricing above 272K input tokens. PromptFuel's current flat pricing schema does not model that tariff; only short-context rates are represented.
 - `codex-auto-review` is a PromptFuel model alias mapped to the official `gpt-5.3-codex` rate so existing local estimates continue to match the prior configured behavior.
