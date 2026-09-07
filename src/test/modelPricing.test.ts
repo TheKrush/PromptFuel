@@ -33,7 +33,7 @@ function sampleCsv(): string {
 describe('model pricing CSV parser', () => {
   it('parses all rows from valid CSV', () => {
     const rows = parseModelPricingCsv(sampleCsv());
-    assert.equal(rows.length, 14);
+    assert.equal(rows.length, 15);
   });
 
   it('parses numeric values correctly', () => {

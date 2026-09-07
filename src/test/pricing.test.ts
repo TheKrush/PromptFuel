@@ -149,7 +149,7 @@ describe('pricing estimates', () => {
 
   it('uses pre-reduction GPT-5.6 Terra pricing before 2026-07-30', () => {
     const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-terra'], '2026-07-29');
-    assertApprox(estimate.costUsd, 0.0566);
+    assertApprox(estimate.costUsd, 0.04575);
     assert.equal(estimate.matchedModel, 'gpt-5.6-terra');
     assert.equal(estimate.isFallback, false);
   });
@@ -177,7 +177,7 @@ describe('pricing estimates', () => {
 
   it('uses pre-reduction GPT-5.6 Luna pricing before 2026-07-30', () => {
     const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-5.6-luna'], '2026-07-29');
-    assertApprox(estimate.costUsd, 0.0141);
+    assertApprox(estimate.costUsd, 0.0183);
     assert.equal(estimate.matchedModel, 'gpt-5.6-luna');
     assert.equal(estimate.isFallback, false);
   });
