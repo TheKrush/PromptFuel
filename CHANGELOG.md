@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.20
+
+**Included in this release:**
+
+* Large token and metric counts now display using B for billion-scale values (e.g. 1.5B) instead of continuing to display as thousands of millions (e.g. 1,500.0M), affecting both the TypeScript token count formatter and the webview metric number formatter.
+
 ## 1.0.19
 
 **Included in this release:**

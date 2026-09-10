@@ -2070,6 +2070,7 @@
   function formatMetricNumber(value) {
     var n = Number(value);
     if (!isFinite(n)) { return '—'; }
+    if (n >= 1000000000) { return addThousandsSeparators((n / 1000000000).toFixed(1)) + 'B'; }
     if (n >= 1000000) { return addThousandsSeparators((n / 1000000).toFixed(1)) + 'M'; }
     if (n >= 1000) { return addThousandsSeparators((n / 1000).toFixed(1)) + 'K'; }
     return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');

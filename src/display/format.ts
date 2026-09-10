@@ -632,6 +632,9 @@ export function addThousandsSeparators(numStr: string): string {
 }
 
 export function formatTokenCount(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${addThousandsSeparators((value / 1_000_000_000).toFixed(1))}B`;
+  }
   if (value >= 1_000_000) {
     return `${addThousandsSeparators((value / 1_000_000).toFixed(1))}M`;
   }

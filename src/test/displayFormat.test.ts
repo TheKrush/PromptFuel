@@ -55,7 +55,7 @@ describe('display formatting', () => {
     assert.equal(addThousandsSeparators('1234567'), '1,234,567');
   });
 
-  it('formats token counts with K/M abbreviations', () => {
+  it('formats token counts with B/K/M abbreviations', () => {
     assert.equal(formatTokenCount(0), '0');
     assert.equal(formatTokenCount(5), '5');
     assert.equal(formatTokenCount(999), '999');
@@ -67,6 +67,12 @@ describe('display formatting', () => {
     assert.equal(formatTokenCount(9999999), '10.0M');
     assert.equal(formatTokenCount(1234567), '1.2M');
     assert.equal(formatTokenCount(123456), '123.5K');
+    assert.equal(formatTokenCount(999_999_999), '1,000.0M');
+    assert.equal(formatTokenCount(1_000_000_000), '1.0B');
+    assert.equal(formatTokenCount(1_500_000_000), '1.5B');
+    assert.equal(formatTokenCount(36_592_800_000), '36.6B');
+    assert.equal(formatTokenCount(3_866_000_000), '3.9B');
+    assert.equal(formatTokenCount(1_037_000_000), '1.0B');
   });
 
   it('maps remaining quota levels to dashboard color buckets', () => {
