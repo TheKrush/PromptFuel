@@ -1,6 +1,7 @@
 provider,model,input_per_1m,output_per_1m,cache_write_5m_per_1m,cache_write_1h_per_1m,cache_read_per_1m,currency,effective_date,notes
 claude,claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,
 claude,anthropic/claude-fable-5,10,50,12.50,20,1,USD,2026-06-10,OpenRouter-style alias for Claude Fable 5
+claude,claude-opus-5-5,4,20,5,8,0.20,USD,2026-09-22,
 claude,claude-opus-5,5,25,6.25,10,0.50,USD,2026-07-25,
 claude,claude-opus-4-8,5,25,6.25,10,0.50,USD,2026-06-04,
 claude,claude-opus-4-7,5,25,6.25,10,0.50,USD,2026-06-04,
@@ -15,6 +16,7 @@ claude,claude-sonnet-4-5,3,15,3.75,6,0.30,USD,2026-06-04,
 claude,claude-sonnet-4,3,15,3.75,6,0.30,USD,2026-06-04,Deprecated
 claude,claude-haiku-4-5,1,5,1.25,2,0.10,USD,2026-06-04,
 claude,claude-haiku-3-5,0.80,4,1,1.60,0.08,USD,2026-06-04,Retired except Bedrock and Vertex AI
+claude,claude-opus-5-5-fast,8,40,,,,USD,2026-09-22,Fast mode
 claude,claude-opus-4-8-fast,10,50,,,,USD,2026-06-04,Fast mode
 claude,claude-opus-4-7-fast,30,150,,,,USD,2026-06-04,Fast mode
 claude,claude-opus-4-6-fast,30,150,,,,USD,2026-06-04,Fast mode
@@ -26,6 +28,8 @@ codex,gpt-5.6-terra,2,12,2.5,2.5,0.20,USD,2026-07-30,Official OpenAI API price r
 codex,gpt-5.6-luna,1,6,1.25,1.25,0.10,USD,2026-07-09,Official OpenAI API Standard short-context pricing (historical); cache writes use the single published cache-write rate in both cache-write fields
 codex,gpt-5.6-luna,0.20,1.20,0.25,0.25,0.02,USD,2026-07-30,Official OpenAI API price reduction effective 2026-07-30; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
 codex,gpt-6-astra,10,50,12.5,12.5,1,USD,2026-09-03,Official OpenAI API pricing effective 2026-09-03; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
+codex,gpt-6-sol,2,10,2.5,2.5,0.20,USD,2026-09-22,Official OpenAI API pricing effective 2026-09-22; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
+codex,gpt-6-luna,0.10,0.50,0.125,0.125,0.01,USD,2026-09-22,Official OpenAI API pricing effective 2026-09-22; short-context pricing only — requests above 272K input tokens have a separate long-context tariff not represented by this flat pricing
 codex,gpt-5.4,2.50,15,,,0.25,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
 codex,gpt-5.4-mini,0.75,4.50,,,0.075,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
 codex,gpt-5.4-nano,0.20,1.25,,,0.02,USD,2026-06-04,Official OpenAI API pricing; cached input mapped to cache_read_per_1m
