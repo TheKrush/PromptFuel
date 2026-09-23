@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.21
+
+**Included in this release:**
+
+* Added effective-dated API-equivalent pricing for Claude Opus 5.5 (`claude-opus-5-5`) at $4.00/1M input, $20.00/1M output, $5.00/1M 5-minute cache write, $8.00/1M 1-hour cache write, and $0.20/1M cache read, plus the matching Fast-mode label at $8.00/1M input and $40.00/1M output, effective 2026-09-22.
+* Added effective-dated OpenAI API pricing for GPT-6 Sol (`gpt-6-sol`) at $2.00/1M input, $10.00/1M output, $2.50/1M cache write, and $0.20/1M cached input, and GPT-6 Luna (`gpt-6-luna`) at $0.10/1M input, $0.50/1M output, $0.125/1M cache write, and $0.01/1M cached input, effective 2026-09-22. As with GPT-6 Astra, the flat pricing schema represents only short-context pricing; requests above 272K input tokens have a separate long-context tariff.
+
 ## 1.0.20
 
 **Included in this release:**
