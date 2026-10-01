@@ -53,18 +53,44 @@ describe('pricing estimates', () => {
     assert.equal(openRouterAlias.isFallback, false);
   });
 
-  it('selects scheduled Claude Sonnet 5 pricing by explicit as-of date', () => {
-    const intro = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-08-31');
-    assert.ok(intro);
-    assert.equal(intro.inputPerMillion, 2);
-    assert.equal(intro.outputPerMillion, 10);
-    assert.equal(intro.matchedModel, 'claude-sonnet-5');
+  it('estimates Claude Fable 5.1 with its 0.025x cache-read rate and distinct model id', () => {
+    // 10,000 in x $10 + 2,000 out x $50 + 3,000 cache-read x $0.25 + 4,000 cache-write x $12.50, per 1M.
+    const fable51 = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['claude-fable-5-1'], '2026-09-01');
+    assertApprox(fable51.costUsd, 0.25075);
+    assert.equal(fable51.matchedModel, 'claude-fable-5-1');
+    assert.equal(fable51.isFallback, false);
 
-    const standard = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-09-01');
-    assert.ok(standard);
-    assert.equal(standard.inputPerMillion, 3);
-    assert.equal(standard.outputPerMillion, 15);
-    assert.equal(standard.matchedModel, 'claude-sonnet-5');
+    // Fable 5 keeps the 0.1x cache-read rate ($1) and must not resolve to the 5.1 row.
+    const fable5 = findConfiguredModelPricing('claude', 'claude-fable-5', '2026-09-01');
+    assert.ok(fable5);
+    assert.equal(fable5.matchedModel, 'claude-fable-5');
+    assert.equal(fable5.cacheReadPerMillion, 1);
+
+    const before = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['claude-fable-5-1'], '2026-08-31');
+    assert.equal(before.matchedModel, undefined);
+    assert.equal(before.isFallback, true);
+  });
+
+  it('estimates Claude Sonnet 5.5 from its 2026-09-28 effective date without matching Sonnet 5', () => {
+    const sonnet55 = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-sonnet-5-5'], '2026-09-28');
+    assertApprox(sonnet55.costUsd, 0.07);
+    assert.equal(sonnet55.matchedModel, 'claude-sonnet-5-5');
+    assert.equal(sonnet55.isFallback, false);
+
+    const before = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-sonnet-5-5'], '2026-09-27');
+    assert.equal(before.matchedModel, undefined);
+    assert.equal(before.isFallback, true);
+  });
+
+  it('keeps Claude Sonnet 5 at its permanent $2/$10 rate across the cancelled 2026-09-01 increase', () => {
+    for (const asOf of ['2026-08-31', '2026-09-01', '2026-10-01']) {
+      const rate = findConfiguredModelPricing('claude', 'claude-sonnet-5', asOf);
+      assert.ok(rate);
+      assert.equal(rate.inputPerMillion, 2);
+      assert.equal(rate.outputPerMillion, 10);
+      assert.equal(rate.cacheReadPerMillion, 0.2);
+      assert.equal(rate.matchedModel, 'claude-sonnet-5');
+    }
   });
 
   it('keeps future-only scheduled rows unavailable and preserves fallback behavior', () => {
@@ -222,6 +248,32 @@ describe('pricing estimates', () => {
     const estimate = estimateCodexCostUsd(0, 0, 4_000, 0, ['gpt-5.4']);
     assertApprox(estimate.costUsd, 0.001);
     assert.equal(estimate.isFallback, false);
+  });
+
+  it('estimates GPT-6.1 Sol costs on and after its 2026-09-29 effective date', () => {
+    // 1,000 in x $2 + 2,000 out x $10 + 3,000 cached x $0.10 + 4,000 cache-write x $2.50, per 1M.
+    const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-6.1-sol'], '2026-09-29');
+    assertApprox(estimate.costUsd, 0.0323);
+    assert.equal(estimate.matchedModel, 'gpt-6.1-sol');
+    assert.equal(estimate.isFallback, false);
+
+    const before = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-6.1-sol'], '2026-09-28');
+    assert.equal(before.matchedModel, undefined);
+    assert.equal(before.isFallback, true);
+  });
+
+  it('keeps GPT-6.1 Sol and GPT-6 Sol as distinct rows with different cached-input rates', () => {
+    const sol61 = findConfiguredModelPricing('codex', 'gpt-6.1-sol', '2026-09-29');
+    assert.ok(sol61);
+    assert.equal(sol61.inputPerMillion, 2);
+    assert.equal(sol61.outputPerMillion, 10);
+    assert.equal(sol61.cacheWritePerMillion, 2.5);
+    assert.equal(sol61.cacheReadPerMillion, 0.1);
+
+    const sol6 = findConfiguredModelPricing('codex', 'gpt-6-sol', '2026-09-29');
+    assert.ok(sol6);
+    assert.equal(sol6.matchedModel, 'gpt-6-sol');
+    assert.equal(sol6.cacheReadPerMillion, 0.2);
   });
 
   it('does not double-count Codex cache-write tokens when input is present', () => {
