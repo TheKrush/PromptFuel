@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.22
+
+**Included in this release:**
+
+* Added effective-dated API-equivalent pricing for Claude Fable 5.1 (`claude-fable-5-1`) at $10.00/1M input, $50.00/1M output, $12.50/1M 5-minute cache write, $20.00/1M 1-hour cache write, and $0.25/1M cache read, effective 2026-09-01. Cache reads on Fable 5.1 are priced lower than on Claude Fable 5.
+* Added effective-dated API-equivalent pricing for Claude Sonnet 5.5 (`claude-sonnet-5-5`) at $2.00/1M input, $10.00/1M output, $2.50/1M 5-minute cache write, $4.00/1M 1-hour cache write, and $0.20/1M cache read, effective 2026-09-28.
+* Added effective-dated OpenAI API pricing for GPT-6.1 Sol (`gpt-6.1-sol`) at $2.00/1M input, $10.00/1M output, $2.50/1M cache write, and $0.10/1M cached input, effective 2026-09-29. GPT-6 Sol remains a separate entry at its existing rates. As with the other GPT-6 models, the flat pricing schema represents only short-context pricing; requests above 272K input tokens have a separate long-context tariff.
+* Corrected Claude Sonnet 5 pricing: the scheduled 2026-09-01 increase to $3.00/1M input and $15.00/1M output was cancelled by Anthropic, so Sonnet 5 stays at $2.00/1M input and $10.00/1M output. Estimates dated on or after 2026-09-01 were previously overstated.
+* Updated the model notes for retired or deprecated Claude models (Opus 4, Opus 4.1, Sonnet 4, and Sonnet 4.5) to match current Anthropic lifecycle status. Their pricing is unchanged.
+
+**Scope notes:**
+
+* Claude Mythos 5.1 is restricted-access and is not currently included; inclusion criteria for restricted-access models have not been formally established.
+* Pricing remains API-equivalent estimates and does not model batch, flex, priority, long-context, or regional modifiers.
+
 ## 1.0.21
 
 **Included in this release:**
