@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.23
+
+**Included in this release:**
+
+* Added effective-dated API-equivalent pricing for Claude Haiku 5.5 (`claude-haiku-5-5`) at $0.10/1M input, $0.50/1M output, $0.125/1M 5-minute cache write, $0.20/1M 1-hour cache write, and $0.01/1M cache read, effective 2026-10-07. Before this change, Haiku 5.5 usage was not recognized and was estimated with the fallback Claude rate.
+* Added an effective-dated Claude Sonnet 5.5 (`claude-sonnet-5-5`) row reflecting Anthropic's cache-read price reduction from $0.20/1M to $0.10/1M, effective 2026-10-07. All other Sonnet 5.5 rates are unchanged, and the earlier row is preserved so estimates dated before 2026-10-07 keep the $0.20/1M cache-read rate.
+* Re-audited the Claude and OpenAI rate tables against the official provider pricing, model, deprecation, and changelog pages; no other rate changes were found since the previous refresh.
+
+**Scope notes:**
+
+* Claude Haiku 5.5 is priced in two bands: the rates above apply to requests whose prompt is up to 100,000 tokens, and requests with longer prompts (counting cache reads and writes) are billed at higher rates. PromptFuel estimates from aggregated per-model token totals and does not see per-request prompt length, so only the lower band is represented and Haiku 5.5 usage above the threshold is underestimated.
+* Claude Mythos 5 and 5.1 are limited-availability and are not included, and no `claude-opus-5-fast` row is included because no verified effective date was found.
+* Pricing remains API-equivalent estimates and does not model batch, flex, priority, ultrafast, long-context, or regional modifiers.
+
 ## 1.0.22
 
 **Included in this release:**

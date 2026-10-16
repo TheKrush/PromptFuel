@@ -2,7 +2,7 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { initModelPricingFromCsv } from '../modelPricing';
+import { findModelPricing, initModelPricingFromCsv } from '../modelPricing';
 import {
   estimateAggregateCostUsd,
   estimateClaudeCostUsd,
@@ -80,6 +80,100 @@ describe('pricing estimates', () => {
     const before = estimateClaudeCostUsd(10_000, 5_000, 0, 0, ['claude-sonnet-5-5'], '2026-09-27');
     assert.equal(before.matchedModel, undefined);
     assert.equal(before.isFallback, true);
+  });
+
+  it('applies the Sonnet 5.5 cache-read reduction from 2026-10-07 and preserves the earlier rate', () => {
+    // 10,000 in x $2 + 5,000 out x $10 + 100,000 cache-read x cache-read rate + 4,000 cache-write x $2.50, per 1M.
+    const before = estimateClaudeCostUsd(10_000, 5_000, 100_000, 4_000, ['claude-sonnet-5-5'], '2026-10-06');
+    assertApprox(before.costUsd, 0.1);
+    assert.equal(before.matchedModel, 'claude-sonnet-5-5');
+    assert.equal(before.isFallback, false);
+
+    const onDate = estimateClaudeCostUsd(10_000, 5_000, 100_000, 4_000, ['claude-sonnet-5-5'], '2026-10-07');
+    assertApprox(onDate.costUsd, 0.09);
+    assert.equal(onDate.matchedModel, 'claude-sonnet-5-5');
+    assert.equal(onDate.isFallback, false);
+
+    const rate = findConfiguredModelPricing('claude', 'claude-sonnet-5-5-20261007', '2026-10-15');
+    assert.ok(rate);
+    assert.equal(rate.inputPerMillion, 2);
+    assert.equal(rate.outputPerMillion, 10);
+    assert.equal(rate.cacheWritePerMillion, 2.5);
+    assert.equal(rate.cacheReadPerMillion, 0.1);
+
+    // Sonnet 5 keeps its own $0.20 cache-read rate and does not inherit the 5.5 change.
+    const sonnet5 = findConfiguredModelPricing('claude', 'claude-sonnet-5', '2026-10-15');
+    assert.ok(sonnet5);
+    assert.equal(sonnet5.cacheReadPerMillion, 0.2);
+  });
+
+  it('estimates Claude Haiku 5.5 at its lower prompt-size band from 2026-10-07', () => {
+    // 10,000 in x $0.10 + 2,000 out x $0.50 + 3,000 cache-read x $0.01 + 4,000 cache-write x $0.125, per 1M.
+    const haiku = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['claude-haiku-5-5'], '2026-10-07');
+    assertApprox(haiku.costUsd, 0.00253);
+    assert.equal(haiku.matchedModel, 'claude-haiku-5-5');
+    assert.equal(haiku.isFallback, false);
+
+    const rate = findConfiguredModelPricing('claude', 'claude-haiku-5-5', '2026-10-15');
+    assert.ok(rate);
+    assert.equal(rate.inputPerMillion, 0.1);
+    assert.equal(rate.outputPerMillion, 0.5);
+    assert.equal(rate.cacheWritePerMillion, 0.125);
+    assert.equal(rate.cacheReadPerMillion, 0.01);
+
+    // Dated variants resolve to the same row; Haiku 4.5 keeps its own rates.
+    const dated = findConfiguredModelPricing('claude', 'claude-haiku-5-5-20261007', '2026-10-15');
+    assert.ok(dated);
+    assert.equal(dated.matchedModel, 'claude-haiku-5-5');
+    const haiku45 = findConfiguredModelPricing('claude', 'claude-haiku-4-5-20251001', '2026-10-15');
+    assert.ok(haiku45);
+    assert.equal(haiku45.matchedModel, 'claude-haiku-4-5');
+    assert.equal(haiku45.inputPerMillion, 1);
+
+    const before = estimateClaudeCostUsd(10_000, 2_000, 3_000, 4_000, ['claude-haiku-5-5'], '2026-10-06');
+    assert.equal(before.matchedModel, undefined);
+    assert.equal(before.isFallback, true);
+  });
+
+  it('prices Claude Haiku 5.5 with the lower band regardless of token volume (long-prompt limitation)', () => {
+    // The estimator only sees aggregated token totals, so it cannot tell whether any single request's
+    // prompt exceeded 100K tokens. Official >100K-prompt rates ($0.50 in / $2.50 out) are NOT applied,
+    // and the Haiku 5.5 row's notes must say so rather than imply long-prompt accuracy.
+    const aggregate = estimateClaudeCostUsd(500_000, 100_000, 0, 0, ['claude-haiku-5-5'], '2026-10-15');
+    assertApprox(aggregate.costUsd, 0.1);
+    assert.equal(aggregate.isFallback, false);
+
+    const match = findModelPricing('claude', 'claude-haiku-5-5', '2026-10-15');
+    assert.ok(match);
+    assert.match(match.row.notes, /100K/);
+    assert.match(match.row.notes, /underestimated/);
+  });
+
+  it('does not let new Claude model ids inherit unrelated rates', () => {
+    for (const unknown of ['claude-haiku-5-6', 'claude-haiku-5', 'claude-sonnet-5-6', 'claude-haiku-5-5-fast']) {
+      assert.equal(findConfiguredModelPricing('claude', unknown, '2026-10-15'), undefined, unknown);
+    }
+  });
+
+  it('aggregates mixed Haiku 5.5, Sonnet 5.5, and Sonnet 4.6 usage with as-of-date rates', () => {
+    const usage = [
+      { model: 'claude-haiku-5-5', inputTokens: 1_000_000, outputTokens: 1_000_000, cacheCreationInputTokens: 1_000_000, cacheReadInputTokens: 1_000_000 },
+      { model: 'claude-sonnet-5-5', inputTokens: 1_000_000, outputTokens: 1_000_000, cacheCreationInputTokens: 1_000_000, cacheReadInputTokens: 1_000_000 },
+      { model: 'claude-sonnet-4-6', inputTokens: 1_000_000, outputTokens: 1_000_000, cacheCreationInputTokens: 1_000_000, cacheReadInputTokens: 1_000_000 }
+    ];
+
+    // Haiku 5.5: 0.10 + 0.50 + 0.125 + 0.01 = 0.735
+    // Sonnet 5.5 (cache read $0.10): 2 + 10 + 2.50 + 0.10 = 14.60
+    // Sonnet 4.6: 3 + 15 + 3.75 + 0.30 = 22.05
+    const after = estimateAggregateCostUsd(usage, true, '2026-10-07');
+    assertApprox(after.costUsd, 0.735 + 14.6 + 22.05);
+    assert.equal(after.fallbackCount, 0);
+    assert.equal(after.totalCount, 3);
+
+    // Day before: Haiku 5.5 is not yet priced (fallback to the default Claude rate) and Sonnet 5.5 cache read is $0.20.
+    const beforeCutover = estimateAggregateCostUsd(usage, true, '2026-10-06');
+    assert.equal(beforeCutover.fallbackCount, 1);
+    assertApprox(beforeCutover.costUsd, (3 + 15 + 3.75 + 0.3) + 14.7 + 22.05);
   });
 
   it('keeps Claude Sonnet 5 at its permanent $2/$10 rate across the cancelled 2026-09-01 increase', () => {
