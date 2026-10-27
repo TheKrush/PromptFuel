@@ -344,6 +344,28 @@ describe('pricing estimates', () => {
     assert.equal(estimate.isFallback, false);
   });
 
+  it('resolves GPT-6.1 Terra from launch and prices disjoint cached input', () => {
+    assert.equal(findConfiguredModelPricing('codex', 'gpt-6.1-terra', '2026-10-25'), undefined);
+    const before = estimateCodexCostUsd(6_000, 2_000, 4_000, 1_000, ['gpt-6.1-terra'], '2026-10-25');
+    assert.equal(before.matchedModel, undefined);
+    assert.equal(before.isFallback, true);
+
+    for (const date of ['2026-10-26', '2026-11-01']) {
+      const rate = findConfiguredModelPricing('codex', 'gpt-6.1-terra', date);
+      assert.ok(rate);
+      assert.equal(rate.matchedModel, 'gpt-6.1-terra');
+      assert.equal(rate.inputPerMillion, 1);
+      assert.equal(rate.outputPerMillion, 5);
+      assert.equal(rate.cacheReadPerMillion, 0.05);
+      assert.equal(rate.cacheWritePerMillion, 1.25);
+      // 6,000 uncached + 4,000 cached input, 2,000 output and 1,000 cache writes.
+      const estimate = estimateCodexCostUsd(6_000, 2_000, 4_000, 1_000, ['gpt-6.1-terra'], date);
+      assertApprox(estimate.costUsd, 0.01745);
+      assert.equal(estimate.matchedModel, 'gpt-6.1-terra');
+      assert.equal(estimate.isFallback, false);
+    }
+  });
+
   it('estimates GPT-6.1 Sol costs on and after its 2026-09-29 effective date', () => {
     // 1,000 in x $2 + 2,000 out x $10 + 3,000 cached x $0.10 + 4,000 cache-write x $2.50, per 1M.
     const estimate = estimateCodexCostUsd(1_000, 2_000, 3_000, 4_000, ['gpt-6.1-sol'], '2026-09-29');

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.24
+
+**Included in this release:**
+
+* Added GPT-6.1 Terra (`gpt-6.1-terra`) API-equivalent estimates effective 2026-10-26: $1.00 input, $5.00 output, $0.05 cached input, and $1.25 for 30-minute cache writes per million tokens. Estimates use standard short-context rates; 12-hour cache writes and long-context or service-tier modifiers are not represented.
+
 ## 1.0.23
 
 **Included in this release:**

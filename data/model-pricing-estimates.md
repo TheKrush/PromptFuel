@@ -4,6 +4,8 @@ This folder contains PromptFuel's local source-of-truth pricing table for API-eq
 
 ## Source Scope
 
+GPT-6.1 Terra was added at its 2026-10-26 launch using the official OpenAI model page and API changelog.
+
 Values in `model-pricing-estimates.csv` were refreshed from official provider pages on 2026-06-04. Claude Fable 5 rows were added from official Anthropic pricing on 2026-06-10. Claude Sonnet 5 introductory pricing was added from official Anthropic sources on 2026-06-30. GPT-5.6 Sol, Terra, and Luna rows were added from official OpenAI API pricing on 2026-07-09. Claude Opus 5 row was added from official Anthropic pricing on 2026-07-25, using the same standard global API rates as Claude Opus 4.8. GPT-5.6 Terra and Luna effective-dated price reductions were added from official OpenAI API pricing on 2026-09-06, with the prior 2026-07-09 rows retained as historical pricing. GPT-6 Astra was added from official OpenAI API pricing on 2026-09-06. Claude Opus 5.5 and GPT-6 Sol/Luna rows were added from official provider pricing with 2026-09-22 effective dates. Claude Fable 5.1 (2026-09-01), Claude Sonnet 5.5 (2026-09-28), and GPT-6.1 Sol (2026-09-29) rows were added from official Anthropic and OpenAI documentation on 2026-10-01. The scheduled 2026-09-01 Claude Sonnet 5 $3/$15 row was removed because Anthropic cancelled that increase on 2026-08-10, and lifecycle notes on retired or deprecated Claude rows were refreshed against the official pricing and deprecations pages. On 2026-10-15 the table was re-audited against the official Anthropic and OpenAI pricing, model, deprecation, and changelog pages: Claude Haiku 5.5 (2026-10-07, lower prompt-size band only) was added, and an effective-dated Claude Sonnet 5.5 row (2026-10-07) was added for the cache-read reduction from $0.20 to $0.10 per 1M. No OpenAI rate changes were found since the 2026-10-01 refresh.
 
 - Anthropic Claude model pricing: https://platform.claude.com/docs/en/about-claude/pricing
@@ -17,6 +19,7 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 - OpenAI public API pricing summary: https://openai.com/api/pricing/
 - OpenAI GPT-5.5 model page: https://developers.openai.com/api/docs/models/gpt-5.5
 - OpenAI GPT-6 Astra model page: https://developers.openai.com/api/docs/models/gpt-6-astra
+- OpenAI GPT-6.1 Terra model page: https://developers.openai.com/api/docs/models/gpt-6.1-terra
 - OpenAI GPT-6.1 Sol model page: https://developers.openai.com/api/docs/models/gpt-6.1-sol
 - OpenAI API changelog: https://developers.openai.com/api/docs/changelog
 - OpenAI GPT-5.6 pricing and updates: https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/
@@ -37,6 +40,7 @@ Values in `model-pricing-estimates.csv` were refreshed from official provider pa
 - OpenAI cached input is represented as `cache_read_per_1m` because PromptFuel's Codex token counters expose cached input as read-style cache usage.
 - GPT-5.6 OpenAI cache writes use the single published cache-write rate in both CSV cache-write fields.
 - GPT-5.6 Terra and Luna each have two effective-dated rows: the original 2026-07-09 standard rates (historical) and the 2026-07-30 price reductions. The resolver selects the correct row by `effective_date` the same way Claude Sonnet 5's scheduled rows are resolved.
+- GPT-6.1 Terra uses standard rates of $1 input, $5 output, $0.05 cached input, and $1.25 for 30-minute cache writes per million tokens. Both legacy cache-write fields contain the 30-minute rate as an approximation; their 5-minute and 1-hour labels do not describe OpenAI retention. The $2.50 per million 12-hour cache-write tariff is not represented. Requests above 272K input tokens use higher long-context rates, which the aggregate-based flat estimate cannot identify or apply. Fast, Batch, Flex, and regional modifiers are also excluded.
 - GPT-6 Astra has separate long-context pricing above 272K input tokens. PromptFuel's current flat pricing schema does not model that tariff; only short-context rates are represented.
 - GPT-6 Sol, GPT-6.1 Sol, and GPT-6 Luna carry the same >272K long-context caveat as GPT-6 Astra. `gpt-6.1-sol` is the newer Sol model and `gpt-6-sol` remains a current API model with its own row; their cached-input rates differ ($0.10 vs $0.20 per 1M).
 - OpenAI Ultrafast mode (listed for GPT-6 Astra and GPT-6.1 Sol) and Fast/Batch/Flex tiers are separate modifiers that PromptFuel does not model. GPT-5.6 Cyber has no published model ID or pricing and is not listed.
